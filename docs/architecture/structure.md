@@ -155,6 +155,8 @@ R1 在**同一个 Python 包内**不由包边界保证，必须由检查器保�
 
 - 工具：**`import-linter`**（声明式 contract，CI 给出违规清单）；受阻则自写 AST 遍历，落 `tests/architecture/`。
 - **0 违规起步**：新仓库无历史债，不设 baseline 文件（对照 EvoFlow 的 60 条豁免债）。
+- **禁环**：矩阵不得出现双向允许（A 允许依赖 B 且 B 允许依赖 A）——双向即环，
+  由 `tests/architecture/` 断言（M1 复审发现 `serve`↔`cli` 曾双向允许，已收敛为 `cli`→`serve` 单向）。
 - 三条硬断言同处：append-only 不可改写、状态迁移唯一写入入口、权限判定无绕过路径。
 
 | 模块 | 允许 import |
@@ -173,7 +175,7 @@ R1 在**同一个 Python 包内**不由包边界保证，必须由检查器保�
 | `providers` | `schemas` `state`（**不得 import 任何业务模块**） |
 | `prompts` `schemas` | 无 / 标准库（纯资产与纯类型） |
 | `skills` `mcp` `hooks` `extensions` | `schemas` + 已注册的公开扩展接口；**内核不得反向 import 它们** |
-| `serve` | 以上全部（最上层组装点） |
+| `serve` | 除 `cli` 外全部（最上层组装点；**不得 import `cli`**，否则与下行构成环） |
 | `cli` | `serve` `engine` `providers` `config` `schemas` |
 | `testenv` | 任何模块（只被测试 import，生产代码禁止） |
 
@@ -235,6 +237,9 @@ React 19 + TS + Vite 6 + Tailwind 4 + **zustand** + SWR；
 **版本纪律**：evopanel 用的是 **zustand v4**（`^4.5.7`）。本项目**显式选 v5** 并只用官方 hook 用法，
 因为参照它的代码是 v4 写法——不写清就会两边混用出隐性 bug。同理 `zod` 用于前端体验校验，
 但**跨进程契约的唯一校验权威在 Python 侧**（pydantic v2）。
+
+**前端地图**：目录职责、命令、mock 与生成物边界、状态归属约束见 `ui/README.md`；
+本文只定归属与物化节奏，不复述实现细节。
 
 ---
 

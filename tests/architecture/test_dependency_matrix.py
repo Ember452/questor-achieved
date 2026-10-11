@@ -52,7 +52,6 @@ ALLOWED_IMPORTS: dict[str, frozenset[str]] = {
     "extensions": frozenset({"schemas"}),
     "serve": frozenset(
         {
-            "cli",
             "orchestration",
             "habena",
             "vigilia",
@@ -132,4 +131,54 @@ def test_module_imports_stay_within_allow_list() -> None:
                 checked.append(f"{module}:{py.name}")
     # 守卫测试自身的负向性说明：本测试在"存在 questor 导入"时才有约束力；
     # 若 SRC 下没有任何 questor.* 交叉导入，测试仍通过——这是 0 违规起步的预期状态。
+    # 因此本测试只在 ALLOWED_IMPORTS 与被测模块同时存在时才有意义，
+    # 它的真负向证明由下方 test_reverse_guards_have_teeth 提供。
     assert not violations, "依赖方向违规（R1）:\n" + "\n".join(violations)
+
+
+def _prod_files() -> list[Path]:
+    """src/questor 下的生产文件；排除 testenv 自身（它正是被守卫的对象）。"""
+    return [p for p in SRC.rglob("*.py") if p.parts[-2] != "testenv"]
+
+
+def test_production_code_never_imports_testenv() -> None:
+    """反向守卫：`questor.testenv` 只允许被测试 import（fake_home 模块文档声称的那条）。
+
+    这条本身可负向：在 src/questor 下临时写一行 `from questor.testenv import fake_home`
+    即会失败——不依赖"是否已有交叉导入"这种前提。
+    """
+    offenders = [
+        str(p.relative_to(REPO_ROOT))
+        for p in _prod_files()
+        if "testenv" in _top_level_questor_imports(p)
+    ]
+    assert not offenders, "生产代码 import 了测试基建: " + ", ".join(offenders)
+
+
+def test_matrix_has_no_bidirectional_edges() -> None:
+    """禁环：矩阵不得存在双向允许（A↔B 互为可依赖即构成环）。
+
+    M1 复审实测：`serve` 曾允许 import `cli` 而 `cli` 允许 import `serve`，
+    两张允许表都不报违规，但代码可以形成环。本断言把"禁环"从口头规则
+    变成对矩阵自身的检查（不依赖实现代码是否存在）。
+    """
+    cycles: list[str] = []
+    for module, allowed in ALLOWED_IMPORTS.items():
+        if "*" in allowed:
+            continue
+        for target in allowed - {"schemas"}:
+            back = ALLOWED_IMPORTS.get(target)
+            if back is not None and module in back:
+                cycles.append(f"{module} -> {target} -> {module}")
+    assert not cycles, "依赖矩阵存在双向允许（环）:\n" + "\n".join(sorted(set(cycles)))
+
+
+def test_reverse_guards_have_teeth() -> None:
+    """确认反向守卫确实能咬人：它必须正在检查至少一个生产文件，而不是空转。"""
+    checked = _prod_files()
+    assert checked, "src/questor 下没有可检查的 .py 文件，反向守卫为空转"
+    # ALLOWED_IMPORTS 必须覆盖全部已物化模块，否则新模块会绕过矩阵（静默放行）
+    materialized = {p.name for p in SRC.iterdir() if p.is_dir() and not p.name.startswith("__")}
+    assert materialized <= set(ALLOWED_IMPORTS), (
+        f"未登记的模块: {sorted(materialized - set(ALLOWED_IMPORTS))}"
+    )
