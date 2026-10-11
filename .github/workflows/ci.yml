@@ -27,6 +27,8 @@ jobs:
       # 与 justfile `check` 同一批命令（范围含 evals/scripts，否则违规会静默存在而 CI 仍绿）
       - run: uv run ruff check src tests evals scripts
       - run: uv run ruff format --check src tests evals scripts
+      # 锁定钩子与 CI 同源：ruff rev 与 uv.lock 不一致、或钩子规则与门禁不一致，在这里响
+      - run: uv run pre-commit run --all-files
       - run: uv run pyright
       - run: uv run python scripts/ci/check_specs.py
       - uses: actions/setup-node@v4

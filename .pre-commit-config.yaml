@@ -1,10 +1,14 @@
-# 本地钩子只放秒级静态检查（与 CI 同源命令）；测试/审计/gen-check/arch 只进 CI，
-# 保证门禁不可被本地跳过（FlowCoder 同款分工）。
+# 本地钩子只放秒级检查；测试、审计、架构矩阵与跨 OS 的 gen:check 只进 CI，
+# 保证门禁不可被本地 `--no-verify` 跳过（FlowCoder 同款分工）。
+#
+# 版本纪律：这里的 ruff rev 必须与 uv.lock 钉住的 ruff 一致（当前 0.17.0）。
+# 不一致会让"本地钩子绿、CI 红"成为常态——pre-commit 自建隔离环境，不会读 uv.lock。
+# CI 的 lint job 跑 `pre-commit run --all-files` 来锁住这条承诺，不靠注释。
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.4
+    rev: v0.17.0
     hooks:
-      - id: ruff
+      - id: ruff-check # v0.17 起 ruff 是 legacy alias
         args: [--fix]
       - id: ruff-format
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -12,5 +16,17 @@ repos:
     hooks:
       - id: end-of-file-fixer
       - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]  # md 的行尾双空格是硬换行，不可被剔
       - id: check-yaml
       - id: check-added-large-files
+  - repo: local
+    hooks:
+      # 只在 schema 变更时触发（约 1–3 秒）：拦"改了 schema 忘了 just gen"这类漂移。
+      # 它不冒充跨平台可复现性检查——分隔符那一类（B-68）只有 CI 的双 OS leg 能抓到。
+      # 前置：ui 依赖已安装（`just setup` 或 `npm ci --prefix ui`）。
+      - id: gen-check
+        name: schema → ui/src/rpc/generated 是否同步
+        entry: npm --prefix ui run gen:check
+        language: system
+        files: ^src/questor/schemas/.*\.json$
+        pass_filenames: false
