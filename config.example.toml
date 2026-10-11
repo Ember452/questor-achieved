@@ -1,0 +1,11 @@
+# Sample project-layer config for Questor (`<project>/.questor/config.toml`).
+# Copy to your project, adjust, and commit. This layer is SHARED — it must never
+# carry credentials or permission_mode: user-only fields (api_key, auth_token,
+# permission_mode) are stripped here and reported. Machine-local overrides belong
+# in `.questor/config.local.toml` (not committed), which is stripped the same way.
+
+[ui]
+# theme = "dark"
+
+[tools]
+# disable = ["process"]
