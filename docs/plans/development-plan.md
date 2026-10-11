@@ -110,7 +110,7 @@ runner 协议 + result.schema）；ui/ 骨架（token 四文件 + mock + 第一�
 
 ## Phase M2 — 单轮内核跑通（engine + 基建模块群 + cli）
 
-**状态**：**M2.1 地基 `- [x]` 已完成（2026-10-11，提交至 `599cd02`（rebase Dependabot 合并后 hash，原 8ceb0cd））**；M2.2 / M2.3 `- [ ]` 未开始
+**状态**：**M2.1 地基 `- [x]` 已完成（2026-10-11，提交至 `599cd02`（rebase Dependabot 合并后 hash，原 8ceb0cd））**；**M2.2 内核 `- [x]` 已完成（2026-10-11，提交至 `3ec32c4`）**；M2.3 `- [ ]` 未开始
 
 **M2.1 实际结果**：地基七模块全部落地并各自成 commit——`version`（VERSION 单点 +
 pyproject dynamic）、`state`（路径单点 / 原子写 / 跨进程锁，B-71/72/73）、
@@ -129,6 +129,23 @@ M2.1 出口判据逐项：落盘可回放（`tests/integration/test_gesta_roundt
 **偏离留痕**：① gesta 摘要索引以 JSON 承载，SQLite FTS 搜索索引按 B-46 推迟至 M4
 （无第二个真实使用者）；② `third_party/` 通知生成推迟至 M2.3（同因）；
 ③ 本期无用户可感知能力，前端跟随（mock 事件流流式渲染）按计划留待 M2 收口统一验证。
+
+**M2.2 实际结果**：内核四模块 + 热路径前置决策全部落地——`gesta` 热路径
+（ThreadWriter 游标 + 增量摘要，全局锁保留，理由与被否决项见 gesta.md）；
+`limen`（六层→三档+恒开守卫链，B-30/31/32/33/34/50..54 全 covered，第三条硬断言
+"权限判定无绕过"落地并负向验证）；`tools` 八工具（用户裁决含 todo；run 的
+Job Object 整树管理经 ADR-0015 pywin32；实测坑 B-77 PyHANDLE GC、B-78 管道
+read1 入目录并回填测试）；`engine`（显式状态机 + 形状护栏 B-05/06 当场咬住
+重复提示词常量与超长函数；B-02/03/08 covered）；`prompts` 资产四件随包发布。
+M2.2 出口判据逐项：**单轮跑通**（`tests/integration/test_single_turn_kernel.py`
+三步真实链 + 纯 fold 回放，无真实模型依赖——providers 在 M2.3 接入后才具备
+真实任务全链条件）；**权限矩阵全绿**（三档 × 调用形状表驱动）；**第三硬断言**
+落地（三条全部到位）；坑覆盖率：engine/tools/limen 当期适用条目 100%
+（B-01/04/07/09/11 属未触发模块，留痕 open）。
+**M2.2 偏离留痕**：① search 的修订号绑定随 M3 review（ADR-0005）；
+② todo 会话内存态、落盘随 M4；③ B-09/11 随 memory/context 模块回填；
+④ 前端跟随（mock 事件流渲染）随 M2.3 收口统一验证——M2 未收口；
+⑤ 会话为 turn 作用域，跨 turn resume 随 M2.3 context。
 
 **做什么**（= structure §11 M2 行）：`engine`（内置循环）、`tools`（八工具——用户裁决 2026-10-11，read/edit/write/search/list/run/process/todo 全做，回写 overview §12）、`limen`、`context`、`gesta`、`providers`、`prompts`、`config`、`state`、`secrets`、`capability`、`workspaces`、`version`、`cli`、`serve` 雏形；`VERSION`、`third_party/`；`evals/runner`。
 
