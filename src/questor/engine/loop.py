@@ -306,6 +306,7 @@ class Engine:
             "is_error": outcome.result.is_error,
             "elapsed_s": round(outcome.elapsed_s, 3),
             "preview": output[:2000],
+            **outcome.result.data,  # 语义退出码 / sandboxed 标注 / 后台 pid 等进审计记录
         }
         if len(output) > C.TOOL_RESULT_SPILL_CHARS:
             spill = await asyncio.to_thread(_spill, writer, request.tool_use_id, output)

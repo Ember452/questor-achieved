@@ -2,8 +2,13 @@
 
 事件名逐字对齐 protocol.md §4 的事件族：``delta`` / ``item/started`` /
 ``item/completed`` / ``turn/usage`` / ``run/status``。``turn/queued`` 等旁态族随
-M3 habena；``notice/compact`` 随 M2.3 context。持久化映射：
-``event_type_of(event)`` 给出应写入 gesta Event.type 的协议名。
+M3 habena；``notice/compact`` 随 M2.3 context。
+
+持久化边界（单一真相纪律）：``delta`` 是**传输态**——正文以 message Item 为
+唯一真相，delta 不落盘（重复存储制造两套真相）；``TurnStarted``/``Converging``/
+``LoopCompleted``/``LoopFailed`` 是循环内部节拍，其事实已由 run 状态与 message
+Item 承载。落盘的事件族 = ``item/started`` / ``item/completed`` / ``turn/usage``
+/ ``run/status``（``event_type_of`` 返回 "internal" 者不落盘）。
 """
 
 from __future__ import annotations
