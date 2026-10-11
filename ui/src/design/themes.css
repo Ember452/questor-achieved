@@ -1,0 +1,19 @@
+/* 暗色主题：整体覆盖 tokens.css 的同一批 --color-*（class 切换，见 useTheme）。
+   Questor 只做 light/dark 两态——evopanel 的 zai-* 是其品牌变体，不采纳。 */
+
+.dark {
+  --color-background: #17171a;
+  --color-background-alt: #1e1e22;
+  --color-foreground: #ececf0;
+  --color-foreground-subtle: #a8a8b2;
+  --color-foreground-subtlest: #6e6e78;
+  --color-surface: #1e1e22;
+  --color-surface-hover: #26262b;
+  --color-border: #33333a;
+  --color-border-hover: #4a4a54;
+  --color-sidebar: #1b1b1f;
+  --color-primary: #818cf8;
+  --color-brand: #818cf8;
+  --color-danger: #f87171;
+  --color-success: #4ade80;
+}

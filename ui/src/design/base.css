@@ -1,0 +1,42 @@
+/* 全局 reset 与宿主约定（参照 evopanel：100dvh、focus ring 清零、统一滚动条）。 */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-size: var(--ui-font-size);
+  color-scheme: light; /* .dark 下由 useTheme 同步为 dark */
+}
+
+/* 清零默认 focus ring（无障碍：交互组件自带 focus-visible 样式） */
+*:focus,
+*:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* 统一滚动条：透明轨道、圆角 thumb */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-hover) transparent;
+}
+*::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+*::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background-color: var(--color-border-hover);
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}

@@ -1,0 +1,41 @@
+/* Questor design token 单点：14px 驱动全部字号（参照 evopanel zcode-ui/styles.css 的
+   --text-ui-* calc 族，2026-10-11 实测摘录；zai-* 品牌变体不采纳，只做 light/dark）。 */
+
+:root {
+  --ui-font-size: 14px;
+}
+
+@theme {
+  --font-sans:
+    "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Noto Sans CJK SC", system-ui, sans-serif;
+  --font-mono:
+    ui-monospace, "Cascadia Mono", Consolas, "PingFang SC", "Microsoft YaHei UI",
+    "Microsoft YaHei", "Noto Sans CJK SC", monospace;
+
+  /* 字号族：全部由 --ui-font-size 单点派生 */
+  --text-ui-2xs: calc(var(--ui-font-size) - 4px);
+  --text-ui-xs: calc(var(--ui-font-size) - 2px);
+  --text-ui-sm: calc(var(--ui-font-size) - 1px);
+  --text-ui-base: var(--ui-font-size);
+  --text-ui-lg: calc(var(--ui-font-size) + 2px);
+  --text-ui-xl: calc(var(--ui-font-size) + 4px);
+  --text-mobile-input-safe: 16px; /* iOS 聚焦输入下限 */
+
+  /* 语义色（light 基础值；.dark 覆盖见 themes.css）。
+     命名沿用 evopanel 语义：background/foreground/surface/border/sidebar。 */
+  --color-background: #ffffff;
+  --color-background-alt: #f6f6f7;
+  --color-foreground: #1a1a1e;
+  --color-foreground-subtle: #55555e;
+  --color-foreground-subtlest: #8a8a94;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f0f0f2;
+  --color-border: #e3e3e8;
+  --color-border-hover: #c9c9d2;
+  --color-sidebar: #f3f3f5;
+  --color-primary: #4f46e5;
+  --color-brand: #4f46e5;
+  --color-danger: #dc2626;
+  --color-success: #16a34a;
+}
