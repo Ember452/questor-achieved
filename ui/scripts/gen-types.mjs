@@ -6,7 +6,7 @@
 
 import { compile } from "json-schema-to-typescript";
 import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, dirname, relative } from "node:path";
+import { join, dirname, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 
@@ -31,8 +31,12 @@ mkdirSync(outDir, { recursive: true });
 
 for (const { name, full } of collectSchemas(schemaRoot)) {
   const schema = JSON.parse(readFileSync(full, "utf-8"));
+  // banner 里的路径必须跨平台一致：path.relative() 在 Windows 返回 `src\questor\...`、
+  // 在 Linux 返回 `src/questor/...`，而 banner 会被写进 .d.ts——不规范化则生成物
+  // 不可复现，CI 的 gen:check 必然报漂移（B-68）。
+  const schemaRef = relative(repoRoot, full).split(sep).join("/");
   const ts = await compile(schema, schema.title ?? name, {
-    bannerComment: `/* 由 src/questor/schemas 生成（${relative(repoRoot, full)}）。禁止手写编辑——改动走 schema 与契约文档。 */`,
+    bannerComment: `/* 由 src/questor/schemas 生成（${schemaRef}）。禁止手写编辑——改动走 schema 与契约文档。 */`,
     additionalProperties: false,
     enableConstEnums: true,
   });
