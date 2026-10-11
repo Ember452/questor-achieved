@@ -1,6 +1,8 @@
 [project]
 name = "questor"
-version = "0.1.0"
+# 版本唯一来源是仓库根的 VERSION 文件（CalVer YYYY.M.D，structure §10）；
+# 静态 version 会与它形成两套真相，护栏测试 tests/unit/test_version.py 会咬
+dynamic = ["version"]
 description = "Auditable AI agent workstation: steer running work, review real diffs, verify claimed results."
 readme = "README.md"
 license = "MIT"
@@ -49,6 +51,12 @@ dev = [
 [build-system]
 requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
+
+# 构建时从 VERSION 文件提取版本；pattern 显式声明，避免依赖 hatchling 对
+# 裸文本文件的默认猜测（那是隐式行为，坏了不好查）
+[tool.hatch.version]
+path = "VERSION"
+pattern = '(?P<version>\d+\.\d+\.\d+)'
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/questor"]
