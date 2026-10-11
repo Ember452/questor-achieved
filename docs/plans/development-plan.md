@@ -36,7 +36,17 @@
 
 ## Phase M1 — 扫描三资产 + 契约与 schema + 工程外围（契约先行）
 
-**状态**：`- [ ]` 未开始（内部分 **M1a / M1b** 两段，各自有出口）
+**状态**：`- [x]` 已完成（2026-10-11；M1a/M1b 出口逐项核对见下"实际结果"）
+
+**实际结果**：坑目录 67 条（≥50）且编号连续、各有归属（`scripts/ci/check_specs.py` 绿）；
+11 篇 behavior 规格（FlowCoder 5 / EvoFlow 3 / wuu 3），证据抽验 10/10 命中；契约两篇转
+正式（data-model v1.0 / protocol v1.0）；`src/questor/schemas/` + 生成链落地（gen-check 绿）；
+N=12 钉死（evals/tasks/tasks.json）；工程外围（justfile / .editorconfig / .pre-commit /
+SECURITY.md / 3 workflows / 模板 / dependabot / testenv）；tests/architecture AST 依赖矩阵
+0 违规（import-linter 随 M2 首批模块引入，见该测试 docstring）；evals 骨架（12 任务定义 +
+runner 协议 + result.schema）；ui/ 骨架（token 四文件 + mock + 第一屏，typecheck/build 绿；
+浏览器可视化确认留待首次 `npm run dev`）。import-linter 声明式契约因"模块未物化"延至 M2
+（structure §5 预案），contracts.yml 同步收敛为 AST 测试。
 
 **做什么**（= overview §12 M1 + structure §11 M1 行；**裁定：`ui/` 骨架提前至 M1 起，structure §11 已同步**——schema 与生成链正是 mock 驱动 UI 的前提，真异构部分〔sidecar、窗口〕仍属 M3）：
 - **M1a（契约与资产）**：三资产扫描落盘；`data-model.md` + `protocol.md` 转正式；`src/questor/schemas/` + 生成链；**钉死对照评测的 N**；
