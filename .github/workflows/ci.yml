@@ -24,11 +24,13 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync
-      # 与 justfile `check` 同一批命令（范围含 evals/scripts，否则违规会静默存在而 CI 仍绿）
-      - run: uv run ruff check src tests evals scripts
-      - run: uv run ruff format --check src tests evals scripts
-      # 锁定钩子与 CI 同源：ruff rev 与 uv.lock 不一致、或钩子规则与门禁不一致，在这里响
-      - run: uv run pre-commit run --all-files
+      # 与 justfile `check` 同一批命令（范围含 evals/scripts，否则违规会静默存在而 CI 仍绿）。
+      # ruff 用 GitHub annotations 把错误钉到具体文件行；pyright 1.1.414 没有 --output=github
+      # （实测 `Unexpected option`），故保持其原生 `file:line:col - message` 文本输出。
+      - run: uv run ruff check --output-format=github src tests evals scripts
+      - run: uv run ruff format --check --diff src tests evals scripts
+      # 锁定钩子与 CI 同源：ruff rev 与 uv.lock 不一致、或钩子规则与门禁不一致，在这里响。
+      - run: uv run pre-commit run --all-files --color=never
       - run: uv run pyright
       - run: uv run python scripts/ci/check_specs.py
       - uses: actions/setup-node@v4
@@ -39,6 +41,24 @@ jobs:
       - run: npm ci --prefix ui
       - run: npm --prefix ui run gen:check
       - run: npm --prefix ui run typecheck
+      # 任一步失败时转储工作区差异：ruff-format 与 pre-commit 会自己改文件，gen:check 只报
+      # "漂了"——没有 diff 就看不出是平台相关还是真忘了重生成（B-68 当时正是这样难查）。
+      - name: Show failure context
+        if: failure()
+        run: |
+          {
+            echo "## 失败上下文"
+            echo
+            echo '### git status'
+            echo '```'
+            git status --short
+            echo '```'
+            echo '### 工作区差异（前 200 行）'
+            echo '```'
+            git --no-pager diff --stat
+            git --no-pager diff | head -n 200
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   test:
     runs-on: ${{ matrix.os }}
@@ -52,10 +72,11 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync
-      # 与 justfile `test` 同一批命令
-      - run: uv run pytest -q
+      # 与 justfile `test` 同一批命令；--full-path 让失败行的文件路径完整可点，
+      # -rfE 在末尾汇总全部 failed/error，避免只看得到最后一个 traceback。
+      - run: uv run pytest -q --full-path -rfE --color=no
       # 生成物必须在两种 OS 上都可复现：banner 里的路径分隔符差异（B-68）
-      # 只有在 windows runner 上跑 gen:check 才拦得住
+      # 只有在 windows runner 上也跑 gen:check 才拦得住。
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -63,3 +84,14 @@ jobs:
           cache-dependency-path: ui/package-lock.json
       - run: npm ci --prefix ui
       - run: npm --prefix ui run gen:check
+      - name: Show generated diff on drift
+        if: failure()
+        run: |
+          {
+            echo "## 重生成后的差异（应为空；不为空即漂移或生成器不可复现）"
+            echo
+            echo '```'
+            git --no-pager diff --stat
+            git --no-pager diff -- ui/src/rpc/generated | head -n 120
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
