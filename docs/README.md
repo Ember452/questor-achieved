@@ -5,6 +5,7 @@
 | 想知道这是什么 | [`../README.md`](../README.md) | 对外定位与三柱 |
 | **动手前必读** | [`architecture/overview.md`](architecture/overview.md) | **唯一架构入口**：定位、参照边界、分层与依赖规则、功能地图、数据契约、权限模型、恢复语义、测试与出口判据、里程碑、未决项 |
 | 想知道目录怎么摆 | [`architecture/structure.md`](architecture/structure.md) | 物理布局地图：总体结构与各部分结构（目录/职责块级），随里程碑物化 |
+| 想知道当前阶段怎么做 | [`plans/development-plan.md`](plans/development-plan.md) | 阶段级开发计划：顺序、阅读地图（去参照项目读什么区域）、各阶段文档产出时点 |
 | 想知道为什么这么定 | [`adr/`](adr/README.md) | 决策记录（编号索引与模板在此） |
 | 想知道工程纪律 | [`../AGENTS.md`](../AGENTS.md) | 复用三分法、语义唯一来源、注释与语言标准、护栏测试准入、质量门禁、Git 规矩 |
 | 开工边界层任务前 | `specs/`（M1 落盘） | 行为规格表、坑目录 `B-NN`、用例清单 |

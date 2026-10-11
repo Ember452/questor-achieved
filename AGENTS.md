@@ -218,6 +218,7 @@ scope = 模块目录名（`engine` `tools` `limen` `habena` `vigilia` `gesta` `e
 |---|---|
 | 任何任务开工前 | `docs/architecture/overview.md`（**唯一架构入口**）+ 本文件 §二 §三 + `docs/adr/README.md` 索引 |
 | 想知道目录/包怎么摆 | `docs/architecture/structure.md`（物理布局地图；职责登记仍以 overview §6 为准） |
+| 想知道当前阶段怎么做/读什么 | `docs/plans/development-plan.md`（阶段顺序、参照项目阅读地图、文档产出时点） |
 | 改数据模型 / 状态机 / 消息协议 | `overview.md` §7 §8（契约源头）→ **先改文档并递增版本号，代码跟随**；顺序不可反 |
 | 新增顶层包 | 先在 `overview.md` §6 登记一行职责（R5），否则评审打回 |
 | 重写任何边界层模块 | `docs/specs/pitfalls.md` 对应条目 + 参照实现的行为规格 |
