@@ -25,6 +25,10 @@
    "Expected — Waiting for status to be reported"**。本项目 2026-10-11 就因把非矩阵 job 写成
    `lint (ubuntu-latest)` 这类名字而误判过一次"dependabot 的 PR 没绿"。
 
+   另一个同天发生、容易归因错的形态：PR 分支自带一份旧 workflow 副本，修在 main 上的
+   CI bug 对已开出的 PR 不生效（需 Update branch 同步）——机制解释见
+   `docs/notes/2026-10-11-pr-branch-carries-its-own-workflow.md`。
+
 ## 理由与取舍
 
 A 方案（PR-only）更严格，但每次改动都要开分支、建 PR、点合并；单人开发阶段这个成本主要付在
