@@ -110,7 +110,7 @@ runner 协议 + result.schema）；ui/ 骨架（token 四文件 + mock + 第一�
 
 ## Phase M2 — 单轮内核跑通（engine + 基建模块群 + cli）
 
-**状态**：**M2.1 地基 `- [x]` 已完成（2026-10-11，提交至 `8ceb0cd`）**；M2.2 / M2.3 `- [ ]` 未开始
+**状态**：**M2.1 地基 `- [x]` 已完成（2026-10-11，提交至 `599cd02`（rebase Dependabot 合并后 hash，原 8ceb0cd））**；M2.2 / M2.3 `- [ ]` 未开始
 
 **M2.1 实际结果**：地基七模块全部落地并各自成 commit——`version`（VERSION 单点 +
 pyproject dynamic）、`state`（路径单点 / 原子写 / 跨进程锁，B-71/72/73）、
