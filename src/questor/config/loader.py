@@ -42,7 +42,11 @@ class ConfigError(Exception):
 
 
 class ConfigSnapshot(BaseModel):
-    """分层合并后的配置快照（frozen；``data`` 为用户 TOML 的合并结果）。"""
+    """分层合并后的配置快照（外层 frozen；``data`` 为用户 TOML 的合并结果）。
+
+    诚实边界：frozen 只冻结字段赋值——``data`` 内层是普通 dict，本模块的纪律是
+    合并永远产生新 dict、加载后无人改写（靠代码审查与用例维持），不是深度不可变。
+    """
 
     model_config = ConfigDict(frozen=True)
 

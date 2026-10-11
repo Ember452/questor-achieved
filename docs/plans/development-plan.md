@@ -139,7 +139,12 @@ M2.1 出口判据逐项：落盘可回放（`tests/integration/test_gesta_roundt
 4. `context/` 按两层压缩：Layer1 大结果落盘回读、Layer2 auto-compact（阈值=窗口-摘要预留-margin；前缀过小不压；CompactBoundary 内联进会话记录供 resume 重建）；
 5. `limen/` 按 wuu 语义：单门、可达性推导（符号链接 EvalSymlinks、Windows 大小写折叠）、`error_kind + reason + model_next_action` 模型可读错误方言、敏感路径守卫三档全开（源码扩展名豁免、symlink 双向解析）、审批只收紧（硬拒三件：凭据调用/参数提权/敏感写）、设置分层 strip 用户专属字段；
 6. `state/`（路径单点解析+原子写+跨进程文件锁）与 `gesta/`（append-only JSONL + 可重建索引）是其他模块的地基，先行；
-7. 停进程树前校验 pid+pgid+start_time 三元组；stdout/stderr 保头尾；ANSI 剥离。
+7. 停进程树前校验 pid+pgid+start_time 三元组；stdout/stderr 保头尾；ANSI 剥离；
+8. **（M2.1 审查前置项，开工 M2.2 前正面决策）** gesta 热路径：当前每次追加全量重读
+   JSONL + fold + 重写索引，且持单把 sessions 全局锁（M2.1 体量下正确优先）——engine 的
+   高频事件流接入前必须定锁粒度（per-thread 或分片）、seq 游标内存化与索引批量刷新，
+   并给 `state.StoreLock.acquire` 增加可取消/deadline 语义，或明确"锁争用超时上浮为
+   用户可见错误"；这一决策属于接口面，不撞墙后回炉。
 
 **文档产出**：M2 各模块内部设计篇（随各自开工任务写，不提前）；`evals/` 任务集约定与首跑记录（对照 wuu 公开结果纪律：失败也要发布）。
 
