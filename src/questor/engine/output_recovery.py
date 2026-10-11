@@ -17,14 +17,7 @@ from dataclasses import dataclass
 from questor.engine.constants import MAX_OUTPUT_TOKEN_RECOVERIES, MAX_TOKENS_CEILING
 from questor.engine.conversation import Conversation
 from questor.engine.model import LLMResponse, ModelPort
-
-ESCALATION_PROMPT = (
-    "Output token limit hit. Resume directly from where you stopped. "
-    "Do not apologize and do not repeat previous content."
-)
-RECOVERY_PROMPT = (
-    "Output token limit hit again. Continue with smaller pieces and finish the current piece first."
-)
+from questor.prompts import render
 
 
 @dataclass(frozen=True)
@@ -53,10 +46,10 @@ def handle_output_token_limit(
     if not state.max_tokens_escalated:
         model.set_max_output_tokens(MAX_TOKENS_CEILING)
         new_state = OutputRecoveryState(max_tokens_escalated=True, recoveries=0)
-        prompt = ESCALATION_PROMPT
+        prompt = render("max_tokens_escalation")
     elif state.recoveries < MAX_OUTPUT_TOKEN_RECOVERIES:
         new_state = OutputRecoveryState(max_tokens_escalated=True, recoveries=state.recoveries + 1)
-        prompt = RECOVERY_PROMPT
+        prompt = render("max_tokens_recovery")
     else:
         return RecoveryDecision(state=state, retry=False)  # 次数耗尽，不再恢复
 

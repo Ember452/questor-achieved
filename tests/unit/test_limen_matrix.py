@@ -188,3 +188,18 @@ def test_param_mode_equal_to_current_allowed() -> None:
         requested_mode=PM.STANDARD,
     )
     assert decide(call, PM.STANDARD, WIN_ROOTS).effect == "allow"
+
+
+def test_gate_has_no_ask_effect() -> None:
+    """B-51：Guard 不得返回 ask——门的效果集只有 allow/deny（机械扫描 gate 源码）。"""
+    import ast
+    import pathlib
+
+    gate_src = pathlib.Path(__file__).resolve().parents[2] / "src" / "questor" / "limen" / "gate.py"
+    tree = ast.parse(gate_src.read_text(encoding="utf-8"), filename="gate.py")
+    ask_literals = [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and node.value == "ask"
+    ]
+    assert not ask_literals, "gate.py 出现 'ask' 字面量——硬判与审批分层被破坏（B-51）"
