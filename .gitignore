@@ -33,3 +33,6 @@ Thumbs.db
 
 # Docs build output
 site/
+
+# Frontend (ui/)
+node_modules/
