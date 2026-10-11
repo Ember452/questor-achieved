@@ -15,7 +15,7 @@
 
 ## 2. 反向请求与慢发现（`internal/appserver/server.go`）
 
-- **反向请求路由**：core→desktop 的请求（审批、浏览器宿主）由 pendingCalls 表 + 
+- **反向请求路由**：core→desktop 的请求（审批、浏览器宿主）由 pendingCalls 表 +
   clientCallSeq 守卫（`server.go#L205` 注释："guards both the map and clientCallSeq; see
   callClient"）；**无 method 带 id 的行先路由给等待者，再进 method switch**——否则响应被
   "unknown method" 吞掉（wuu 556 行协议文档的血泪）。
