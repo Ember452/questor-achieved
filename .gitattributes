@@ -1,0 +1,23 @@
+# Line-ending policy: the repository is LF everywhere. The author's machine has
+# core.autocrlf=true, which silently rewrites LF to CRLF on checkout and produces
+# whole-file diffs; these rules pin it down instead of relying on local config.
+* text=auto eol=lf
+
+# Windows-only helper scripts are not exempt: they are still authored in LF.
+*.ps1 text eol=lf
+*.bat text eol=lf
+
+# Byte-exact data must never be line-ending converted. When fixtures (sessions,
+# JSONL transcripts, golden files) are introduced, they belong here too, because
+# any recorded byte length or digest is taken from the original bytes.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.woff2 binary
+*.zip binary
+*.sqlite binary
+*.db binary
+
+# Generated reports and exports are compared by content, not normalized.
+*.lock text eol=lf

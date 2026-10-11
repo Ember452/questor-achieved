@@ -1,0 +1,68 @@
+[project]
+name = "questor"
+version = "0.1.0"
+description = "Auditable AI agent workstation: steer running work, review real diffs, verify claimed results."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+authors = [{ name = "Solis" }]
+keywords = [
+  "ai-coding-agent",
+  "agent-workstation",
+  "human-in-the-loop",
+  "audit",
+  "diff-review",
+]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Code Generators",
+  "Topic :: Utilities",
+]
+dependencies = []
+
+# Nothing is runnable yet: enabling the entry point belongs to the first CLI task,
+# together with src/questor/cli.py. Keeping it commented avoids advertising a
+# command that fails.
+# [project.scripts]
+# questor = "questor.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.24",
+  "ruff>=0.6",
+  "pyright>=1.1.350",
+]
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/questor"]
+
+# Lower bound enforcement: the local interpreter is 3.13 (see .python-version),
+# but the published floor is 3.12 so the reference projects' dependency wheels
+# stay reachable. These two settings are what make that promise true.
+# tests/test_project_metadata.py fails if any of the three drifts apart.
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+include = ["src", "tests"]
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
