@@ -39,6 +39,7 @@ dev = [
   "ruff>=0.6",
   "pyright>=1.1.350",
   "pip-audit>=2.7",
+  "pre-commit>=4.0",
 ]
 
 [build-system]
@@ -68,4 +69,5 @@ typeCheckingMode = "standard"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-pythonpath = ["src"]
+# "." 让 `import evals...` 在非安装态下可解析（evals 是非生产包）
+pythonpath = ["src", "."]
