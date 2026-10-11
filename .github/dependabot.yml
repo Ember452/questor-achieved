@@ -1,14 +1,53 @@
 version: 2
+# 定位：pre-alpha 单人项目，依赖升级不是日常动作。保留 Dependabot 只为两件事——
+# 供应链 CVE 提醒与过期工具链提示；不制造 PR 噪音。因此：月度、挡大版本、分组、限流。
+# 安全更新（Security → dependabot）与 `security.yml` 的 pip-audit / npm audit 才是本仓库的主防线。
 updates:
   - package-ecosystem: pip
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      python-minor:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # 跨大版本要人工评估（可能改变 lint 规则集、解析行为或 requires-python 兼容）
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
+
   - package-ecosystem: npm
     directory: /ui
     schedule:
-      interval: weekly
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      ui-minor:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # 已发生的实例：typescript 5.7→7、vite 6→8、json-schema-to-typescript 15→16
+      # 这类跨大版本需连生成物一起复验（B-68），不自动提 PR。
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      actions-all:
+        patterns:
+          - "*"
+    # 动作大版本会改变 runner/Node 行为，但数量少且涉及供应链安全，
+    # 不屏蔽 major，只归成一个 PR 排队人工看。
