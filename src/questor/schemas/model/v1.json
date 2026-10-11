@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "questor/model/v1.json",
+  "title": "QuestorModel",
+  "description": "核心数据契约实体（真相源：docs/architecture/data-model.md v1.0）。纯 JSON Schema，Python pydantic 只做绑定。",
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "description": "UTC ISO-8601",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "PermissionMode": {
+      "type": "string",
+      "enum": ["read_only", "standard", "unconfined"]
+    },
+    "RunStatus": {
+      "type": "string",
+      "description": "终态 completed|failed|cancelled；steered/waiting 是 running 的旁态",
+      "enum": ["queued", "running", "steered", "waiting", "completed", "failed", "cancelled"]
+    },
+    "AcceptanceStatus": {
+      "type": "string",
+      "enum": ["proposed", "accepted_by_user", "executing", "reported", "verified", "regressed"]
+    },
+    "ItemKind": {
+      "type": "string",
+      "enum": ["message", "tool_call", "tool_result", "citation", "annotation", "deliverable"]
+    },
+    "Origin": {
+      "type": "string",
+      "enum": ["user", "steer"]
+    },
+    "Workspace": {
+      "type": "object",
+      "required": ["id", "name", "root_paths", "revision", "created_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "name": { "type": "string" },
+        "root_paths": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "revision": { "type": "integer", "minimum": 0, "description": "单调递增，每次可能改变磁盘状态的动作 +1" },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "Thread": {
+      "type": "object",
+      "required": ["id", "workspace_id", "engine_id", "permission_mode", "pinned", "archived", "created_at", "updated_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "workspace_id": { "$ref": "#/$defs/Id" },
+        "title": { "type": ["string", "null"] },
+        "engine_id": { "$ref": "#/$defs/Id", "description": "创建时绑定，不静默切换" },
+        "permission_mode": { "$ref": "#/$defs/PermissionMode" },
+        "pinned": { "type": "boolean" },
+        "archived": { "type": "boolean" },
+        "created_at": { "$ref": "#/$defs/Timestamp" },
+        "updated_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "Turn": {
+      "type": "object",
+      "required": ["id", "thread_id", "seq", "origin", "created_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "origin": { "$ref": "#/$defs/Origin" },
+        "fork_from": {
+          "type": ["object", "null"],
+          "required": ["thread_id", "turn_seq", "mode"],
+          "properties": {
+            "thread_id": { "$ref": "#/$defs/Id" },
+            "turn_seq": { "type": "integer", "minimum": 1 },
+            "mode": { "type": "string", "enum": ["local", "worktree"] }
+          },
+          "additionalProperties": false
+        },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "Run": {
+      "type": "object",
+      "required": ["id", "turn_id", "engine_id", "permission_mode", "status", "created_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "turn_id": { "$ref": "#/$defs/Id" },
+        "engine_id": { "$ref": "#/$defs/Id" },
+        "permission_mode": { "$ref": "#/$defs/PermissionMode" },
+        "workspace_revision_start": { "type": ["integer", "null"], "minimum": 0 },
+        "workspace_revision_end": { "type": ["integer", "null"], "minimum": 0 },
+        "status": { "$ref": "#/$defs/RunStatus" },
+        "usage": {
+          "type": ["object", "null"],
+          "properties": {
+            "input_tokens": { "type": "integer", "minimum": 0 },
+            "output_tokens": { "type": "integer", "minimum": 0 },
+            "cost_usd": { "type": ["number", "null"] }
+          },
+          "additionalProperties": false
+        },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "Item": {
+      "type": "object",
+      "required": ["id", "run_id", "kind", "payload", "created_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "run_id": { "$ref": "#/$defs/Id" },
+        "kind": { "$ref": "#/$defs/ItemKind" },
+        "payload": { "type": "object" },
+        "evidence": {
+          "type": ["object", "null"],
+          "description": "可验证柱：声称的检查与当时录得输出的绑定",
+          "properties": {
+            "claimed": { "type": "string" },
+            "recorded_output_ref": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "Event": {
+      "type": "object",
+      "required": ["seq", "type", "run_id", "turn_id", "payload", "created_at"],
+      "properties": {
+        "seq": { "type": "integer", "minimum": 1, "description": "会话内全局递增，重连续传锚点" },
+        "type": { "type": "string" },
+        "run_id": { "$ref": "#/$defs/Id" },
+        "turn_id": { "$ref": "#/$defs/Id" },
+        "payload": { "type": "object" },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

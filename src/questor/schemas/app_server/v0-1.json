@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "questor/app_server/v0-1.json",
+  "title": "QuestorAppServer",
+  "description": "qst-app-server/v0.1 跨进程信封与方法契约（真相源：docs/architecture/protocol.md v1.0）。错误码是字符串；能力 opt-in。",
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "PermissionMode": {
+      "type": "string",
+      "description": "与 model/v1.json#/$defs/PermissionMode 保持一致（护栏测试校验）",
+      "enum": ["read_only", "standard", "unconfined"]
+    },
+    "ProtocolVersion": {
+      "type": "string",
+      "const": "qst-app-server/v0.1"
+    },
+    "Request": {
+      "type": "object",
+      "required": ["id", "method"],
+      "properties": {
+        "id": { "type": "string" },
+        "method": { "type": "string", "description": "方法名，见 protocol.md §3 方法表" },
+        "params": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "Response": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "result": { "type": ["object", "null"] },
+        "error": { "$ref": "#/$defs/ErrorPayload" }
+      },
+      "additionalProperties": false
+    },
+    "Notification": {
+      "type": "object",
+      "required": ["method"],
+      "properties": {
+        "method": { "type": "string" },
+        "params": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "ErrorPayload": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "字符串错误码（非 JSON-RPC 数值码）",
+          "enum": [
+            "boundary_denied",
+            "need_execution_authorization",
+            "need_plan_first",
+            "stale_revision",
+            "protocol_version_mismatch",
+            "unknown_method",
+            "invalid_params",
+            "internal_error"
+          ]
+        },
+        "message": { "type": "string" },
+        "model_next_action": {
+          "type": ["string", "null"],
+          "description": "limen 方言：指导模型下一步动作"
+        }
+      },
+      "additionalProperties": false
+    },
+    "InitializeParams": {
+      "type": "object",
+      "required": ["client_version", "capabilities"],
+      "properties": {
+        "client_version": { "type": "string" },
+        "capabilities": {
+          "type": "object",
+          "required": [],
+          "properties": {
+            "reverse_rpc": {
+              "type": ["object", "null"],
+              "properties": {
+                "methods": { "type": "array", "items": { "type": "string" } }
+              },
+              "additionalProperties": false
+            },
+            "deferred_notification_content": { "type": "boolean", "description": "opt-in，不声明不启用" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "InitializeResult": {
+      "type": "object",
+      "required": ["protocol_version", "status", "issues", "build", "host", "permissions", "engines", "feature_flags", "max_concurrency"],
+      "properties": {
+        "protocol_version": { "$ref": "#/$defs/ProtocolVersion" },
+        "status": { "type": "string", "enum": ["ready", "needs_setup"], "description": "needs_setup 时连接仍可用" },
+        "issues": { "type": "array", "items": { "type": "string" } },
+        "build": {
+          "type": "object",
+          "required": ["version", "commit"],
+          "properties": {
+            "version": { "type": "string" },
+            "commit": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "host": {
+          "type": "object",
+          "required": ["os", "arch"],
+          "properties": {
+            "os": { "type": "string" },
+            "arch": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "permissions": {
+          "type": "object",
+          "required": ["mode"],
+          "properties": {
+            "mode": { "$ref": "#/$defs/PermissionMode" },
+            "sandboxed": { "type": "boolean", "description": "当前执行是否被 OS 沙箱覆盖（ADR-0007）" }
+          },
+          "additionalProperties": false
+        },
+        "engines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "status"],
+            "properties": {
+              "id": { "$ref": "#/$defs/Id" },
+              "status": { "type": "string", "enum": ["unsupported", "error", "empty", "ready"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "feature_flags": { "type": "object" },
+        "max_concurrency": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "SteerParams": {
+      "type": "object",
+      "required": ["thread_id", "client_id", "content"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "client_id": { "type": "string", "description": "幂等键：INSERT OR IGNORE + history 判重" },
+        "content": { "type": "string" },
+        "expected_turn_id": {
+          "type": ["string", "null"],
+          "description": "空=旧客户端兼容放行；非空不匹配当前 turn=拒绝"
+        }
+      },
+      "additionalProperties": false
+    },
+    "TurnUsageNotification": {
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "turn/usage" },
+        "params": {
+          "type": "object",
+          "required": ["run_id", "input_tokens", "output_tokens"],
+          "properties": {
+            "run_id": { "$ref": "#/$defs/Id" },
+            "input_tokens": { "type": "integer", "minimum": 0 },
+            "output_tokens": { "type": "integer", "minimum": 0 },
+            "cost_usd": { "type": ["number", "null"] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
