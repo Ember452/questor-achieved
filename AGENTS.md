@@ -138,6 +138,10 @@ uv run pytest tests/unit -q
 `just check` 是上述四条命令的单一入口（理由与退路见 `docs/architecture/structure.md` §2.2）；
 **CI 必须调用同一批命令**，本地与 CI 不一致视为缺陷。
 
+**门禁范围 = 全部 Python 产出**（`src tests evals scripts`）。只写 `src tests` 会把
+`evals/`、`scripts/` 排除在外——违规静默存在而 CI 仍绿，等于门禁给出假的安全感。
+新增 Python 顶层目录时必须同步扩 `justfile` 与 CI（ADR-0008）。
+
 契约/数据模型改动加跑 `tests/integration`；依赖方向与不可变性改动加跑
 `tests/architecture`。`tests/adversarial/` **只增不减**——让对抗用例变绿的
 "改用例本身"行为视为作弊。
@@ -189,6 +193,11 @@ PowerShell 会给它们写入 UTF-8 BOM，`tomllib` 与 hatchling 会在构建�
 新实现在与参照实现**相同的 N 个真实任务**上：失败率不高于参照，且该模块
 坑目录覆盖率 100%。评测脚手架按参照项目的规格自建或复用其设计，
 对比对象永远是"参照实现的实际通过率"，不是主观印象。
+
+**前端跟随纪律（内核能力不得只活在 CLI 里）**：每个里程碑收口时，本期新增的
+用户可感知能力必须**至少能从 UI 路径走通一次**；走不通就在 `docs/plans/development-plan.md`
+该期"实际结果"里写明原因与补救的里程碑编号。判据一句话：*这个偏离会让用户看到假的
+完成状态，或让同一事实出现两套真相吗？* 会→不许偏离（与 §一 铁律 3 同源）。
 
 ---
 
