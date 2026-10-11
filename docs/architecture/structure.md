@@ -306,13 +306,12 @@ scripts/
 
 ## 11. 当前实际状态（不美化）
 
-仓库现在只有：`pyproject.toml` `uv.lock` `LICENSE` `README.md` `AGENTS.md`
-`.gitignore` `.gitattributes` `.python-version` `src/questor/__init__.py`
-`tests/{unit,adversarial,architecture,integration}` `docs/{README,adr×3,architecture×2}`。
-
-即：**治理与文档基线已就位，工程外围（CI、justfile、SECURITY、`ui/`、`desktop/`、examples、
-plugins、evals、scripts）全部尚未建立**——它们不是被省略，而是按 §2 的 `[Mx]` 标记
-在对应里程碑物化。
+仓库现有：**治理与文档基线**（pyproject/uv.lock/LICENSE/README/AGENTS/SECURITY、
+docs/{README,adr×2,architecture×3,specs×13,plans×1}）+ **M1 物化**（justfile、
+.editorconfig、.pre-commit-config.yaml、.github/{3 workflows,模板,dependabot}、
+src/questor/{schemas,testenv}、tests/{contract?—暂缺,fixtures—暂缺,architecture,
+integration,adversarial,unit}、scripts/ci、ui/ 骨架、evals/ 骨架）。
+`tests/contract` 与 `tests/fixtures` 随 M2 首批引擎契约测试物化。
 
 **物化节奏与例外**：目录随首个任务创建，结构文档描述目标、文件系统只长真实内容；
 **唯一例外是测试套件目录可先带 README 占位**（写明用途与"收集 0 条属预期、不作门禁依据"），
