@@ -130,7 +130,7 @@ M2.1 出口判据逐项：落盘可回放（`tests/integration/test_gesta_roundt
 （无第二个真实使用者）；② `third_party/` 通知生成推迟至 M2.3（同因）；
 ③ 本期无用户可感知能力，前端跟随（mock 事件流流式渲染）按计划留待 M2 收口统一验证。
 
-**做什么**（= structure §11 M2 行）：`engine`（内置循环）、`tools`（七工具）、`limen`、`context`、`gesta`、`providers`、`prompts`、`config`、`state`、`secrets`、`capability`、`workspaces`、`version`、`cli`、`serve` 雏形；`VERSION`、`third_party/`；`evals/runner`。
+**做什么**（= structure §11 M2 行）：`engine`（内置循环）、`tools`（八工具——用户裁决 2026-10-11，read/edit/write/search/list/run/process/todo 全做，回写 overview §12）、`limen`、`context`、`gesta`、`providers`、`prompts`、`config`、`state`、`secrets`、`capability`、`workspaces`、`version`、`cli`、`serve` 雏形；`VERSION`、`third_party/`；`evals/runner`。
 
 **怎么做**：
 1. 事件流 schema 先于循环代码（沿用 FlowCoder `agent/events.py` 的同一设计决定：一套事件多端共同消费；重写实现并加 provenance 注记）；
@@ -140,11 +140,12 @@ M2.1 出口判据逐项：落盘可回放（`tests/integration/test_gesta_roundt
 5. `limen/` 按 wuu 语义：单门、可达性推导（符号链接 EvalSymlinks、Windows 大小写折叠）、`error_kind + reason + model_next_action` 模型可读错误方言、敏感路径守卫三档全开（源码扩展名豁免、symlink 双向解析）、审批只收紧（硬拒三件：凭据调用/参数提权/敏感写）、设置分层 strip 用户专属字段；
 6. `state/`（路径单点解析+原子写+跨进程文件锁）与 `gesta/`（append-only JSONL + 可重建索引）是其他模块的地基，先行；
 7. 停进程树前校验 pid+pgid+start_time 三元组；stdout/stderr 保头尾；ANSI 剥离；
-8. **（M2.1 审查前置项，开工 M2.2 前正面决策）** gesta 热路径：当前每次追加全量重读
-   JSONL + fold + 重写索引，且持单把 sessions 全局锁（M2.1 体量下正确优先）——engine 的
-   高频事件流接入前必须定锁粒度（per-thread 或分片）、seq 游标内存化与索引批量刷新，
-   并给 `state.StoreLock.acquire` 增加可取消/deadline 语义，或明确"锁争用超时上浮为
-   用户可见错误"；这一决策属于接口面，不撞墙后回炉。
+8. **（M2.1 审查前置项——已裁决 2026-10-11，M2.2 开工时落地）** gesta 热路径方案定为：
+   **增量摘要 + ThreadWriter 游标句柄 + 保留全局锁 + per-call 锁超时**——写路径去掉
+   第二次全量 load（摘要增量构造）；`gesta/writer.py` 的句柄缓存 `(last_seq, 文件字节数)`，
+   追加前 stat 校验，O(1) 追加、被其他进程追加过则从缓存偏移重读尾部同步；放弃 per-thread
+   锁（跨进程索引一致性与 wuu 蓝本优先，理由见 `docs/architecture/modules/gesta.md`）。
+   决策依据与完整方法记录在该设计篇。
 
 **文档产出**：M2 各模块内部设计篇（随各自开工任务写，不提前）；`evals/` 任务集约定与首跑记录（对照 wuu 公开结果纪律：失败也要发布）。
 

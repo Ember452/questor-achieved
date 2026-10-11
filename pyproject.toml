@@ -28,6 +28,7 @@ classifiers = [
 dependencies = [
     "keyring>=25.0",
     "pydantic>=2.0",
+    "pywin32>=306 ; sys_platform == 'win32'",
 ]
 
 # Nothing is runnable yet: enabling the entry point belongs to the first CLI task,
@@ -58,12 +59,12 @@ build-backend = "hatchling.build"
 path = "VERSION"
 pattern = '(?P<version>\d+\.\d+\.\d+)'
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/questor"]
-
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple/"
 default = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/questor"]
 
 # Lower bound enforcement: the local interpreter is 3.13 (see .python-version),
 # but the published floor is 3.12 so the reference projects' dependency wheels

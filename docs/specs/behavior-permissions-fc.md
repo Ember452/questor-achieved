@@ -21,7 +21,7 @@ Questor 模块归属：`limen`（三档语义以 wuu 为权威，本文提供**�
 
 - **边界行为**：规则引擎未命中返回 None 下落；模式矩阵产出 ask 也返回 None 触发 L5。
 - **坑**：B-10（L0 的 Plan 特例渗透进 checker——Questor 拒绝）、B-32（危险清单结构化可扩展）、
-  B-34（模式矩阵表驱动）、B-34（短路先决不合并）。
+  B-33（模式矩阵表驱动）、B-34（短路先决不合并）。
 
 ### Questor 采纳决定（六层 → limen 单门的映射）
 - L1 保留：安全命令放行 + 危险黑名单硬拒（对应 wuu HardDeny 语义）；
@@ -57,12 +57,12 @@ Questor 模块归属：`limen`（三档语义以 wuu 为权威，本文提供**�
 
 ---
 
-## 本区域坑条目（同步进 pitfalls.md）
+## 本区域坑条目（同步进 pitfalls.md；编号已于 2026-10-11 修正——三条曾误标为同一编号）
 
 | 编号 | 归属 | 一句话 | 证据 |
 | --- | --- | --- | --- |
 | B-30 | limen | 不存在路径拼接尾部可能重新引入 ".."：resolve 祖先后必须对完整结果再 resolve(strict=False) 重查 | `permissions/sandbox.py#L45-48` |
 | B-31 | limen | 触路径工具缺路径参数视为 deny 而非跳过 | `permissions/checker.py#L117-118` |
 | B-32 | limen | 危险命令黑名单用结构化正则清单（可追加），不做散落 if/else | `permissions/dangerous.py#L10-18,L184-187` |
-| B-32 | limen | 档位语义用显式表驱动（模式 × 工具类矩阵），不做分支散布 | `permissions/modes.py#L14-29` |
-| B-32 | limen | 判定层短路先决、命中即返回，层间不做合并回溯 | `permissions/checker.py#L44-73` |
+| B-33 | limen | 档位语义用显式表驱动（模式 × 工具类矩阵），不做分支散布 | `permissions/modes.py#L14-29` |
+| B-34 | limen | 判定层短路先决、命中即返回，层间不做合并回溯 | `permissions/checker.py#L44-73` |

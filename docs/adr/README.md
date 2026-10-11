@@ -43,3 +43,4 @@
 | [0012](0012-module-dependency-rulings.md) | gesta 与 capability 的依赖方向裁决（以矩阵为准，回写 overview §6） | accepted |
 | [0013](0013-m2-foundation-dependencies.md) | M2.1 地基依赖引入（pydantic v2 / keyring / import-linter） | accepted |
 | [0014](0014-run-status-queued-cancelled.md) | 运行状态机补充 queued → cancelled 迁移（data-model v1.1） | accepted |
+| [0015](0015-pywin32-job-object.md) | Windows 进程树管理引入 pywin32（平台标记依赖） | accepted |
