@@ -12,6 +12,11 @@
 seq 语义：记录信封的 ``seq`` 会话内全局递增（Event.seq 同源，断线恢复锚点）；
 ``Turn.seq`` 是线程内轮次序号，同样由本模块单点分配（B-45：gate 类消息先持久化定序）。
 
+热路径（M2.2 前置决策，development-plan M2 第 8 条）：写路径只做**一次**全量 fold，
+索引摘要由 fold 状态增量构造；engine 的高频追加走 :class:`questor.gesta.writer.ThreadWriter`
+（首开一次 fold，此后 stat 校验 + O(1) 追加）。追加遇到崩溃残尾时以 ``\\n`` 前缀起新行，
+残尾留待读侧跳过——追加永不粘接残尾、永不截断。
+
 # Reimplements wuu@wuu-main internal/agentthread/store.go — pitfalls: B-45 B-46 B-74
 """
 
@@ -133,86 +138,112 @@ _RECORD_KINDS = frozenset(
 # ---- 记录流读取与 fold（无锁；B-74 残尾容忍） ----
 
 
+def _parse_line(text: str) -> _Record | None:
+    """单行解析：空行/坏行/未知 kind 返回 None（残尾容忍），信封完好才返回。"""
+    text = text.strip()
+    if not text:
+        return None
+    try:
+        record = _Record.model_validate(json.loads(text))
+    except (ValueError, ValidationError):
+        return None
+    if record.kind not in _RECORD_KINDS:
+        return None
+    return record
+
+
 def _read_records(path: pathlib.Path) -> list[_Record]:
     if not path.is_file():
         raise ThreadNotFound(str(path))
     records: list[_Record] = []
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            text = line.strip()
-            if not text:
-                continue
-            try:
-                raw = json.loads(text)
-                record = _Record.model_validate(raw)
-            except (ValueError, ValidationError):
-                continue  # 崩溃残尾：整行落地失败或信封损坏的行跳过，不修复不阻断
-            if record.kind not in _RECORD_KINDS:
-                continue
+    for line in path.read_text(encoding="utf-8").splitlines():
+        record = _parse_line(line)
+        if record is not None:
             records.append(record)
     return records
 
 
-def _fold(thread_id: str, records: list[_Record]) -> ThreadView:
-    thread: Thread | None = None
-    turns: list[Turn] = []
-    runs: list[Run] = []
-    items: list[Item] = []
-    events: list[Event] = []
-    last_seq = 0
-    for record in records:
-        last_seq = max(last_seq, record.seq)
+class _FoldState:
+    """记录流的可变折叠状态——全量 fold 与 ThreadWriter 增量同步共用同一套语义。"""
+
+    def __init__(self, thread_id: str) -> None:
+        self.thread_id = thread_id
+        self.thread: Thread | None = None
+        self.turns: list[Turn] = []
+        self.runs: list[Run] = []
+        self.items: list[Item] = []
+        self.events: list[Event] = []
+        self.last_seq = 0
+        self.last_recorded_at: str | None = None
+
+    def apply(self, record: _Record) -> None:
+        """把一条记录折进状态；篡改/损坏的历史在此显式爆炸为 ThreadStoreError
+        （可被 rebuild_index 捕获跳过），而不是裸异常逃出 fold 边界。"""
+        self.last_seq = max(self.last_seq, record.seq)
+        self.last_recorded_at = record.recorded_at
         payload = record.payload
         if record.kind == "thread.created":
-            if thread is None:
-                thread = Thread.model_validate(payload)
+            if self.thread is None:
+                self.thread = Thread.model_validate(payload)
         elif record.kind == "thread.renamed":
-            if thread is None:
-                raise ThreadStoreError(f"线程 {thread_id} 首记录不是 thread.created")
-            thread = thread.model_copy(update={"title": payload.get("title")})
+            thread = self._require_thread()
+            self.thread = thread.model_copy(update={"title": payload.get("title")})
         elif record.kind == "thread.flagged":
-            if thread is None:
-                raise ThreadStoreError(f"线程 {thread_id} 首记录不是 thread.created")
+            thread = self._require_thread()
             update = {k: payload[k] for k in ("pinned", "archived") if payload.get(k) is not None}
-            thread = thread.model_copy(update=update)
+            self.thread = thread.model_copy(update=update)
         elif record.kind == "turn.created":
-            turns.append(Turn.model_validate(payload))
+            self.turns.append(Turn.model_validate(payload))
         elif record.kind == "run.created":
-            runs.append(Run.model_validate(payload))
+            self.runs.append(Run.model_validate(payload))
         elif record.kind == "run.status":
             run_id = payload.get("run_id")
             to = payload.get("to")
-            run = next((r for r in runs if r.id == run_id), None)
-            # 篡改/损坏的历史在此显式爆炸为 ThreadStoreError（可被 rebuild_index 捕获
-            # 跳过），而不是裸 StopIteration/KeyError/ValueError 逃出 fold 边界
+            run = next((r for r in self.runs if r.id == run_id), None)
             if run is None:
                 raise ThreadStoreError(
-                    f"线程 {thread_id} 的 run.status 记录引用了不存在的 run {run_id!r}"
+                    f"线程 {self.thread_id} 的 run.status 记录引用了不存在的 run {run_id!r}"
                 )
             if not isinstance(to, str):
-                raise ThreadStoreError(f"线程 {thread_id} 的 run.status 缺少 to 字段")
+                raise ThreadStoreError(f"线程 {self.thread_id} 的 run.status 缺少 to 字段")
             try:
                 target = RunStatus(to)
             except ValueError as exc:
-                raise ThreadStoreError(f"线程 {thread_id} 的 run.status 含未知状态 {to!r}") from exc
+                raise ThreadStoreError(
+                    f"线程 {self.thread_id} 的 run.status 含未知状态 {to!r}"
+                ) from exc
             moved = transition(run.status, target)  # 回放同样过白名单：篡改历史在此爆炸
-            runs[runs.index(run)] = run.model_copy(update={"status": moved})
+            self.runs[self.runs.index(run)] = run.model_copy(update={"status": moved})
         elif record.kind == "item.appended":
-            items.append(Item.model_validate(payload))
+            self.items.append(Item.model_validate(payload))
         elif record.kind == "event.appended":
-            events.append(Event.model_validate(payload))
-    if thread is None:
-        raise ThreadStoreError(f"线程 {thread_id} 的记录流没有 thread.created 首记录")
-    updated_at = records[-1].recorded_at if records else thread.created_at
-    thread = thread.model_copy(update={"updated_at": updated_at})
-    return ThreadView(
-        thread=thread,
-        turns=tuple(turns),
-        runs=tuple(runs),
-        items=tuple(items),
-        events=tuple(events),
-        last_seq=last_seq,
-    )
+            self.events.append(Event.model_validate(payload))
+
+    def _require_thread(self) -> Thread:
+        if self.thread is None:
+            raise ThreadStoreError(f"线程 {self.thread_id} 首记录不是 thread.created")
+        return self.thread
+
+    def build_view(self) -> ThreadView:
+        if self.thread is None:
+            raise ThreadStoreError(f"线程 {self.thread_id} 的记录流没有 thread.created 首记录")
+        updated_at = self.last_recorded_at or self.thread.created_at
+        thread = self.thread.model_copy(update={"updated_at": updated_at})
+        return ThreadView(
+            thread=thread,
+            turns=tuple(self.turns),
+            runs=tuple(self.runs),
+            items=tuple(self.items),
+            events=tuple(self.events),
+            last_seq=self.last_seq,
+        )
+
+
+def _fold(thread_id: str, records: list[_Record]) -> ThreadView:
+    state = _FoldState(thread_id)
+    for record in records:
+        state.apply(record)
+    return state.build_view()
 
 
 # ---- 索引（摘要缓存；可丢弃可重建） ----
@@ -222,8 +253,8 @@ def _index_path() -> pathlib.Path:
     return sessions_dir() / "threads.json"
 
 
-def _summary_of(view: ThreadView) -> ThreadSummary:
-    thread = view.thread
+def _summary_from_state(state: _FoldState) -> ThreadSummary:
+    thread = state.build_view().thread
     return ThreadSummary(
         id=thread.id,
         workspace_id=thread.workspace_id,
@@ -234,9 +265,9 @@ def _summary_of(view: ThreadView) -> ThreadSummary:
         archived=thread.archived,
         created_at=thread.created_at,
         updated_at=thread.updated_at,
-        last_seq=view.last_seq,
-        turn_count=len(view.turns),
-        run_count=len(view.runs),
+        last_seq=state.last_seq,
+        turn_count=len(state.turns),
+        run_count=len(state.runs),
     )
 
 
@@ -270,10 +301,10 @@ def rebuild_index() -> list[ThreadSummary]:
     return entries
 
 
-def _upsert_index_entry_locked(view: ThreadView) -> None:
+def _upsert_index_entry_locked(summary: ThreadSummary) -> None:
     index = _load_index() or _IndexFile(version=_INDEX_VERSION, threads=[])
-    entries = [s for s in index.threads if s.id != view.thread.id]
-    entries.append(_summary_of(view))
+    entries = [s for s in index.threads if s.id != summary.id]
+    entries.append(summary)
     entries.sort(key=lambda s: s.created_at)
     _rewrite_index_locked(entries)
 
@@ -284,20 +315,60 @@ def _remove_index_entry_locked(thread_id: str) -> None:
     _rewrite_index_locked(entries)
 
 
-# ---- 追加原语（持锁） ----
+def _summary_of(view: ThreadView) -> ThreadSummary:
+    thread = view.thread
+    return ThreadSummary(
+        id=thread.id,
+        workspace_id=thread.workspace_id,
+        title=thread.title,
+        engine_id=thread.engine_id,
+        permission_mode=thread.permission_mode,
+        pinned=thread.pinned,
+        archived=thread.archived,
+        created_at=thread.created_at,
+        updated_at=thread.updated_at,
+        last_seq=view.last_seq,
+        turn_count=len(view.turns),
+        run_count=len(view.runs),
+    )
 
 
-def _append_locked(thread_id: str, kind: str, payload: dict[str, Any], last_seq: int) -> int:
-    record = _Record(seq=last_seq + 1, kind=kind, payload=payload, recorded_at=utc_timestamp_now())
-    path = thread_path(thread_id)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(record.to_line() + "\n")
+# ---- 追加原语（持锁调用） ----
+
+
+def _ends_with_newline(path: pathlib.Path) -> bool:
+    size = path.stat().st_size
+    if size == 0:
+        return True
+    with path.open("rb") as handle:
+        handle.seek(-1, 2)
+        return handle.read(1) == b"\n"
+
+
+def _append_record_locked(thread_id: str, record: _Record, *, prefix_newline: bool = False) -> int:
+    """整行追加一条记录，返回写入的字节数；追加永不粘接残尾（前缀起新行）、永不截断。"""
+    data = record.to_line().encode("utf-8") + b"\n"
+    if prefix_newline:
+        data = b"\n" + data
+    with thread_path(thread_id).open("ab") as handle:
+        handle.write(data)
         handle.flush()
-    return record.seq
+    return len(data)
+
+
+def _make_record(kind: str, payload: dict[str, Any], last_seq: int) -> _Record:
+    return _Record(seq=last_seq + 1, kind=kind, payload=payload, recorded_at=utc_timestamp_now())
+
+
+def _load_state_locked(thread_id: str) -> _FoldState:
+    state = _FoldState(thread_id)
+    for record in _read_records(thread_path(thread_id)):
+        state.apply(record)
+    return state
 
 
 def _load_locked(thread_id: str) -> ThreadView:
-    return _fold(thread_id, _read_records(thread_path(thread_id)))
+    return _load_state_locked(thread_id).build_view()
 
 
 # ---- 公共 API ----
@@ -309,16 +380,17 @@ def create_thread(thread: Thread) -> ThreadView:
     with store_lock(sessions_dir()):
         if path.exists():
             raise ThreadStoreError(f"线程 {thread.id} 已存在")
-        payload = thread.model_dump(mode="json")
-        _append_locked(thread.id, "thread.created", payload, last_seq=0)
-        view = _load_locked(thread.id)
-        _upsert_index_entry_locked(view)
-        return view
+        state = _FoldState(thread.id)
+        record = _make_record("thread.created", thread.model_dump(mode="json"), last_seq=0)
+        _append_record_locked(thread.id, record)
+        state.apply(record)
+        _upsert_index_entry_locked(_summary_from_state(state))
+        return state.build_view()
 
 
 def load_thread(thread_id: str) -> ThreadView:
     """读取并 fold 线程当前状态；文件不存在抛 :class:`ThreadNotFound`。"""
-    return _fold(thread_id, _read_records(thread_path(thread_id)))
+    return _load_locked(thread_id)
 
 
 def list_threads() -> list[ThreadSummary]:
@@ -343,55 +415,70 @@ def add_turn(
     指定——gate/插话类消息必须"先持久化定序"，用户的跟进行才能排在后面。
     """
     with store_lock(sessions_dir()):
-        view = _load_locked(thread_id)
+        state = _load_state_locked(thread_id)
         placed = Turn(
             id=turn_id,
             thread_id=thread_id,
-            seq=len(view.turns) + 1,
+            seq=len(state.turns) + 1,
             origin=origin,
             fork_from=fork_from,
             created_at=created_at,
         )
-        _append_locked(thread_id, "turn.created", placed.model_dump(mode="json"), view.last_seq)
-        _upsert_index_entry_locked(_load_locked(thread_id))
+        record = _make_record("turn.created", placed.model_dump(mode="json"), state.last_seq)
+        _append_record_locked(
+            thread_id, record, prefix_newline=not _ends_with_newline(thread_path(thread_id))
+        )
+        state.apply(record)
+        _upsert_index_entry_locked(_summary_from_state(state))
         return placed
 
 
 def add_run(thread_id: str, run: Run) -> Run:
     """追加一次引擎执行记录（初始状态入流，之后只经 transition_run 推进）。"""
     with store_lock(sessions_dir()):
-        view = _load_locked(thread_id)
+        state = _load_state_locked(thread_id)
         if run.status != RunStatus.QUEUED:
             raise ThreadStoreError("run 必须以 queued 入流，初始状态不得旁路指定")
-        _append_locked(thread_id, "run.created", run.model_dump(mode="json"), view.last_seq)
-        _upsert_index_entry_locked(_load_locked(thread_id))
+        record = _make_record("run.created", run.model_dump(mode="json"), state.last_seq)
+        _append_record_locked(
+            thread_id, record, prefix_newline=not _ends_with_newline(thread_path(thread_id))
+        )
+        state.apply(record)
+        _upsert_index_entry_locked(_summary_from_state(state))
         return run
 
 
 def transition_run(thread_id: str, run_id: str, target: RunStatus) -> Run:
     """推进运行状态：唯一入口（transitions 白名单裁决），迁移记录追加进正文。"""
     with store_lock(sessions_dir()):
-        view = _load_locked(thread_id)
-        run = next((r for r in view.runs if r.id == run_id), None)
+        state = _load_state_locked(thread_id)
+        run = next((r for r in state.runs if r.id == run_id), None)
         if run is None:
             raise ThreadStoreError(f"线程 {thread_id} 没有 run {run_id}")
         moved = transition(run.status, target)  # 白名单外抛 InvalidTransition，不落盘
-        _append_locked(
-            thread_id,
+        record = _make_record(
             "run.status",
             {"run_id": run_id, "from": run.status.value, "to": moved.value},
-            view.last_seq,
+            state.last_seq,
         )
-        _upsert_index_entry_locked(_load_locked(thread_id))
+        _append_record_locked(
+            thread_id, record, prefix_newline=not _ends_with_newline(thread_path(thread_id))
+        )
+        state.apply(record)
+        _upsert_index_entry_locked(_summary_from_state(state))
         return run.model_copy(update={"status": moved})
 
 
 def add_item(thread_id: str, item: Item) -> Item:
     """追加一个 Item（消息/工具调用/工具结果/引用/批注/交付物）。"""
     with store_lock(sessions_dir()):
-        view = _load_locked(thread_id)
-        _append_locked(thread_id, "item.appended", item.model_dump(mode="json"), view.last_seq)
-        _upsert_index_entry_locked(_load_locked(thread_id))
+        state = _load_state_locked(thread_id)
+        record = _make_record("item.appended", item.model_dump(mode="json"), state.last_seq)
+        _append_record_locked(
+            thread_id, record, prefix_newline=not _ends_with_newline(thread_path(thread_id))
+        )
+        state.apply(record)
+        _upsert_index_entry_locked(_summary_from_state(state))
         return item
 
 
@@ -406,26 +493,35 @@ def append_event(
 ) -> Event:
     """追加一条对外推送事件；``Event.seq`` 由本模块分配（会话内全局递增锚点）。"""
     with store_lock(sessions_dir()):
-        view = _load_locked(thread_id)
+        state = _load_state_locked(thread_id)
         placed = Event(
-            seq=view.last_seq + 1,
+            seq=state.last_seq + 1,
             type=event_type,
             run_id=run_id,
             turn_id=turn_id,
             payload=payload,
             created_at=created_at,
         )
-        _append_locked(thread_id, "event.appended", placed.model_dump(mode="json"), view.last_seq)
-        _upsert_index_entry_locked(_load_locked(thread_id))
+        record = _make_record("event.appended", placed.model_dump(mode="json"), state.last_seq)
+        _append_record_locked(
+            thread_id, record, prefix_newline=not _ends_with_newline(thread_path(thread_id))
+        )
+        state.apply(record)
+        _upsert_index_entry_locked(_summary_from_state(state))
         return placed
 
 
 def rename_thread(thread_id: str, title: str | None) -> Thread:
     """重命名线程（data-model §2 Thread.title 可重命名）；None 表示清除标题。"""
     with store_lock(sessions_dir()):
-        view = _load_locked(thread_id)
-        _append_locked(thread_id, "thread.renamed", {"title": title}, view.last_seq)
-        return _load_locked(thread_id).thread
+        state = _load_state_locked(thread_id)
+        record = _make_record("thread.renamed", {"title": title}, state.last_seq)
+        _append_record_locked(
+            thread_id, record, prefix_newline=not _ends_with_newline(thread_path(thread_id))
+        )
+        state.apply(record)
+        _upsert_index_entry_locked(_summary_from_state(state))
+        return state.build_view().thread
 
 
 def set_thread_flags(
@@ -433,12 +529,18 @@ def set_thread_flags(
 ) -> Thread:
     """置顶/归档线程；归档有未终态 run 时拒绝（wuu 语义：归档运行中拒绝）。"""
     with store_lock(sessions_dir()):
-        view = _load_locked(thread_id)
-        if archived and any(not is_terminal(r.status) for r in view.runs):
+        state = _load_state_locked(thread_id)
+        if archived and any(not is_terminal(r.status) for r in state.runs):
             raise ThreadStoreError(f"线程 {thread_id} 有运行中的 run，拒绝归档")
-        payload: dict[str, Any] = {"pinned": pinned, "archived": archived}
-        _append_locked(thread_id, "thread.flagged", payload, view.last_seq)
-        return _load_locked(thread_id).thread
+        record = _make_record(
+            "thread.flagged", {"pinned": pinned, "archived": archived}, state.last_seq
+        )
+        _append_record_locked(
+            thread_id, record, prefix_newline=not _ends_with_newline(thread_path(thread_id))
+        )
+        state.apply(record)
+        _upsert_index_entry_locked(_summary_from_state(state))
+        return state.build_view().thread
 
 
 def delete_thread(thread_id: str) -> None:

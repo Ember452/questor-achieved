@@ -29,12 +29,14 @@ from questor.gesta.store import (
     transition_run,
 )
 from questor.gesta.transitions import InvalidTransition, transition
+from questor.gesta.writer import ThreadWriter
 
 __all__ = [
     "InvalidTransition",
     "ThreadNotFound",
     "ThreadStoreError",
     "ThreadView",
+    "ThreadWriter",
     "ToolResultSpill",
     "add_item",
     "add_run",

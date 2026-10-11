@@ -64,3 +64,20 @@ def test_lock_file_survives_release(tmp_path: pathlib.Path) -> None:
         assert lock_path.stat().st_ino == inode_one
     finally:
         second.release()
+
+
+def test_per_call_timeout_override(tmp_path: pathlib.Path) -> None:
+    """acquire 的 per-call 超时覆盖实例默认：热路径调用方传更短上限立即放弃。"""
+    holder = store_lock(tmp_path, timeout=30.0)
+    holder.acquire()
+    try:
+        import time
+
+        start = time.monotonic()
+        with pytest.raises(LockTimeoutError) as exc_info:
+            store_lock(tmp_path, timeout=30.0).acquire(timeout=0.1)
+        elapsed = time.monotonic() - start
+        assert elapsed < 5.0, "per-call 超时应立即生效而非等实例默认 30s"
+        assert exc_info.value.timeout == 0.1
+    finally:
+        holder.release()

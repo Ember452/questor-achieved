@@ -89,17 +89,27 @@ class StoreLock(AbstractContextManager["StoreLock"]):
         """锁文件路径（永不删除，仅用于诊断）。"""
         return self._path
 
-    def acquire(self) -> None:
-        """阻塞至持锁；超时抛 :class:`LockTimeoutError`，不修改任何既有文件。"""
+    def acquire(self, timeout: float | None = None) -> None:
+        """阻塞至持锁；超时抛 :class:`LockTimeoutError`，不修改任何既有文件。
+
+        ``timeout`` 缺省用构造时的实例超时，可按次覆盖（engine 等高频调用方
+        对热路径传更短的上限）。
+
+        取消语义（诚实声明）：本锁是同步阻塞原语——engine 在事件循环内经
+        ``asyncio.to_thread`` 调用时，协程取消**不会中断**已在重试循环里等待的
+        线程；等待的上界就是这里的超时。需要更快放弃的调用方应传更短的
+        per-call 超时，并把 :class:`LockTimeoutError` 上浮为用户可见错误。
+        """
+        effective = self._timeout if timeout is None else timeout
         if self._fd is not None:
             raise RuntimeError("StoreLock 重复 acquire")
         self._dir.mkdir(parents=True, exist_ok=True)
         fd = os.open(self._path, os.O_RDWR | os.O_CREAT, 0o600)
-        deadline = time.monotonic() + self._timeout
+        deadline = time.monotonic() + effective
         while not _try_lock(fd):
             if time.monotonic() >= deadline:
                 os.close(fd)
-                raise LockTimeoutError(self._path, self._timeout)
+                raise LockTimeoutError(self._path, effective)
             time.sleep(_RETRY_INTERVAL_S)
         self._fd = fd
 
