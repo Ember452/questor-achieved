@@ -112,6 +112,10 @@ def test_module_imports_stay_within_allow_list() -> None:
     for module_dir in sorted(SRC.iterdir()):
         if not module_dir.is_dir():
             continue
+        # 只把"真实含 .py 的目录"当模块：__pycache__ 之类字节码噪声目录
+        # （import questor 即会产生）不是顶层包，不参与登记检查
+        if not any(module_dir.rglob("*.py")):
+            continue
         module = module_dir.name
         if module not in ALLOWED_IMPORTS:
             violations.append(f"{module}: 新顶层包未登记——先在 structure.md §5 与 overview §6 登记")

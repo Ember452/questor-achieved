@@ -76,8 +76,8 @@
 | B-68 | schemas | 生成物必须跨平台字节可复现：banner 里的路径一律用正斜杠，`path.relative()` 直接入文会让 Linux runner 重生成结果与 Windows 提交件不一致，gen:check 必然报漂（已发生：CI 红、本地绿） | CI fix 记录 | `ui/scripts/gen-types.mjs#L31-42`、`ui/src/rpc/generated/app_server-v0-1.d.ts#L1` | ci.yml `test` job 的 windows leg 跑 `npm --prefix ui run gen:check` | covered |
 | B-69 | ci | 写进 CI 的命令必须先原样本地跑过；禁止只存在于 CI 的 flag（否则本地永远验不到它）——已发生：给 pytest 加了不存在的 `--full-path`，双 OS 全红 | 本项目 CI 失败记录 | `justfile`、`.github/workflows/ci.yml` | `tests/architecture/test_ci_parity.py::test_ci_invents_no_gate_commands_of_its_own` | covered |
 | B-70 | ci | 本地 `language: system` 钩子依赖的必须先装：`pre-commit run --all-files` 排在 `npm ci --prefix ui` 之前时，gen-check 钩子必炸 `ERR_MODULE_NOT_FOUND` | 本项目 CI 失败记录 | `.pre-commit-config.yaml`、`.github/workflows/ci.yml` | 待落（属 workflow 步骤顺序，无单元可断言；靠本地原样跑兼顶） | open |
-| B-71 | state | 锁文件释放后禁止删除——删除-重建会让并发进程锁到不同 inode，互斥失效 | 实现注释 | wuu `internal/storelock/store_lock.go#L33-35` | 待落 | open |
-| B-72 | state | 原子写的临时文件必须与目标同目录——跨目录 rename 不原子，崩溃可留半写目标文件 | 实现细节 | wuu `internal/securefs/securefs.go#L44-56` | 待落 | open |
-| B-73 | state | 路径解析的 env 覆盖必须每次调用时求值——import/init 时求值会让测试与多实例拿到陈旧 home | 实现细节 | wuu `internal/statepath/statepath.go#L34-37` | 待落 | open |
+| B-71 | state | 锁文件释放后禁止删除——删除-重建会让并发进程锁到不同 inode，互斥失效 | 实现注释 | wuu `internal/storelock/store_lock.go#L33-35` | `tests/unit/test_state_locks.py::test_lock_file_survives_release`、`tests/adversarial/test_state_lock_contention.py` | covered |
+| B-72 | state | 原子写的临时文件必须与目标同目录——跨目录 rename 不原子，崩溃可留半写目标文件 | 实现细节 | wuu `internal/securefs/securefs.go#L44-56` | `tests/adversarial/test_state_atomic_failure.py::test_temp_file_lives_in_target_directory`、`::test_failure_leaves_no_partial_target_and_no_temp` | covered |
+| B-73 | state | 路径解析的 env 覆盖必须每次调用时求值——import/init 时求值会让测试与多实例拿到陈旧 home | 实现细节 | wuu `internal/statepath/statepath.go#L34-37` | `tests/unit/test_state_paths.py::test_home_env_read_at_call_time` | covered |
 | B-74 | gesta | 会话 JSONL 读取必须容忍残尾（空行与坏行跳过）——崩溃半行不得阻断回放与后续追加 | 实现注释 | wuu `internal/agentthread/store.go#L375-406` | 待落 | open |
 | B-75 | config | 共享配置层的用户专属字段 strip 必须大小写不敏感全拼写删除——raw map 合并时大小写变体绑定同一字段 | 实现细节 | wuu `internal/config/settings_layer.go#L279-294` | 待落 | open |
