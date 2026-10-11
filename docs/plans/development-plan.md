@@ -48,6 +48,38 @@ runner 协议 + result.schema）；ui/ 骨架（token 四文件 + mock + 第一�
 浏览器可视化确认留待首次 `npm run dev`）。import-linter 声明式契约因"模块未物化"延至 M2
 （structure §5 预案），contracts.yml 同步收敛为 AST 测试。
 
+**M1 复审修正（2026-10-11，全部实测）**：上述勾销在四项上不完备，已当场修正，
+余下两项待裁——记录于此，不让"已完成"带着洞进 M2：
+
+- ✅ 已修：**门禁范围有洞**——`just lint` 与 CI 只跑 `ruff check src tests`，把 `evals/`、`scripts/`
+  两类生产 Python 排除在外；后果是仓库里已存在 4 个 ruff 错 + 1 个未格式化文件而 CI 全绿。
+  现已把四个目录同时纳入 just 与 CI。
+- ✅ 已修：**`just check` 不等于 AGENTS §四 的四件套**（原只含 lint/arch/gen-check），且 **CI 从不跑 pyright**、
+  **`check_specs.py` 从未被任何 CI 调用**（出口判据的机械核查只在本地自述）。现 check = lint+types+test+arch+specs+gen-check+前端 typecheck，CI 同步。
+- ✅ 已修：**`testenv` 的反向守卫只是文档声称**（fake_home 模块 docstring 说"tests/architecture 会检查"，
+  实际没有该测试）；已落 `test_production_code_never_imports_testenv`，并做负向验证（注入违规文件→FAILED，
+  删除→3 passed）。同时新增 `test_reverse_guards_have_teeth`，防止矩阵在"无可检对象"时空转。
+- ✅ 已修：**`check_specs.py` 只校字面格式**，不校引用是否存在；现逐条核实证据列的文件路径真实存在
+  （67/67 通过），参照仓根由环境变量提供，不在本地时只校形式不误报。
+- ✅ 已修：`.pre-commit-config.yaml` 已提交但 dev 依赖里没有 pre-commit → **`just setup` 必失败**；已加依赖。
+- ✅ 已修（复审提出的三项扩展性风险）：**矩阵双向允许构成环**（`serve`↔`cli`）——structure §5 收敛为
+  `cli`→`serve` 单向，并新增 `test_matrix_has_no_bidirectional_edges`（对矩阵自身查环，
+  不依赖实现是否存在）；**`check_specs` 与"编号不复用"的冲突**——不放松连续性，而是新增
+  `moot` 状态（不再适用的条目保留占号、不计入下限），`docs/specs/README.md` §二同步；
+  **`classify()` 的 `outcome_exit_code` 是死参数**——现参与兜底，无特征且退出码为 0 时
+  报参数错误而非猜分类，附 7 条单测（含负向）。
+- ✅ 已补：**前端文档空缺**——`ui/` 此前无任何说明，现新增 `ui/README.md`（目录职责、命令、
+  mock 与生成物不可手改边界、**会话真相永不镜像到前端状态**的约束），并接进 `docs/README.md`
+  与 structure §7。
+- ⚠ 待裁：**`just` 未安装**——门禁单一入口在开发机上无法执行。安装指引（三选一）：
+  `winget install Casey.Just`、`scoop install just`、`choco install just`；装后重开终端，
+  `just --version` 验证，再 `just setup && just check`。**系统工具安装由用户执行**，
+  不代劳也不擅自改换 nox（若宁愿换 nox，按 ADR-0008 失效条件记一条新 ADR）。
+- ⚠ 未做：M1b 清单项 **`tests/contract/` 与 `tests/fixtures/` 未创建**（已核实不存在）；
+  按 §10 物化原则它们随 M2 首批用例落地，此处只登记偏差。
+- ℹ 工具教训：核查行号/行数一律用 Python `splitlines()` 或 .NET `ReadAllLines`；PowerShell 5.1 的
+  `Get-Content` 实测把 1076 行的参照文件读成 1004 行，曾据此误判"引用错位"（详见 ADR-0008）。
+
 **做什么**（= overview §12 M1 + structure §11 M1 行；**裁定：`ui/` 骨架提前至 M1 起，structure §11 已同步**——schema 与生成链正是 mock 驱动 UI 的前提，真异构部分〔sidecar、窗口〕仍属 M3）：
 - **M1a（契约与资产）**：三资产扫描落盘；`data-model.md` + `protocol.md` 转正式；`src/questor/schemas/` + 生成链；**钉死对照评测的 N**；
 - **M1b（工程外围与前端骨架）**：`justfile` / `.editorconfig` / `.pre-commit-config.yaml` / `SECURITY.md` / `.github` 起步 3 workflow + 模板 + dependabot、`scripts/{ci,gen}`、`src/questor/testenv/`、`tests/{contract,fixtures}`、import-linter 矩阵、`evals/` 骨架、`ui/` 骨架（design token + 生成类型 + mock 协议服务）。
@@ -201,6 +233,25 @@ runner 协议 + result.schema）；ui/ 骨架（token 四文件 + mock + 第一�
 
 ---
 
+## Phase E — 界面面与生态加料（前置：M3 前后端真接完成）
+
+**状态**：`- [ ]` 未开始（**排在 M8 之后**，但它是**编号阶段**，不是"以后再说"）
+
+为何单列一个阶段而不是并入 M1–M8：实测规模差距的大头不在 agent 内核——wuu `desktop` 241k 行
+≈ 其 `internal` 340k 的 70%；EvoFlow `evopanel` 887k 是其 `backend` 377k 的 2.4 倍。**界面与生态
+决定项目的可见体量**，而内核再精致也只是那 30–50%。本阶段把项目从"内核工程"变成"有躯体的产品"。
+
+| 档 | 内容 | 出口判据 |
+| --- | --- | --- |
+| **E1 界面面全量** | Files 预览（语法/图片/PDF）、Review 逐文件 + 已阅态、Terminal（`@xterm/xterm`）、看板 DAG（`@xyflow/react`）、主题 token 与**视图注册表**成型 | 三柱各有一个完整可演示面板；新增面板只能走注册表，不得改内核 |
+| **E2 引擎矩阵** | 外部引擎从 3 个扩到 5+（ACP 家族为主）；权限映射表补齐；引擎目录四态呈现 | 契约测试全引擎同绿；映射不承诺等价保护必须显式标注 |
+| **E3 插件与示例生态** | 内置插件 6–8 个（每个自带单测与集成测，与第三方同契约）、`examples/` 扩到 5 例、`packages/` 发布物（仅在有第二使用者时） | 关插件即停产品行为；示例照 README 能独立跑通 |
+
+**明确不加**（个人做必薄，理由见 overview §14"不留的门"）：多端原生客户端、SSO/多租户、
+资源市场、七种执行环境、IM 渠道全量。
+
+---
+
 ## 横切规则（贯穿所有阶段）
 
 1. **每阶段收尾四件事**：勾销本计划状态行 + 一行实际结果；overview §12 对应里程碑标记；新决策落 ADR（索引同步）；**出口附该模块坑目录 B-NN 覆盖率与每条护栏测试的负向验证输出**（AGENTS §四 §五 的可执行形式）。
@@ -208,3 +259,10 @@ runner 协议 + result.schema）；ui/ 骨架（token 四文件 + mock + 第一�
 3. **评测不断线**：evals 从 M1 骨架、M2 runner 起每阶段追加任务与结果记录，失败也发布（结论必须带可复现证据与 hash）。
 4. **文档不合适当场修**：修改动处 + 留一行变更记录；与 AGENTS.md 冲突时停下问用户。
 5. **砍单预案**（§12 已定）随时生效：M3 受阻先砍 Terminal 与交付物预览保 diff 与修订号；M6 受阻整体延后外部引擎；任何阶段不为面板好看牺牲三柱判据。
+6. **前端跟随**（`AGENTS.md` §五）：每阶段收口时，本期新增的用户可感知能力必须能从 UI 路径走通一次；
+   走不通写明原因与补救里程碑编号。**功能面可后置，界面通道不可长期缺位**——否则第一柱"可见"
+   在真机上无法验证，而计划会退化成"只有 CLI 能用的内核"。
+7. **后置分层**（判据三问见 overview §14）：判断某能力能否推到 Phase E / 未来时，按此切分——
+   **接口面必须与内核同期定**：引擎能力协商位与版本、扩展公开 API、schema 版本策略、
+   `limen` 错误方言、UI 视图注册表与 token 层；**功能面可后置**：引擎数量、插件个数、
+   预览格式、看板美化、主题打磨。区分方法：晚做会不会回头改已完成模块的接口——会就是接口。
