@@ -23,7 +23,10 @@ classifiers = [
   "Topic :: Software Development",
   "Topic :: Utilities",
 ]
-dependencies = []
+dependencies = [
+    "keyring>=25.0",
+    "pydantic>=2.0",
+]
 
 # Nothing is runnable yet: enabling the entry point belongs to the first CLI task,
 # together with src/questor/cli.py. Keeping it commented avoids advertising a
@@ -40,6 +43,7 @@ dev = [
   "pyright>=1.1.350",
   "pip-audit>=2.7",
   "pre-commit>=4.0",
+  "import-linter>=2.0",
 ]
 
 [build-system]
@@ -48,6 +52,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/questor"]
+
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true
 
 # Lower bound enforcement: the local interpreter is 3.13 (see .python-version),
 # but the published floor is 3.12 so the reference projects' dependency wheels
@@ -71,3 +79,17 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 # "." 让 `import evals...` 在非安装态下可解析（evals 是非生产包）
 pythonpath = ["src", "."]
+
+# 依赖方向的声明式契约（structure §5 预案：随 M2 首批真实模块引入）。AST 矩阵
+# （tests/architecture/test_dependency_matrix.py）查"顶层包 import 了谁"，本节查环与
+# 同层绕行，两层各查各的。0 违规起步，不设 baseline。契约随模块物化逐步扩展：
+# 新顶层包必须先在 structure §5 与 overview §6 登记，再进这里的分层（import-linter
+# 要求契约中的模块已存在，故分层契约只列已物化模块，与提交节奏同步生长）。
+[tool.importlinter]
+root_packages = ["questor"]
+
+[[tool.importlinter.contracts]]
+name = "生产代码禁止 import testenv（testenv 只服务测试）"
+type = "forbidden"
+source_modules = ["questor"]
+forbidden_modules = ["questor.testenv"]

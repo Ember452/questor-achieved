@@ -15,6 +15,7 @@ fmt:
 lint:
     uv run ruff check src tests evals scripts
     uv run ruff format --check --diff src tests evals scripts
+    uv run lint-imports
 
 types:
     uv run pyright

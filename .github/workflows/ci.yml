@@ -38,6 +38,7 @@ jobs:
       - run: npm ci --prefix ui
       - run: uv run ruff check src tests evals scripts
       - run: uv run ruff format --check --diff src tests evals scripts
+      - run: uv run lint-imports
       - run: uv run pyright
       - run: uv run python scripts/ci/check_specs.py
       - run: uv run python scripts/ci/check_notes.py
