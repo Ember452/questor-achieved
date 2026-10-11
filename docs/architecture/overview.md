@@ -92,7 +92,7 @@ Questor 是**跑在自己电脑上的可审计 AI Agent 工作站**：Agent 在�
 ## 4. 架构分层与依赖方向
 
 ```
-桌面壳 Tauri（Rust 壳 + TS 前端）
+UI 一套（`ui/`）两宿主：Tauri 桌面壳（stdio NDJSON 起 Python sidecar）· 浏览器（经网关 WS/SSE）
    │  REST / SSE / WebSocket（仅呈现与交互，不含业务判断）
 网关 Gateway（Python，FastAPI）
    │  进程内调用
@@ -164,7 +164,8 @@ Plan（先澄清→可修订计划→定稿才执行）、Goal（后台自驱长
 
 ### L4 可选平台能力（feature flag 默认关）
 
-外部引擎、MCP、skills、hooks、插件、IM 渠道、远程与移动端、多账号与费用治理、
+外部引擎、MCP、skills、hooks、插件、**网页自托管宿主（对外暴露必带鉴权与账号模型）**、
+IM 渠道、远程与移动端、多账号与费用治理、
 容器与远程执行环境。
 
 ### 明确不做（写死防范围失控）
@@ -175,6 +176,9 @@ Plan（先澄清→可修订计划→定稿才执行）、Goal（后台自驱长
 ---
 
 ## 6. 模块清单
+
+本表是**职责登记**（R5 的唯一落点）；物理布局、内部分块、对应参照包与物化时机见
+`structure.md` §2–§4，两边不得互相复述。
 
 | 目录（= commit scope） | 职责 | 依赖 | 参照来源 |
 | --- | --- | --- | --- |
@@ -192,6 +196,17 @@ Plan（先澄清→可修订计划→定稿才执行）、Goal（后台自驱长
 | `cli` | 命令行入口 | `serve` 或直连内核 | wuu exec |
 | `prompts` | 运行时提示词与指令资产（随包发布，禁止内联在代码里） | 无 | wuu `prompts/`、EvoFlow `prompt_blocks_*` |
 | `extensions` | 插件宿主与能力扩展（`mcp` `skills` `hooks` `code_index` 在其下）；内核不得反向 import 它 | `schemas` + 公开扩展接口 | wuu `internal/pluginhost`、EvoFlow `plugins/skills` |
+| `context` | 上下文预算、自适应压缩、压缩边界记录、超预算结果落盘与回读 | `gesta` `providers`（仅用量结构） | wuu `context`、`contextbudget`、`compact` |
+| `schemas` | 协议与数据契约 schema（纯 JSON Schema，真相源） | 无 | wuu `packages/protocol` |
+| `config` | 类型化配置加载与作用域合并、热改错误通知 | `state` | wuu `internal/config`、`runtimeconfig` |
+| `state` | 路径单点解析、原子写、跨进程文件锁、存储编码 | 标准库 | wuu `statepath`、`securefs`、`storelock`、`storagecodec`、`shellpath` |
+| `secrets` | 凭据存储（OS keyring 优先）与守卫 | `state` | wuu `credentialstore`、`authstorage` |
+| `capability` | feature flag 与能力开关（L4 渐进启用的机制） | `config` | wuu `capability`、`harness` |
+| `workspaces` | 工作区注册与路径可见性 | `state` | wuu `workspaces` |
+| `worktree` | Git worktree 生命周期与隔离 | `workspaces` | wuu `worktree` |
+| `sessiontrace` | 会话轨迹回放（不重跑工具、不联系模型） | `gesta` | wuu `sessiontrace` |
+| `version` | 版本单点与构建标识（`VERSION` 文件为唯一来源） | 无 | wuu `internal/version` + `VERSION` |
+| `testenv` | 测试基建：fake home / provider / git / 时钟；**生产代码禁止 import** | 任何模块 | wuu `internal/testenv` |
 
 `mcp` / `skills` / `hooks` / `code_index` 为 L4 能力服务（feature flag 默认关），
 建包前按 R5 在本表补行登记；§4 图中提前点名不构成本表的登记。
@@ -227,6 +242,8 @@ Plan（先澄清→可修订计划→定稿才执行）、Goal（后台自驱长
   配置有问题时返回 `needs_setup` 加 `issues`，连接仍可用。
 - **大内容延迟取**：客户端可声明 `deferred_content` 能力，快照与终局通知里用引用替代大块正文，
   身份、顺序、成员与状态保持完整。
+- **一套会话层协议、两种传输**：桌面与 CLI 走 stdio NDJSON，网页与多端走网关 WS/SSE；
+  方法名、事件形状与错误语义完全同源，**禁止为网页另立契约或开私有端点**（§14 的逃生门）。
 - 客户端必须按 `id` 关联，并**在请求未决期间持续读通知**；不得假设每行都是最近请求的响应。
 - 行缓冲有上限，超限时命令输出走全量日志引用；stdout 必须干净（禁 banner 与调试日志）。
 - 内核**反向请求**（审批、浏览器宿主）走 server-initiated requests，超时或取消即动作不执行。
@@ -297,12 +314,12 @@ Plan（先澄清→可修订计划→定稿才执行）、Goal（后台自驱长
 | M0 | 仓库骨架、门禁、ADR-0001 | **已完成**（`1778ac1`、`e7aef72`） |
 | M1 | 扫描三资产落盘 + 契约文档与 schema + 契约测试骨架 | 坑目录 ≥50 条且各有归属模块；schema 能生成前端类型 |
 | M2 | 单轮能跑：内置引擎 + 7 工具 + `limen` + 会话落盘 + CLI | 一个真实小任务完整跑通并落盘可回放 |
-| M3 | 工作台数据面：`review` 修订号与 turn↔revision + Files/Review 面板 + 插话与排队 | 面板显示真实 diff；插话在下一个工具边界被消费；接管即停 |
+| M3 | 工作台数据面：`review` 修订号与 turn↔revision + Files/Review 面板 + 插话与排队；**同一 `ui/` 构建产物同时供桌面与本地网页宿主** | 面板显示真实 diff；插话在下一个工具边界被消费；接管即停；网页默认只绑 `127.0.0.1` 且无第二套契约 |
 | M4 | 长跑与编排：Goal + 看板 + 任务总结 + 确认/打回 | 端到端链跑通；状态机无旁路写入 |
 | M5 | 验收闭环：任务总结 → 确认／打回，并把"声称的检查"与真实记录输出并排核对 | 任一验收结论都能指向具体记录条目；没有复跑也不轻信 |
 | M6 | 外部引擎：ACP／Claude／Codex 适配器 + 权限映射表 | 契约测试全引擎同绿 |
 | M7 | 扩展面：skills／MCP／hooks／插件 | 关插件即停产品行为 |
-| M8 | 可选平台：执行环境、IM、远程、（延后）浏览器面板 | 各自 feature flag 默认关 |
+| M8 | 可选平台：执行环境、**网页自托管**、IM、远程、（延后）浏览器面板 | 各自 feature flag 默认关；网页对外暴露前需先过鉴权 ADR |
 
 **砍单预案**：M3 起若受阻，先砍 Terminal 与交付物预览，保 diff 与修订号；
 M6 受阻则整体延后外部引擎（它是最容易吞掉时间的部分）；
@@ -318,6 +335,9 @@ M6 受阻则整体延后外部引擎（它是最容易吞掉时间的部分）�
 3. **是否将来引入沙箱复跑核验与纵向统计**（本轮明确不借鉴 AfterMatter；若要引入需单独 ADR，见 §2 排除说明）。
 4. **是否申请 GitHub 组织名 `questor`**（影响仓库 URL；当前历史只有几个 commit，搬家成本最低，
    越晚越贵）。组/用户名占用尚未核查。
+5. **网页宿主对外暴露的形态**：只本地（`127.0.0.1`，无鉴权）还是允许局域网自托管（必须登录 +
+   会话归属 + 与权限档位正交）。本项目不预先选定；对外暴露需单独 ADR，
+   不得以"只是局域网"为由略过鉴权（wuu 的教训：配对即授予控制权，不是只读视图）。
 
 ---
 
