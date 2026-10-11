@@ -10,7 +10,7 @@ import re
 import tomllib
 from pathlib import Path
 
-PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
+PYPROJECT = Path(__file__).resolve().parents[2] / "pyproject.toml"
 
 
 def _floor_from_requires_python(raw: str) -> tuple[int, int]:
