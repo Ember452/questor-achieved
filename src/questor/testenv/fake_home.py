@@ -24,7 +24,10 @@ def fake_home() -> Iterator[Path]:
     """
     original = {k: os.environ.get(k) for k in ("HOME", "USERPROFILE", "QUESTOR_HOME")}
     with tempfile.TemporaryDirectory(prefix="questor-test-home-") as tmp:
-        tmp_path = Path(tmp)
+        # Windows 的 TMP 可能带 8.3 短名（CI runner 实测 C:\Users\RUNNER~1\...），
+        # 而 questor_home() 会 resolve() 展开为长名（B-76）——fixture 统一先展开，
+        # 保证 yield 出的路径与写入 env 的路径同一形态，测试的路径比较不因形态分裂
+        tmp_path = Path(tmp).resolve()
         os.environ["HOME"] = str(tmp_path)
         os.environ["USERPROFILE"] = str(tmp_path)
         os.environ["QUESTOR_HOME"] = str(tmp_path / ".questor")
