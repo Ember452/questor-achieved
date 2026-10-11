@@ -1,6 +1,6 @@
 # Questor 项目结构（structure）
 
-版本: v0.3 | 更新: 2026-10-11 | 状态: 待用户评审
+版本: v0.4 | 更新: 2026-10-11 | 状态: 待用户评审（v0.4：M1 增补 `ui/` 骨架，裁定记录见 `docs/plans/development-plan.md` M1）
 关联: `overview.md`（语义、分层、R1–R5、职责登记、契约的唯一来源）、`AGENTS.md` §二 §四、
 `docs/adr/0001`（命名）、`docs/adr/0007`（Windows 沙箱）
 
@@ -77,7 +77,7 @@ questor/
 ├── evals/                      # M1 起：tasks/ runner/ results/ result.schema.json README.md
 ├── tests/                      # §8：unit / contract / integration / architecture / adversarial / e2e / fixtures
 ├── scripts/                    # §9：ci / docs / gen / release / windows（**不放业务逻辑**）
-├── docs/                       # architecture / adr / specs（+ M4 后考虑独立站点）
+├── docs/                       # architecture / adr / specs / plans（阶段级开发计划）
 ├── assets/                     # M3：应用图标与截图源（含再生成命令说明）
 ├── third_party/                # M2：licenses/ + 由脚本生成的 THIRD-PARTY-NOTICES
 ├── .github/
@@ -251,7 +251,7 @@ React 19 + TS + Vite 6 + Tailwind 4 + **zustand** + SWR；
 | `tests/fixtures/` | 字节级固定样本；行尾由 `.gitattributes` 钉死；**禁含真实会话、prompt 全文、真实绝对路径** | 未建（M1） |
 
 `evals/`：`tasks/`（参照任务集，**必须覆盖三柱**，不只测编码）、`runner/`、`results/` + `result.schema.json` + `README.md`（布局照 wuu `evals/`）。
-基线只取可运行参照：**FlowCoder 为主**，EvoFlow 按任务类型可选；**wuu 不作基线**（本机跑不起来，overview §2 §11）。
+基线只取可运行参照：**FlowCoder 为主**，EvoFlow 按任务类型可选；**wuu 不作基线**（Go 工具链与引擎依赖使评测脚手架成本高于收益；桌面预览仅 macOS——可运行性详述见 overview §2）。
 
 ---
 
@@ -320,7 +320,7 @@ plugins、evals、scripts）全部尚未建立**——它们不是被省略，�
 
 | 里程碑 | 新增 |
 | --- | --- |
-| M1 | `docs/specs/`（三资产）、`src/questor/schemas/`、`src/questor/testenv/`、`justfile`、`.editorconfig`、`.pre-commit-config.yaml`、`SECURITY.md`、`.github/`（workflows 3 个 + 模板 + dependabot）、`tests/{contract,fixtures}`、`scripts/{ci,gen}`、`evals/` 骨架 |
+| M1 | `docs/specs/`（三资产）、`src/questor/schemas/`、`src/questor/testenv/`、`justfile`、`.editorconfig`、`.pre-commit-config.yaml`、`SECURITY.md`、`.github/`（workflows 3 个 + 模板 + dependabot）、`tests/{contract,fixtures}`、`scripts/{ci,gen}`、`evals/` 骨架、`ui/` 骨架（design token + schema 生成类型 + mock 协议服务；面板实体仍 M3） |
 | M2 | `cli` `serve(雏形)` `engine` `tools` `limen` `context` `gesta` `providers` `prompts` `config` `state` `secrets` `capability` `workspaces` `version`、`VERSION`、`third_party/`、`tests/e2e` 前置的 `evals/runner` |
 | M3 | `review` `worktree` `habena` `sessiontrace`、`ui/`、`desktop/src-tauri/`、`assets/`、`contracts.yml`/`desktop.yml` |
 | M4 | `vigilia` `orchestration` `evidence` 最小版、`tests/e2e/`、`docs.yml` |
