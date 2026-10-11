@@ -107,6 +107,8 @@ forbidden_modules = ["questor.testenv"]
 name = "M2.1 地基分层：上层可依赖下层，同层独立（structure §5 矩阵的子集，随物化扩展）"
 type = "layers"
 layers = [
+    "questor.engine",
+    "questor.tools",
     "questor.limen | questor.workspaces | questor.gesta",
     "questor.config | questor.secrets",
     "questor.state",

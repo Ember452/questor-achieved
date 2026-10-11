@@ -42,12 +42,14 @@ class ToolCallOutcome:
         *,
         denied: bool = False,
         unknown: bool = False,
+        parallel: bool = False,
         elapsed_s: float = 0.0,
     ) -> None:
         self.request = request
         self.result = result
         self.denied = denied
         self.unknown = unknown
+        self.parallel = parallel  # B-03：并行批的未知调用不清零熔断计数的依据
         self.elapsed_s = elapsed_s
 
 
@@ -70,7 +72,9 @@ async def execute_calls(
                 return_exceptions=True,  # B-15：单失败降级，不拖垮整批
             )
             for request, outcome in zip(batch.calls, outcomes, strict=True):
-                by_id[request.tool_use_id] = _as_outcome(request, outcome)
+                settled = _as_outcome(request, outcome)
+                settled.parallel = batch.concurrent
+                by_id[request.tool_use_id] = settled
         else:
             for request in batch.calls:
                 by_id[request.tool_use_id] = await _execute_one(request, registry, ctx, mode, roots)

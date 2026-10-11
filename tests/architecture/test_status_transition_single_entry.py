@@ -24,18 +24,28 @@ _TRANSITIONS_QUALNAMES = frozenset(
 )
 
 
-def _imports_transitions(tree: ast.AST) -> bool:
+# gesta 之外允许 import 的名字：异常类型（取消清理要接住它）；迁移**函数**仍单消费者
+_ALLOWED_NAMES_OUTSIDE_GESTA = frozenset({"InvalidTransition"})
+
+
+def _violating_transition_imports(tree: ast.AST) -> list[str]:
+    """返回从 gesta.transitions 违规引入的名字（迁移函数/谓词出现在 gesta 外即违规）。"""
+    bad: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module in _TRANSITIONS_QUALNAMES:
-            return True
-        if isinstance(node, ast.Import):
+            bad.extend(
+                alias.name for alias in node.names if alias.name not in _ALLOWED_NAMES_OUTSIDE_GESTA
+            )
+        elif isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name in _TRANSITIONS_QUALNAMES:
-                    return True
-    return False
+                    bad.append(alias.name)
+    return bad
 
 
 def test_transitions_module_is_importable_only_from_gesta() -> None:
+    """状态迁移**函数**的单入口断言：gesta 外的模块只允许 import 异常类型
+    （engine 取消清理要接住 InvalidTransition——那是错误处理，不是写路径）。"""
     violations: list[str] = []
     for py in sorted(SRC.rglob("*.py")):
         parts = py.relative_to(SRC).parts
@@ -43,8 +53,9 @@ def test_transitions_module_is_importable_only_from_gesta() -> None:
         if inside_gesta:
             continue  # gesta 内部（含 __init__ 的 re-export）合法
         tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
-        if _imports_transitions(tree):
-            violations.append(str(py.relative_to(SRC)))
+        bad_names = _violating_transition_imports(tree)
+        if bad_names:
+            violations.append(f"{py.relative_to(SRC)} -> {bad_names}")
     assert not violations, (
         "状态迁移白名单被 gesta 之外 import——出现第二套写状态入口：\n" + "\n".join(violations)
     )

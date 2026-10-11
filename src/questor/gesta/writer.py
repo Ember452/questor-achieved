@@ -63,6 +63,11 @@ class ThreadWriter:
 
     # ---- 生命周期 ----
 
+    @property
+    def thread_id(self) -> str:
+        """句柄绑定的线程 id（spill 等上层操作需要）。"""
+        return self._thread_id
+
     def open(self) -> ThreadView:
         """打开线程并做唯一一次全量 fold；文件不存在抛 ThreadNotFound。"""
         with store_lock(sessions_dir(), timeout=self._lock_timeout):
