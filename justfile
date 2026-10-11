@@ -14,7 +14,7 @@ fmt:
 # 只 lint src tests 会让 evals/scripts 里的违规静默存在而 CI 仍绿——M1 复审实测踩过。
 lint:
     uv run ruff check src tests evals scripts
-    uv run ruff format --check src tests evals scripts
+    uv run ruff format --check --diff src tests evals scripts
 
 types:
     uv run pyright
@@ -35,18 +35,30 @@ gen-check:
 arch:
     uv run pytest tests/architecture -q
 
+# -rfE 在末尾汇总全部 failed/error；--color=no 保证 CI 日志无 ANSI 噪声。
+# 选项改动必须先本地跑过：曾把不存在的 --full-path 写进 CI，双 OS 全红（B-69）。
 test:
-    uv run pytest -q
+    uv run pytest -q -rfE --color=no
 
 coverage:
     uv run pytest --cov=src/questor --cov-report=term-missing -q
 
-# 坑目录核查（scripts/ci 的工具）：条目数、编号连续性、锚点存在性
+# 坑目录与笔记核查（scripts/ci 的工具）：条目数、编号连续性、锚点存在性
 specs:
     uv run python scripts/ci/check_specs.py
+    uv run python scripts/ci/check_notes.py
+
+# 依赖审计（security.yml 同一条；不放进 check 是因为它要联网、不适合每次提交跑）
+audit:
+    uv run pip-audit --skip-editable
+    npm --prefix ui audit --omit=dev
 
 build:
     uv build
+
+# 本地钩子全量跑（CI 同一条）：需先 `just setup` 且 ui 依赖已装（gen-check 钩子依赖它）
+hooks:
+    uv run pre-commit run --all-files --color=never
 
 check: lint types test arch specs gen-check types-check
     @echo "just check: all green"
