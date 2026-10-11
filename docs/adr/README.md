@@ -38,3 +38,5 @@
 | [0007](0007-windows-sandbox.md) | Windows 沙箱策略：诚实降级 + 进程树管理，强隔离走可选执行环境 | accepted |
 | [0008](0008-gate-scope-and-citation-checks.md) | 门禁范围与内容一致性、引用核查工具规范 | accepted |
 | [0009](0009-gate-entry-just.md) | 门禁入口用 just，及本机装不上时的退路 | accepted |
+| [0010](0010-notes-anchored-and-expiring.md) | 学习笔记：锚点化 + 过期即删 | accepted |
+| [0011](0011-branch-protection-mode.md) | 分支保护形态：required checks，但不强制 PR（附 required 名单真相表） | accepted |

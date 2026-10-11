@@ -15,6 +15,10 @@ concurrency:
 permissions:
   contents: read
 
+# 本文件的每一个 `run:` 都必须与 justfile 配方**逐字一致**，由
+# tests/architecture/test_ci_parity.py 机器校验；CI 不得自带 justfile 里没有的 flag
+# （曾加过不存在的 --full-path，双 OS 全红，B-69）。因此宁可不用 ruff 的 GitHub
+# annotations，也不留"只在 CI 存在"的参数。
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -24,25 +28,24 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync
-      # 与 justfile `check` 同一批命令（范围含 evals/scripts，否则违规会静默存在而 CI 仍绿）。
-      # ruff 用 GitHub annotations 把错误钉到具体文件行；pyright 1.1.414 没有 --output=github
-      # （实测 `Unexpected option`），故保持其原生 `file:line:col - message` 文本输出。
-      - run: uv run ruff check --output-format=github src tests evals scripts
-      - run: uv run ruff format --check --diff src tests evals scripts
-      # 锁定钩子与 CI 同源：ruff rev 与 uv.lock 不一致、或钩子规则与门禁不一致，在这里响。
-      - run: uv run pre-commit run --all-files --color=never
-      - run: uv run pyright
-      - run: uv run python scripts/ci/check_specs.py
+      # node 依赖必须早于钩子：gen-check 是 language: system 的本地钩子，
+      # 依赖 ui/node_modules；装晚了 pre-commit 阶段必炸（B-70）。
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: ui/package-lock.json
       - run: npm ci --prefix ui
+      - run: uv run ruff check src tests evals scripts
+      - run: uv run ruff format --check --diff src tests evals scripts
+      - run: uv run pyright
+      - run: uv run python scripts/ci/check_specs.py
+      - run: uv run python scripts/ci/check_notes.py
       - run: npm --prefix ui run gen:check
       - run: npm --prefix ui run typecheck
-      # 任一步失败时转储工作区差异：ruff-format 与 pre-commit 会自己改文件，gen:check 只报
-      # "漂了"——没有 diff 就看不出是平台相关还是真忘了重生成（B-68 当时正是这样难查）。
+      - run: uv build
+      # 锁定钩子与 CI 同源：ruff rev 与 uv.lock 不一致、或钩子规则与门禁不一致，在这里响。
+      - run: uv run pre-commit run --all-files --color=never
       - name: Show failure context
         if: failure()
         run: |
@@ -72,17 +75,15 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync
-      # 与 justfile `test` 同一批命令；--full-path 让失败行的文件路径完整可点，
-      # -rfE 在末尾汇总全部 failed/error，避免只看得到最后一个 traceback。
-      - run: uv run pytest -q --full-path -rfE --color=no
-      # 生成物必须在两种 OS 上都可复现：banner 里的路径分隔符差异（B-68）
-      # 只有在 windows runner 上也跑 gen:check 才拦得住。
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: ui/package-lock.json
       - run: npm ci --prefix ui
+      - run: uv run pytest -q -rfE --color=no
+      # 生成物必须在两种 OS 上都可复现：banner 的路径分隔符差异（B-68）
+      # 只有在 windows runner 上也跑 gen:check 才拦得住。
       - run: npm --prefix ui run gen:check
       - name: Show generated diff on drift
         if: failure()

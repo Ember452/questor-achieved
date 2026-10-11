@@ -221,6 +221,12 @@ scope = 模块目录名（`engine` `tools` `limen` `habena` `vigilia` `gesta` `e
 `orchestration` `providers` `review` `serve` `cli` `docs` `ci`）。一个 commit = 一个可独立回滚的逻辑变更，
 实现与其测试同 commit；禁止巨型 commit，也禁止每次保存一提交。
 
+**推送目标与保护形态**（`ADR-0011`）：取 B 方案——required checks 但不强制 PR，因此
+**直接 `git push origin main` 仍然可行，CI 结果不会拦住我们**。推之前跑全套门禁
+（`just check`；本机无 `just` 时按 §四 退路逐条跑）从建议升为**硬要求**。经 PR 合并的
+外部改动（Dependabot 等）受 required checks 约束；required 名单以 `ADR-0011` 的表为准，
+**非矩阵 job 不带 `(os)` 后缀**——填一个永不 report 的名字会让所有 PR 卡在 "Expected"。
+
 ---
 
 ## 七、文档地图
@@ -233,6 +239,7 @@ scope = 模块目录名（`engine` `tools` `limen` `habena` `vigilia` `gesta` `e
 | 改数据模型 / 状态机 / 消息协议 | `overview.md` §7 §8（契约源头）→ **先改文档并递增版本号，代码跟随**；顺序不可反 |
 | 新增顶层包 | 先在 `overview.md` §6 登记一行职责（R5），否则评审打回 |
 | 重写任何边界层模块 | `docs/specs/pitfalls.md` 对应条目 + 参照实现的行为规格 |
+| 要解释一条链路实际怎么跑通 | `docs/notes/`（带锚点与日期；`check_notes` 会对过期条目判红，详 ADR-0010） |
 | 加依赖 | 先在 `docs/adr/` 落一条记录，正文说明理由 |
 | 放不进上面任何一行 | 先写一条轻量 ADR，再动手 |
 
