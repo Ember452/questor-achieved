@@ -1,6 +1,6 @@
 # Questor 核心数据契约（data-model）
 
-版本: v1.0 | 更新: 2026-10-11 | 状态: accepted（M1 定稿）
+版本: v1.1 | 更新: 2026-10-11 | 状态: accepted（M1 定稿；v1.1 补 queued→cancelled，见 ADR-0014）
 关联: `overview.md` §7（草案出处）、`protocol.md`（跨进程边界）、`docs/specs/`（行为规格）、
 `src/questor/schemas/model/`（本契约的 JSON Schema 物化）
 
@@ -104,13 +104,15 @@ Run 产出的最小可审计单元。
 
 ```
 queued → running → completed | failed | cancelled
-             │
-             ├── steered（旁态：插话在下一个工具边界被消费后回 running）
-             └── waiting（旁态：等插话/审批；恢复后回 running）
+   │        │
+   │        ├── steered（旁态：插话在下一个工具边界被消费后回 running）
+   │        └── waiting（旁态：等插话/审批；恢复后回 running）
+   └── cancelled（尚未起跑的运行可被取消，不经 running）
 ```
 
 - 终态仅 `completed | failed | cancelled`；`steered` / `waiting` 是 `running` 的**旁态**，
-  旁态间迁移必须经由 running；
+  旁态间迁移必须经由 running；queued 可直接取消（v1.1，ADR-0014）——不得伪造 running
+  起点再取消；
 - **状态迁移只允许状态机驱动**，旁路写入视为契约破坏（架构测试强制）；
 - 取消 → 停进程树（先校验身份防 PID 复用，B-16 同族）→ 已落盘改动不丢 → `cancelled` 终态。
 

@@ -1,0 +1,6 @@
+{"seq": 1, "kind": "thread.created", "payload": {"id": "test-thread-01", "workspace_id": "ws-0001", "title": null, "engine_id": "engine-01", "permission_mode": "standard", "pinned": false, "archived": false, "created_at": "2026-10-11T08:30:00Z", "updated_at": "2026-10-11T08:30:00Z"}, "recorded_at": "2026-10-11T08:30:00Z"}
+{"seq": 2, "kind": "turn.created", "payload": {"id": "turn-0001", "thread_id": "test-thread-01", "seq": 1, "origin": "user", "fork_from": null, "created_at": "2026-10-11T08:30:01Z"}, "recorded_at": "2026-10-11T08:30:01Z"}
+{"seq": 3, "kind": "run.created", "payload": {"id": "run-0001", "turn_id": "turn-0001", "engine_id": "engine-01", "permission_mode": "standard", "workspace_revision_start": null, "workspace_revision_end": null, "status": "queued", "usage": null, "created_at": "2026-10-11T08:30:02Z"}, "recorded_at": "2026-10-11T08:30:02Z"}
+{"seq": 4, "kind": "item.appen
+
+{"seq": 2, "kind": "totally-unknown-kind", "payload": {}, "recorded_at": "2026-10-11T08:30:03Z"}

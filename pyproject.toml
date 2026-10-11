@@ -101,3 +101,12 @@ name = "生产代码禁止 import testenv（testenv 只服务测试）"
 type = "forbidden"
 source_modules = ["questor"]
 forbidden_modules = ["questor.testenv"]
+
+[[tool.importlinter.contracts]]
+name = "M2.1 地基分层：上层可依赖下层，同层独立（structure §5 矩阵的子集，随物化扩展）"
+type = "layers"
+layers = [
+    "questor.gesta",
+    "questor.state",
+    "questor.version | questor.schemas",
+]

@@ -42,3 +42,4 @@
 | [0011](0011-branch-protection-mode.md) | 分支保护形态：required checks，但不强制 PR（附 required 名单真相表） | accepted |
 | [0012](0012-module-dependency-rulings.md) | gesta 与 capability 的依赖方向裁决（以矩阵为准，回写 overview §6） | accepted |
 | [0013](0013-m2-foundation-dependencies.md) | M2.1 地基依赖引入（pydantic v2 / keyring / import-linter） | accepted |
+| [0014](0014-run-status-queued-cancelled.md) | 运行状态机补充 queued → cancelled 迁移（data-model v1.1） | accepted |

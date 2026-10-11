@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "questor/model/v1.json",
   "title": "QuestorModel",
-  "description": "核心数据契约实体（真相源：docs/architecture/data-model.md v1.0）。纯 JSON Schema，Python pydantic 只做绑定。",
+  "description": "核心数据契约实体（真相源：docs/architecture/data-model.md v1.1）。纯 JSON Schema，Python pydantic 只做绑定。",
   "$defs": {
     "Id": {
       "type": "string",
