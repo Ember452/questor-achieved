@@ -52,3 +52,12 @@ jobs:
       - run: uv sync
       # 与 justfile `test` 同一批命令
       - run: uv run pytest -q
+      # 生成物必须在两种 OS 上都可复现：banner 里的路径分隔符差异（B-68）
+      # 只有在 windows runner 上跑 gen:check 才拦得住
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci --prefix ui
+      - run: npm --prefix ui run gen:check
