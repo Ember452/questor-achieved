@@ -56,6 +56,11 @@ def write_excl(path: pathlib.Path, data: bytes) -> bool:
 
     同一 id 的工具结果只落盘一次；重复调用静默跳过且**不改写**已有内容——
     这既是幂等也是 append-only 纪律在单文件上的表达。
+
+    与 :func:`write_atomic` 的崩溃一致性差异（刻意声明）：写过程中失败会清理
+    本次创建的半写文件（否则"残件存在 → 幂等跳过"会把损坏固化），但进程在
+    写一半时崩溃的窗口无法在此消除——读取端必须容忍残缺文件并校验，这与
+    会话正文"读侧容忍残尾"是同一条纪律。
     """
     parent = path.parent
     mkdir_secure(parent)
@@ -63,8 +68,12 @@ def write_excl(path: pathlib.Path, data: bytes) -> bool:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, _FILE_MODE)
     except FileExistsError:
         return False
-    with os.fdopen(fd, "wb") as handle:
-        handle.write(data)
-        handle.flush()
-        os.fsync(handle.fileno())
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
     return True

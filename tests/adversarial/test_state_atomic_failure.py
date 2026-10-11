@@ -68,3 +68,38 @@ def test_temp_file_lives_in_target_directory(
     target = tmp_path / "sub" / "file.bin"
     write_atomic(target, b"data")
     assert seen_dirs == [target.parent]
+
+
+def test_write_excl_failure_cleans_partial_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """write_excl 中途失败必须清理半写文件——否则残件存在会让幂等跳过固化损坏。"""
+    from questor.state.atomic import write_excl
+
+    target = tmp_path / "toolu_01.txt"
+
+    real_fdopen = os.fdopen
+
+    def _boom_fdopen(fd: int, *args: Any, **kwargs: Any) -> Any:
+        handle = real_fdopen(fd, *args, **kwargs)
+
+        class _FailingHandle:
+            def __enter__(self) -> object:
+                return self
+
+            def __exit__(self, *exc: object) -> None:
+                handle.__exit__(*exc)
+
+            def write(self, data: bytes) -> int:
+                raise OSError("injected write failure")
+
+        return _FailingHandle()
+
+    monkeypatch.setattr("questor.state.atomic.os.fdopen", _boom_fdopen)
+    with pytest.raises(OSError, match="injected write failure"):
+        write_excl(target, b"data")
+    monkeypatch.undo()
+    assert not target.exists(), "半写文件必被清理"
+    # 清理后重试可完整写入（幂等跳过只针对"成功写过"的文件）
+    assert write_excl(target, b"complete") is True
+    assert target.read_bytes() == b"complete"
