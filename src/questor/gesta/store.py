@@ -169,7 +169,7 @@ def _fold(thread_id: str, records: list[_Record]) -> ThreadView:
         elif record.kind == "thread.renamed":
             if thread is None:
                 raise ThreadStoreError(f"线程 {thread_id} 首记录不是 thread.created")
-            thread = thread.model_copy(update={"title": payload["title"]})
+            thread = thread.model_copy(update={"title": payload.get("title")})
         elif record.kind == "thread.flagged":
             if thread is None:
                 raise ThreadStoreError(f"线程 {thread_id} 首记录不是 thread.created")
@@ -180,9 +180,21 @@ def _fold(thread_id: str, records: list[_Record]) -> ThreadView:
         elif record.kind == "run.created":
             runs.append(Run.model_validate(payload))
         elif record.kind == "run.status":
-            run_id = payload["run_id"]
-            target = RunStatus(payload["to"])
-            run = next(r for r in runs if r.id == run_id)
+            run_id = payload.get("run_id")
+            to = payload.get("to")
+            run = next((r for r in runs if r.id == run_id), None)
+            # 篡改/损坏的历史在此显式爆炸为 ThreadStoreError（可被 rebuild_index 捕获
+            # 跳过），而不是裸 StopIteration/KeyError/ValueError 逃出 fold 边界
+            if run is None:
+                raise ThreadStoreError(
+                    f"线程 {thread_id} 的 run.status 记录引用了不存在的 run {run_id!r}"
+                )
+            if not isinstance(to, str):
+                raise ThreadStoreError(f"线程 {thread_id} 的 run.status 缺少 to 字段")
+            try:
+                target = RunStatus(to)
+            except ValueError as exc:
+                raise ThreadStoreError(f"线程 {thread_id} 的 run.status 含未知状态 {to!r}") from exc
             moved = transition(run.status, target)  # 回放同样过白名单：篡改历史在此爆炸
             runs[runs.index(run)] = run.model_copy(update={"status": moved})
         elif record.kind == "item.appended":

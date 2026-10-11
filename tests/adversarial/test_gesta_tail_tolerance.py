@@ -49,3 +49,32 @@ def test_corrupt_thread_is_skipped_by_index_rebuild(corrupt_thread: None) -> Non
     entries = gesta.rebuild_index()
     assert [s.id for s in entries] == ["test-thread-01"]  # 有效线程仍在索引
     assert entries[0].last_seq == 3
+
+
+def test_tampered_history_raises_thread_store_error_not_stopiteration() -> None:
+    """fold 对篡改历史必须抛 ThreadStoreError（rebuild_index 能捕获跳过），
+    而不是裸 StopIteration/KeyError/ValueError 逃出 fold 边界。"""
+    with fake_home():
+        sessions_dir().mkdir(parents=True, exist_ok=True)
+        base = FIXTURE.read_text(encoding="utf-8").splitlines()
+        valid = [line for line in base if '"run.created"' in line or '"thread.created"' in line]
+        # run.status 引用不存在的 run
+        tampered = valid + [
+            '{"seq": 9, "kind": "run.status", "payload": {"run_id": "run-ghost",'
+            ' "from": "queued", "to": "running"},'
+            ' "recorded_at": "2026-10-11T08:31:00Z"}'
+        ]
+        target = sessions_dir() / "test-thread-01.jsonl"
+        target.write_text("\n".join(tampered) + "\n", encoding="utf-8", newline="\n")
+        with pytest.raises(gesta.ThreadStoreError, match="不存在的 run"):
+            gesta.load_thread("test-thread-01")
+        assert gesta.rebuild_index() == []  # 损坏线程被索引重建跳过，不炸全表
+        # to 字段为未知状态值 → 同样显式爆炸
+        unknown_status = valid + [
+            '{"seq": 9, "kind": "run.status", "payload": {"run_id": "run-0001",'
+            ' "from": "queued", "to": "exploded"},'
+            ' "recorded_at": "2026-10-11T08:31:00Z"}'
+        ]
+        target.write_text("\n".join(unknown_status) + "\n", encoding="utf-8", newline="\n")
+        with pytest.raises(gesta.ThreadStoreError, match="未知状态"):
+            gesta.load_thread("test-thread-01")
