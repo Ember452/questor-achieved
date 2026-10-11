@@ -233,6 +233,7 @@ scope = 模块目录名（`engine` `tools` `limen` `habena` `vigilia` `gesta` `e
 | 改数据模型 / 状态机 / 消息协议 | `overview.md` §7 §8（契约源头）→ **先改文档并递增版本号，代码跟随**；顺序不可反 |
 | 新增顶层包 | 先在 `overview.md` §6 登记一行职责（R5），否则评审打回 |
 | 重写任何边界层模块 | `docs/specs/pitfalls.md` 对应条目 + 参照实现的行为规格 |
+| 要解释一条链路实际怎么跑通 | `docs/notes/`（带锚点与日期；`check_notes` 会对过期条目判红，详 ADR-0010） |
 | 加依赖 | 先在 `docs/adr/` 落一条记录，正文说明理由 |
 | 放不进上面任何一行 | 先写一条轻量 ADR，再动手 |
 
