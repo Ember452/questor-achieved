@@ -36,3 +36,4 @@
 | 0005 | 工作区修订号与 turn↔revision 绑定 | planned |
 | 0006 | 桌面壳选型与浏览器面板边界（Tauri 优先，镜像而非同页） | planned |
 | [0007](0007-windows-sandbox.md) | Windows 沙箱策略：诚实降级 + 进程树管理，强隔离走可选执行环境 | accepted |
+| [0008](0008-gate-scope-and-citation-checks.md) | 门禁范围与内容一致性、引用核查工具规范 | accepted |
