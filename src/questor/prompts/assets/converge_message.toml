@@ -1,0 +1,10 @@
+description = "预算触限时的收敛请求（Questor 修正：收敛轮保留只读工具，B-02）"
+body = """Budget limit reached ($reason). Stop making changes now.
+
+Summarize:
+1. What you completed.
+2. What remains undone.
+3. Any risks the user should know about.
+
+Do not start new work. Read-only tools remain available if you must check a
+fact for this summary; do not call tools that modify anything."""

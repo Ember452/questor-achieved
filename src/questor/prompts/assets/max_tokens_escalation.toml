@@ -1,0 +1,3 @@
+description = "max_tokens 首次触顶：提输出上限后的续写指令（B-08，语义参照 FlowCoder output_recovery）"
+body = """Output token limit hit. Resume directly from where you stopped.
+Do not apologize and do not repeat previous content; pick up mid-thought if needed."""
