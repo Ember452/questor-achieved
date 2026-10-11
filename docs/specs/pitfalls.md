@@ -73,3 +73,4 @@
 | B-65 | habena | held_user_work 双 origin（queue/steer）落盘，整表替换事务，重启重建 | 实现细节 | wuu `internal/session/held_user_work.go#L11-12,L24-46` | 待落 | open |
 | B-66 | review | diff 在写工具执行时刻计算并随结果持久化，前端不吃事后重扫的二手 diff | 实现注释 | wuu `internal/tools/diff.go#L33-35` | 待落 | open |
 | B-67 | habena | 插话消费只在步前边界（BeforeStep）；live 分叉允许未结算的最终答案作分叉点 | 实现+调用点 | wuu `internal/agent/loop.go#L400-401`、`internal/appserver/fork.go#L234` | 待落 | open |
+| B-68 | schemas | 生成物必须跨平台字节可复现：banner 里的路径一律用正斜杠，`path.relative()` 直接入文会让 Linux runner 重生成结果与 Windows 提交件不一致，gen:check 必然报漂（已发生：CI 红、本地绿） | CI fix 记录 | `ui/scripts/gen-types.mjs#L31-42`、`ui/src/rpc/generated/app_server-v0-1.d.ts#L1` | ci.yml `test` job 的 windows leg 跑 `npm --prefix ui run gen:check` | covered |
