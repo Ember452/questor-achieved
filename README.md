@@ -20,8 +20,8 @@ Every feature has to serve one of these, in this order of priority:
    browser the agent is using.
 2. **Intervenable** — steer a running task, take over the page and the task pauses,
    fork from any earlier message.
-3. **Verifiable** — a claimed "tests passed" is re-run, not trusted; the archive is
-   auditable after the fact.
+3. **Verifiable** — a claimed "tests passed" is checked against the output actually recorded
+   at that moment, not trusted; the archive stays auditable after the fact.
 
 ## What it is not
 

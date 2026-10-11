@@ -35,7 +35,8 @@
 
 ## 二、复用三分法（本项目的工程主线）
 
-参照 `wuu`、`EvoFlow`、`FlowCoder`、`AfterMatter` 四个已验证项目，
+参照 `wuu`、`EvoFlow`、`FlowCoder` 三个项目（`AfterMatter` 本轮明确不借鉴，
+理由见 §三 与 `overview.md` §2 排除说明），
 **不照搬代码，全部重写**；但报错风险靠下面的方法压住，不靠"重写"硬扛。
 
 | 类别 | 内容 | 处置 |
@@ -61,6 +62,18 @@
 要求：每个 `B-NN` 必须对应一个真实存在的测试；空头注记视为未完成。
 作用有三：审稿可逐条对坑、保留独立实现证据、半年后知道为何这么写。
 
+### 可逆性判据（"不把路走窄"的可执行版本）
+
+想为"将来"做设计时，先过三问（`overview.md` §14 有完整门清单）：
+
+1. 这个决定将来要改，代价是**搬运**还是**重写**？只是搬运就不留门，改就是了。
+2. 留门是否只落在**边界**上（数据形状、进程边界、路径单点、能力声明）？
+   落在抽象层、registry 或 config 项上的，一律拒绝。
+3. 是否已有**第二个真实使用者**？没有就不加接口、基类或可插拔点。
+
+也就是说：留门只允许表现为**清晰边界 + 单点解析 + 声明式数据 + 不分枝的接口**；
+不得以"以后可能用到"为理由引入抽象——那与本文开头的"简单优先"直接冲突。
+
 ---
 
 ## 三、语义唯一来源表（交叉处只允许 adapter，禁止两套真相）
@@ -70,7 +83,7 @@
 | Agent 循环 / 事件流 / turn 生命周期 | **本项目自研**（形状参照 wuu `agentengine`） | `questor/engine/` |
 | 权限门与写域边界 | **wuu 的规格**（单一权威门，从可达性推导，审批只能收紧不能提权） | `questor/limen/` |
 | 编排与验收（Plan→执行→验收/打回） | **EvoFlow 的规格** | `questor/orchestration/` |
-| 证据核验与纵向统计 | **AfterMatter**，跨仓库契约 + 进程隔离，不同进程 import | `questor/evidence/` |
+| 验收证据（声称的检查 vs 当时真实输出） | **wuu Review 语义 + EvoFlow 任务总结**（不借鉴 AfterMatter） | `questor/evidence/` |
 | 运行中插话与接管 | **wuu 的规格** | `questor/habena/` |
 
 内部模块名（`limen` 门槛 / `habena` 缰绳 / `vigilia` 值守 / `gesta` 行事簿）
@@ -94,6 +107,9 @@ uv run ruff format --check .
 uv run pyright
 uv run pytest tests/unit -q
 ```
+
+`just check` 是上述四条命令的单一入口（理由与退路见 `docs/architecture/structure.md` §2.2）；
+**CI 必须调用同一批命令**，本地与 CI 不一致视为缺陷。
 
 契约/数据模型改动加跑 `tests/integration`；依赖方向与不可变性改动加跑
 `tests/architecture`。`tests/adversarial/` **只增不减**——让对抗用例变绿的
@@ -163,8 +179,8 @@ Commit message 一律英文 Conventional Commits（本项目面向国际开源�
 [footer: Refs ADR-NNNN / B-NN]
 ```
 
-scope = 模块目录名（`engine` `tools` `limen` `habena` `evidence` `orchestration`
-`review` `serve` `cli` `docs` `ci`）。一个 commit = 一个可独立回滚的逻辑变更，
+scope = 模块目录名（`engine` `tools` `limen` `habena` `vigilia` `gesta` `evidence`
+`orchestration` `providers` `review` `serve` `cli` `docs` `ci`）。一个 commit = 一个可独立回滚的逻辑变更，
 实现与其测试同 commit；禁止巨型 commit，也禁止每次保存一提交。
 
 ---
@@ -174,6 +190,7 @@ scope = 模块目录名（`engine` `tools` `limen` `habena` `evidence` `orchestr
 | 要做的事 | 必读 |
 |---|---|
 | 任何任务开工前 | `docs/architecture/overview.md`（**唯一架构入口**）+ 本文件 §二 §三 + `docs/adr/README.md` 索引 |
+| 想知道目录/包怎么摆 | `docs/architecture/structure.md`（物理布局地图；职责登记仍以 overview §6 为准） |
 | 改数据模型 / 状态机 / 消息协议 | `overview.md` §7 §8（契约源头）→ **先改文档并递增版本号，代码跟随**；顺序不可反 |
 | 新增顶层包 | 先在 `overview.md` §6 登记一行职责（R5），否则评审打回 |
 | 重写任何边界层模块 | `docs/specs/pitfalls.md` 对应条目 + 参照实现的行为规格 |

@@ -66,9 +66,9 @@ URL 与包名／目录／CLI 产生两套拼法；工具类仓库惯例是纯小
 | `limen` | 门槛 | 唯一权威权限门与写域边界 |
 | `habena` | 缰绳 | 运行中插话、接管、暂停 |
 | `vigilia` | 夜间班次 | 无人值守长跑与调度 |
-| `gesta` | 行事簿 | 会话记录与验收导出（对接 AfterMatter） |
+| `gesta` | 行事簿 | 会话记录与验收导出 |
 | `review` | — | 真实 diff、工作区修订号、turn↔revision 绑定 |
-| `evidence` | — | 声称结果的复跑核验与纵向统计 |
+| `evidence` | — | 验收证据：声称的检查与当时真实记录输出并排核对 |
 | `orchestration` | — | Plan→执行→验收/打回 |
 | `serve` / `cli` | — | 协议服务与命令行入口 |
 
@@ -81,5 +81,8 @@ URL 与包名／目录／CLI 产生两套拼法；工具类仓库惯例是纯小
    （`acta`、`vigilia`、`limen` 当前都被同品类项目占用，直接发布会撞名，
    需加前缀或改名）。
 2. 决定商用或收费 → 核查 `Questor` 在第 9／42 类的商标状态。
-3. 需要 GitHub **组织名** `questor` → 组织与用户名占用**本次未核查**（只测了包名与
-   仓库名可获取性）；若 owner 名不可得，仓库 URL 会带个人账号名，届时本 ADR 补记。
+3. 需要 GitHub **组织名** `questor` → **2026-10-11 补记：已实测不可得**。
+   `github.com/questor` 被一个早年注册的个人账号占用（GitHub 用户名与组织名共享
+   同一命名空间），组织无法注册；仓库保持 `github.com/Ember452/questor`。
+   包名（PyPI `questor` 空闲）、CLI 名、品牌体均不受影响。npm `@questor` scope
+   的可得性留待首次发布 TS 包时实测。

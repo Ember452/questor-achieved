@@ -1,7 +1,7 @@
 # Questor 设计总览（overview）
 
 版本: v0.1（设计基线）| 更新: 2026-10-11 | 状态: 待用户评审
-关联: `AGENTS.md`（工程纪律）、`docs/adr/0001`（命名）、`README.md`（对外定位）
+关联: `AGENTS.md`（工程纪律）、`docs/adr/0001`（命名）、`README.md`（对外定位）、`docs/architecture/structure.md`（物理布局、import 矩阵、目录物化节奏）
 
 本文是唯一的架构入口。**它不含实现，只含已定的设计决定与显式未决项**。
 改数据模型、状态机或消息协议时：先改本文与对应契约篇，代码跟随，顺序不可反。
@@ -17,7 +17,7 @@ Questor 是**跑在自己电脑上的可审计 AI Agent 工作站**：Agent 在�
 | --- | --- | --- |
 | **可见 Visible** | 读了哪些文件、跑了哪些命令、改了哪几行，全在眼前 | 磁盘真实 diff、命令真实输出、Agent 正在用的终端与页面 |
 | **可干预 Intervenable** | 运行中能改方向、能接管、能中止、能分叉 | 插话何时被消费、接管后任务是否真的停、分叉后文件从哪一版起 |
-| **可验证 Verifiable** | "它说做完了"必须能指回证据 | 声称通过的验证命令被复跑；记录可事后审计 |
+| **可验证 Verifiable** | "它说做完了"必须能指回证据 | 声称通过的验证命令可与当时记录的真实输出并排核对；记录可事后审计 |
 
 **透明度恒为最大，分级的是写域**：权限三档只限制"能碰什么"，绝不用于少显示。
 任何"为了界面简洁而隐藏过程"的设计直接打回（`AGENTS.md` §一 铁律 3）。
@@ -38,10 +38,17 @@ Questor 是**跑在自己电脑上的可审计 AI Agent 工作站**：Agent 在�
 
 | 项目 | 语言 | 在本机的可运行性 | 可借 | 明确不可借 |
 | --- | --- | --- | --- | --- |
-| **wuu** | Go | **跑不起来**（需 Go 构建 + macOS 打包） | 纯规格：协议形状、权限三档语义、工具输出规则、会话操作语义 | 任何代码。Go→Python 不存在"迁移"，只有重实现 |
+| **wuu** | Go | 桌面预览仅 macOS 发布；但 Go 核心 CI 级支持 Windows 编译（Makefile `GOOS=windows`），CLI 层面 Windows 可跑（OS 沙箱不可用）。**M1 扫描必须包含其 Windows 专属坑** | 纯规格：协议形状、权限三档语义、工具输出规则、会话操作语义 | 任何代码。Go→Python 不存在"迁移"，只有重实现 |
 | **EvoFlow** | Python | 可运行（用户判断，本文不重复断言） | 编排与验收的行为规格、边界层的已知失败模式、桌面壳工程骨架 | 代码；以及它对 LangGraph 的底座依赖（§4 决定不用框架持有循环） |
 | **FlowCoder** | Python | 可运行 | 循环/工具/权限/沙箱/压缩的行为规格；**对照评测基线**（§11） | 代码；不作为运行时依赖（引擎必须归本项目所有） |
-| **AfterMatter** | Python | 可运行（M0 骨架） | `claimed_ok → replay_ok` 复跑核验、验证空洞、纵向统计的思路 | 代码；**不同进程 import**——它是审查者，与被审查的执行核必须进程隔离 |
+| **AfterMatter** | Python | 可运行，但**本轮明确不借鉴**（2026-10-11 决定） | 无——见下方"排除说明" | 全部：不引入其复跑核验、验证空洞与纵向统计；不作运行时依赖，也不对接事件出口 |
+
+**排除说明（AfterMatter 本轮不借鉴）**：第三柱"可验证"不依赖它的机制，改由本项目自有
+的两件事承担——① 声称通过的验证命令与当时记录的真实输出**并排核对**（wuu 已有此语义：
+"compare the agent's reported checks with their actual command results"）；② 任务总结 →
+确认／打回的验收闭环（EvoFlow 语义）。`claimed_ok → replay_ok` 沙箱复跑、验证空洞
+（影响面 × 测试覆盖）、bootstrap 置信区间与 CUSUM 变点检验**均不进入本期设计**；
+将来若要引入，走单独 ADR，并说明许可、耦合深度与进程边界。
 
 被拒绝的替代方案：**把 FlowCoder 当引擎库依赖**。
 理由：① 产品叙事需要独立内核，否则"我做了工作站"实际是"我接了别人的引擎"；
@@ -94,10 +101,14 @@ Questor 是**跑在自己电脑上的可审计 AI Agent 工作站**：Agent 在�
    └─ 外部引擎适配器（subprocess + stdio／ACP，仅转发与映射，不做二次裁决）
         │
 执行核 Core：tools / limen（权限门）/ review（diff 与工作区修订）/ gesta（会话记录）
-        / habena（插话与接管）/ vigilia（值守）/ evidence（核验接口）
+        / habena（插话与接管）/ vigilia（值守）/ evidence（验收证据）
         │
-能力服务：orchestration（Plan/Goal/看板/验收）/ providers / mcp / skills / hooks / code_index
+能力服务：orchestration（Plan/Goal/看板/验收）/ providers / extensions（mcp·skills·hooks·code_index）
 ```
+
+**层的物理位置**：图中的"网关 Gateway"对应 `src/questor/serve/`（单包内的最上层组装点），
+执行核与能力服务同在 `src/questor/` 下——因此 R1 不靠包边界，而靠 `structure.md` §3 的
+**import 允许矩阵**机械强制。
 
 **硬规则（由 `tests/architecture/` 强制，违规即打回）**
 
@@ -170,15 +181,21 @@ Plan（先澄清→可修订计划→定稿才执行）、Goal（后台自驱长
 | `engine` | 循环、turn 生命周期、事件流、引擎注册表与契约 | `tools` `limen` `gesta` | wuu `agentengine`（形状）＋ FlowCoder（行为） |
 | `tools` | 工具登记、schema、执行与结果封装 | `limen` | wuu `internal/tools`、FlowCoder |
 | `limen` | **唯一权威权限门**：三档、可达性推导、敏感路径守卫 | 无业务依赖 | wuu `boundary.go` 规格 |
-| `gesta` | 会话记录与验收导出（对 AfterMatter 的契约出口） | `engine` 事件 | aftermatter 契约思路 |
+| `gesta` | 会话记录与验收导出 | `engine` 事件 | wuu session 语义 |
 | `review` | 工作区修订号、真实 diff、turn↔revision 绑定 | git CLI | wuu Review 语义 |
 | `habena` | 插话收件箱、排队、接管与暂停、取消传播 | `engine` | wuu `session/inbox`、`held_user_work` |
 | `vigilia` | 值守长跑、调度、唤醒检查点、僵尸运行清扫 | `engine` | EvoFlow scheduler＋自建状态机 |
-| `evidence` | 声称结果的复跑核验、验证空洞 | `review` `tools` | AfterMatter |
+| `evidence` | "声称的检查"与真实记录输出的并排核对、验收证据出口 | `review` `tools` | wuu Review 语义 + EvoFlow 任务总结 |
 | `orchestration` | Plan／Goal／看板／验收与打回 | `engine` `vigilia` | EvoFlow |
 | `providers` | 模型客户端、用量与能力声明 | 无 | FlowCoder |
 | `serve` | 网关、协议服务、SSE／WS | 全部上层 | wuu app-server（形状） |
 | `cli` | 命令行入口 | `serve` 或直连内核 | wuu exec |
+| `prompts` | 运行时提示词与指令资产（随包发布，禁止内联在代码里） | 无 | wuu `prompts/`、EvoFlow `prompt_blocks_*` |
+| `extensions` | 插件宿主与能力扩展（`mcp` `skills` `hooks` `code_index` 在其下）；内核不得反向 import 它 | `schemas` + 公开扩展接口 | wuu `internal/pluginhost`、EvoFlow `plugins/skills` |
+
+`mcp` / `skills` / `hooks` / `code_index` 为 L4 能力服务（feature flag 默认关），
+建包前按 R5 在本表补行登记；§4 图中提前点名不构成本表的登记。
+目录级物理布局与各部分内部分块见 `structure.md`；职责登记以本表为准。
 
 ---
 
@@ -188,7 +205,9 @@ Plan（先澄清→可修订计划→定稿才执行）、Goal（后台自驱长
   一次循环）→ `Run`（一次引擎执行，可取消可恢复）→ `Item`（消息／工具调用／工具结果／
   引用／批注／交付物）→ `Event`（对外推送）。
 - **运行状态机**：`queued → running → (steered | waiting | completed | failed | cancelled)`，
-  `waiting` 用于等待插话或审批；**状态迁移只允许状态机驱动**，旁路写入视为契约破坏。
+  其中 `steered` 与 `waiting` 是 `running` 的**旁态而非终态**：插话在下一个工具边界被消费后
+  回到 `running`；终态只有 `completed | failed | cancelled`。**状态迁移只允许状态机驱动**，
+  旁路写入视为契约破坏。
 - **验收状态机**：`proposed → accepted_by_user → executing → reported → verified | regressed`，
   需求改版递增 `requirement_revision` 并**自动作废既有验收**。
 - **工作区修订号**：每次可能改变磁盘状态的动作产生新修订；`search` 分页、Review 的
@@ -229,9 +248,12 @@ Plan（先澄清→可修订计划→定稿才执行）、Goal（后台自驱长
   "只读 ≠ 不会泄密"，插件、MCP、hooks、外部引擎、用户手敲终端都在沙箱之外。
 - **敏感路径**：环境文件、凭据库、SSH 私钥、凭据类 JSON 拒绝读写；按结构化判断而非文件名含
   secret（源码文件可改，凭据文件不可）；聊天审批不解除守卫。日志返回前脱敏，但声明不可完全识别。
-- **⚠ 未决（需用户裁决）**：Windows 无 macOS/Linux 级 OS 沙箱，三选一——
-  ① 依赖 Docker Desktop 做容器隔离；② 自研 Job Object + 受限令牌 + ACL；
-  ③ 受限档显式标注"仅路径门、无 OS 隔离"并要求确认。文档不替你选。
+- **Windows 沙箱（已决，ADR-0007）**：`standard` 档在 Windows 上＝limen 路径门 +
+  Job Object 进程树管理 + 敏感路径守卫（三档全开），**无 OS 级写隔离**——会话创建时
+  显式标注并要求一次性确认，界面不得出现"已沙箱化"表述；受限令牌/全盘 ACL 的自研
+  OS 沙箱**不做**；Docker 与远程执行环境是 L4 可选强隔离层，与会话档位相互独立。
+  fail-closed 保留：路径门无法施加于某次执行（如外部引擎不可包装）即拒绝执行。
+  理由、被否决项与失效条件见 `docs/adr/0007-windows-sandbox.md`。
 
 ---
 
@@ -263,6 +285,8 @@ Plan（先澄清→可修订计划→定稿才执行）、Goal（后台自驱长
 **出口判据（不达标不得进下一里程碑）**：新实现在与参照实现**相同的 N 个真实任务**上
 失败率不高于参照；该模块坑目录覆盖率 100%；每条护栏测试附负向验证输出。
 对照基线就是参照项目本身跑同一批任务——**用基准对比代替"代码看起来一样"作为可信证据**。
+基线只取**可运行**的参照：**FlowCoder 为主基线**（同任务集、同模型、同预算），EvoFlow 按任务类型可选；
+**wuu 不作基线**（本机跑不起来，见 §2），否则出口条件会变成无法执行的承诺。
 
 ---
 
@@ -275,7 +299,7 @@ Plan（先澄清→可修订计划→定稿才执行）、Goal（后台自驱长
 | M2 | 单轮能跑：内置引擎 + 7 工具 + `limen` + 会话落盘 + CLI | 一个真实小任务完整跑通并落盘可回放 |
 | M3 | 工作台数据面：`review` 修订号与 turn↔revision + Files/Review 面板 + 插话与排队 | 面板显示真实 diff；插话在下一个工具边界被消费；接管即停 |
 | M4 | 长跑与编排：Goal + 看板 + 任务总结 + 确认/打回 | 端到端链跑通；状态机无旁路写入 |
-| M5 | 核验：`evidence` 复跑与验证空洞（进程隔离对接 AfterMatter） | 声称通过的命令被复跑并回填核验状态 |
+| M5 | 验收闭环：任务总结 → 确认／打回，并把"声称的检查"与真实记录输出并排核对 | 任一验收结论都能指向具体记录条目；没有复跑也不轻信 |
 | M6 | 外部引擎：ACP／Claude／Codex 适配器 + 权限映射表 | 契约测试全引擎同绿 |
 | M7 | 扩展面：skills／MCP／hooks／插件 | 关插件即停产品行为 |
 | M8 | 可选平台：执行环境、IM、远程、（延后）浏览器面板 | 各自 feature flag 默认关 |
@@ -288,16 +312,48 @@ M6 受阻则整体延后外部引擎（它是最容易吞掉时间的部分）�
 
 ## 13. 未决项（需用户裁决，不自行选边）
 
-1. **Windows OS 沙箱三选一**（§9 最后一栏）。
-2. **协议方法与字段命名**是否沿用 wuu 的具体词表（`thread/*`、`turn/*` 等）。
+1. **协议方法与字段命名**是否沿用 wuu 的具体词表（`thread/*`、`turn/*` 等）。
    wuu 是 MIT，结构可借鉴并注明出处；但沿用词表会让"兼容 wuu 桌面壳"成为隐性承诺。
-3. **M1 的坑目录范围**：只收 Python 可执行的失败模式，还是也收语义坑。
-4. **`evidence` 与 AfterMatter 的耦合深度**：仅导出事件，还是也复用其统计实现（后者需其许可）。
-5. **GitHub 组织名** `questor` 是否申请（影响仓库 URL，历史越短搬家越便宜）。
+2. **M1 的坑目录范围**：只收 Python 可执行的失败模式，还是也收语义坑。
+3. **是否将来引入沙箱复跑核验与纵向统计**（本轮明确不借鉴 AfterMatter；若要引入需单独 ADR，见 §2 排除说明）。
+4. **是否申请 GitHub 组织名 `questor`**（影响仓库 URL；当前历史只有几个 commit，搬家成本最低，
+   越晚越贵）。组/用户名占用尚未核查。
 
 ---
 
-## 14. 风险清单
+## 14. 可逆性优先：不把路走窄（判据与已留的门）
+
+**判据（三问，任一命中才花成本留门）**
+
+1. 这个决定将来要改，代价是**搬运**还是**重写**？只是搬运→不留门，改就是了。
+2. 留门的方式是否只落在**边界**上（数据形状、进程边界、路径单点、能力声明）？
+   落在"抽象层／注册表／配置项"上的一律拒绝。
+3. 是否已有**第二个真实使用者**？没有就不加接口、基类、可插拔点。
+
+所以"留门"只允许四种形态：**清晰边界 + 单点解析 + 声明式数据 + 不分枝的接口**；
+不得以"灵活性"为由引入抽象基类、registry 或一堆 config（`AGENTS.md` §二）。
+
+**已经留下的门**
+
+| 门 | 现在做的事 | 将来挡住哪种"路窄" |
+| --- | --- | --- |
+| 跨模块数据只走 `schemas` | 模块间传数据一律用 schema 类型，不共享私有 dataclass / 裸 dict | 想把 engine/tools 拆成独立发布包时变成重写 |
+| schema 用纯 JSON Schema | 不嵌 Python 专有语法，pydantic 只做绑定 | 做 TS 客户端／远程端／第三方集成时要反推契约 |
+| GUI 能力必须经协议可达 | 不存在"只有桌面壳能调"的私有端点 | 换壳（Electron／移动／远程）或做遥控时重做内核 |
+| 路径单点解析 + `QUESTOR_HOME` | 禁止散写 `~/.questor` 字面量 | 多 profile、便携模式、远程宿主时需全局改 |
+| loop 不按 provider 名分支 | 差异写进 `providers/capabilities` 声明 | 接第 N 家模型时循环里塞满 if，且扩展者无法替换实现 |
+| 扩展与内置同契约 | `mcp`／`skills`／`hooks` 与第三方插件走同一套公开接口，无特权捷径 | 内置能力成为不可替换的黑箱，扩展 API 永远长不全 |
+| 任务集覆盖三柱 | `evals` 不只挑"能写完代码"，也挑插话／接管／核对任务 | 评测只优化编码能力，把可干预与可验证练成摆设 |
+| `just` 只是便利层 | CI 直接调用同一批命令，不依赖 just 存在 | 换 nox／make／纯脚本时门禁语义漂移 |
+| `evidence` 出口是接口 | 本轮只做"声称 vs 实测"核对，但 `export` 形状已定 | 将来接复跑核验或统计时需改事件契约 |
+
+**明确不留的门**（现在不做，将来按 ADR 再开）：多租户与鉴权体系、消息队列与服务发现、
+插件市场、K8s／云沙箱、GUI 内嵌 Chromium、抽象基类与提前 registry。
+理由：每一项都会把目录、配置与测试面撑大一圈，而今天没有第二个真实使用者。
+
+---
+
+## 15. 风险清单
 
 | 风险 | 影响 | 缓解 |
 | --- | --- | --- |
@@ -310,7 +366,7 @@ M6 受阻则整体延后外部引擎（它是最容易吞掉时间的部分）�
 
 ---
 
-## 15. 命名与仓库规范
+## 16. 命名与仓库规范
 
 见 `docs/adr/0001-naming-and-availability.md`：品牌体 **Questor**，技术标识符一律小写
 `questor`，CLI `questor`（别名 `qst`），内部模块名与对外包名分两层治理，
