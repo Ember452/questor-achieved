@@ -173,8 +173,9 @@ scope = 模块目录名（`engine` `tools` `limen` `habena` `evidence` `orchestr
 
 | 要做的事 | 必读 |
 |---|---|
-| 任何任务开工前 | `docs/adr/README.md` 索引 + 本文件 §二 §三 |
-| 改数据模型 / 状态机 / 消息协议 | **先改文档并递增版本号，代码跟随**；顺序不可反 |
+| 任何任务开工前 | `docs/architecture/overview.md`（**唯一架构入口**）+ 本文件 §二 §三 + `docs/adr/README.md` 索引 |
+| 改数据模型 / 状态机 / 消息协议 | `overview.md` §7 §8（契约源头）→ **先改文档并递增版本号，代码跟随**；顺序不可反 |
+| 新增顶层包 | 先在 `overview.md` §6 登记一行职责（R5），否则评审打回 |
 | 重写任何边界层模块 | `docs/specs/pitfalls.md` 对应条目 + 参照实现的行为规格 |
 | 加依赖 | 先在 `docs/adr/` 落一条记录，正文说明理由 |
 | 放不进上面任何一行 | 先写一条轻量 ADR，再动手 |

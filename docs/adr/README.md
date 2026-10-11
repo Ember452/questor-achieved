@@ -30,7 +30,8 @@
 | 编号 | 标题 | 状态 |
 | --- | --- | --- |
 | [0001](0001-naming-and-availability.md) | 项目命名、拼写裁决与占用核查 | accepted |
-| 0002 | 复用三分法与 provenance 纪律 | planned |
-| 0003 | 仓库边界与依赖拓扑（questor 依赖谁、谁是引擎） | planned |
+| 0002 | 全量重写策略与 provenance 纪律 | planned（已由 `overview.md` §3 承载内容） |
+| 0003 | 仓库边界与依赖拓扑（不依赖参照项目代码） | planned |
 | 0004 | 语义唯一来源与 adapter 位置 | planned |
 | 0005 | 工作区修订号与 turn↔revision 绑定 | planned |
+| 0006 | 桌面壳选型与浏览器面板边界（Tauri 优先，镜像而非同页） | planned |
