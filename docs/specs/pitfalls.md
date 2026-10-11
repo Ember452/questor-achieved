@@ -29,7 +29,7 @@
 | B-21 | context | 保留窗口绝不留悬空 tool_result：keep_start 回退到配对 assistant，宁可多留一对 | 异常分支 | FlowCoder `context/manager.py#L239-255` | 待落 | open |
 | B-22 | context | 摘要前缀回收空间低于阈值时退化为不压缩，防"压了个寂寞" | 异常分支 | FlowCoder `context/manager.py#L258-262,L326-329` | 待落 | open |
 | B-23 | context | 压缩熔断器连续失败 3 次后 open，自动压缩拒绝并提示手动 | 异常分支 | FlowCoder `context/manager.py#L270-282,L315-316` | 待落 | open |
-| B-24 | context | 大结果落盘用 O_EXCL 幂等写：同 tool_use_id 只写一次，重复静默跳过 | 异常分支 | FlowCoder `context/tool_results.py#L66-76` | 待落 | open |
+| B-24 | context | 大结果落盘用 O_EXCL 幂等写：同 tool_use_id 只写一次，重复静默跳过 | 异常分支 | FlowCoder `context/tool_results.py#L66-76` | `tests/unit/test_gesta_store.py::test_spill_tool_result_idempotent_and_previewed`（O_EXCL 写原语由 `tests/unit/test_state_atomic.py::test_write_excl_first_true_second_false` 承载；context 模块 M2.3 开工时按其聚合语义补专属用例） | covered |
 | B-25 | context | 替换决策跨轮持久（seen/replacements），且绝不 mutate 原始对话 | 异常分支 | FlowCoder `context/tool_results.py#L104-117,L121-134` | 待落 | open |
 | B-26 | context | 聚合超限按单条大小降序逐个落盘替换直到达标 | 实现细节 | FlowCoder `context/tool_results.py#L159-183` | 待落 | open |
 | B-27 | context | 陈旧裁剪若实现必须把边界记进状态——FlowCoder 无状态跑法自认 drift trade-off | docstring 自认 | FlowCoder `context/tool_results.py#L112-114` | 待落 | open |
@@ -50,9 +50,9 @@
 | B-42 | vigilia | once 任务触发成功立即幂等标记 once_fired，标记失败记 warning 不阻塞 | 实现细节 | EvoFlow `automation_runner.py#L945-951` | 待落 | open |
 | B-43 | orchestration | 编排门返回结构化错误载荷（error_code/message/hint）而非抛异常——模型可读可重试 | docstring+实现 | EvoFlow `collab/supervisor_plan_gate.py#L1,L93-108` | 待落 | open |
 | B-44 | vigilia | 运行状态真值在运行时侧时，重启必有 stale running——需启动 + 周期双 reconcile | docstring 自认历史坑 | EvoFlow `zombie_run_sweeper.py#L19-48` | 待落 | open |
-| B-45 | gesta | gate/审批类消息必须先持久化定序，用户的跟进行才能排在后面 | Transcript 规则注释 | EvoFlow `agents/human_gate_tools.py#L14-16` | 待落 | open |
-| B-46 | gesta | 会话正文不做百表 SQLite 单体；Questor 用 append-only JSONL 真相源 + SQLite 仅可重建索引 | 规模实测 | EvoFlow `persistence/schema.py`（2191 行/123 表）、`persistence/chat_message_content.py#L1` | 待落 | open |
-| B-47 | gesta | 事件流要有独立镜像/持久化位支撑断线恢复 | schema 实存 | EvoFlow `persistence/schema.py#L449,461` | 待落 | open |
+| B-45 | gesta | gate/审批类消息必须先持久化定序，用户的跟进行才能排在后面 | Transcript 规则注释 | EvoFlow `agents/human_gate_tools.py#L14-16` | `tests/unit/test_gesta_store.py::test_turn_seq_single_point_allocation`（seq 由 store 持锁单点分配，调用方不可指定） | covered |
+| B-46 | gesta | 会话正文不做百表 SQLite 单体；Questor 用 append-only JSONL 真相源 + SQLite 仅可重建索引 | 规模实测 | EvoFlow `persistence/schema.py`（2191 行/123 表）、`persistence/chat_message_content.py#L1` | `tests/architecture/test_gesta_append_only.py`（append-only 机械保证）、`tests/unit/test_gesta_store.py::test_index_matches_rebuild_and_self_heals`（索引为可重建缓存）、`tests/integration/test_gesta_roundtrip.py`（JSONL 唯一真相源回放） | covered |
+| B-47 | gesta | 事件流要有独立镜像/持久化位支撑断线恢复 | schema 实存 | EvoFlow `persistence/schema.py#L449,461` | `tests/integration/test_gesta_roundtrip.py::test_full_lifecycle_replay`（Event 随记录流持久化，seq 为续传锚点） | covered |
 | B-48 | （M7 mcp/记忆） | FTS5 中文检索用 CJK bigram + OR 引号技巧（unicode61 会把中文连成整串） | 实现注释 | EvoFlow `memory/store.py#L557` | 待落 | open |
 | B-49 | vigilia | per-task asyncio.Lock 字典 + 守卫锁防 tick 重入同一任务 | 实现模式 | EvoFlow `unattended_task_pipeline.py#L40-41,L211-217` | 待落 | open |
 | B-50 | limen | read_only 的浏览器粒度：拦 navigate/click/type、放 observe/screenshot（ReadOnly 短路在 mutates 之前） | 实现注释 | wuu `internal/tools/boundary.go#L65-80` | 待落 | open |
@@ -62,7 +62,7 @@
 | B-54 | limen | 敏感写包括 unconfined 一律拒；unconfined 读降级输出脱敏——档位不解除守卫 | 语义规格 | wuu `internal/tools/sensitive_paths.go` | 待落 | open |
 | B-55 | habena | 审批硬拒三件：凭据调用、参数试图 permission_mode 提权、敏感路径写；判定用目标非内容 | 实现+测试名 | wuu `internal/approvefor/review.go#L87-112`、`review_test.go#L31` | 待落 | open |
 | B-56 | habena | 审批五态 allow/deny/unsure/failed/cancelled；unsure/failed 不是安全判定，不得当总括授权 | 实现常量 | wuu `internal/approvefor/review.go#L15` | 待落 | open |
-| B-57 | config | 仓库/共享配置分层合并时 strip 用户专属安全字段（provider/凭据/permission_mode） | 注释+实现 | wuu `internal/config/settings_layer.go#L23,L48-63,L108` | 待落 | open |
+| B-57 | config | 仓库/共享配置分层合并时 strip 用户专属安全字段（provider/凭据/permission_mode） | 注释+实现 | wuu `internal/config/settings_layer.go#L23,L48-63,L108` | `tests/unit/test_config_loader.py::test_user_only_fields_stripped_from_project_layers`、`::test_strip_warning_deduped_within_process` | covered |
 | B-58 | limen | 沙箱 provider 契约：必须 full enforcement，partial 拒绝；不支持平台 fail closed | 实现常量 | wuu `internal/processsandbox/sandbox_other.go#L11-14` | 待落 | open |
 | B-59 | serve | 反向请求的响应先路由给 pending 调用表等待者，再进 method switch，否则被 unknown method 吞掉 | 实现注释 | wuu `internal/appserver/server.go#L205` | 待落 | open |
 | B-60 | serve | 协议版本严格相等，不做降级兼容 | 实现常量 | wuu `internal/appserver/protocol.go#L26` | 待落 | open |
@@ -79,5 +79,5 @@
 | B-71 | state | 锁文件释放后禁止删除——删除-重建会让并发进程锁到不同 inode，互斥失效 | 实现注释 | wuu `internal/storelock/store_lock.go#L33-35` | `tests/unit/test_state_locks.py::test_lock_file_survives_release`、`tests/adversarial/test_state_lock_contention.py` | covered |
 | B-72 | state | 原子写的临时文件必须与目标同目录——跨目录 rename 不原子，崩溃可留半写目标文件 | 实现细节 | wuu `internal/securefs/securefs.go#L44-56` | `tests/adversarial/test_state_atomic_failure.py::test_temp_file_lives_in_target_directory`、`::test_failure_leaves_no_partial_target_and_no_temp` | covered |
 | B-73 | state | 路径解析的 env 覆盖必须每次调用时求值——import/init 时求值会让测试与多实例拿到陈旧 home | 实现细节 | wuu `internal/statepath/statepath.go#L34-37` | `tests/unit/test_state_paths.py::test_home_env_read_at_call_time` | covered |
-| B-74 | gesta | 会话 JSONL 读取必须容忍残尾（空行与坏行跳过）——崩溃半行不得阻断回放与后续追加 | 实现注释 | wuu `internal/agentthread/store.go#L375-406` | 待落 | open |
-| B-75 | config | 共享配置层的用户专属字段 strip 必须大小写不敏感全拼写删除——raw map 合并时大小写变体绑定同一字段 | 实现细节 | wuu `internal/config/settings_layer.go#L279-294` | 待落 | open |
+| B-74 | gesta | 会话 JSONL 读取必须容忍残尾（空行与坏行跳过）——崩溃半行不得阻断回放与后续追加 | 实现注释 | wuu `internal/agentthread/store.go#L375-406` | `tests/adversarial/test_gesta_tail_tolerance.py`（三用例：回放、续追加、索引重建） | covered |
+| B-75 | config | 共享配置层的用户专属字段 strip 必须大小写不敏感全拼写删除——raw map 合并时大小写变体绑定同一字段 | 实现细节 | wuu `internal/config/settings_layer.go#L279-294` | `tests/unit/test_config_loader.py::test_user_only_fields_stripped_from_project_layers`（含 API_Key 变体删除与 my_api_key 不误伤） | covered |

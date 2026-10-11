@@ -110,7 +110,25 @@ runner 协议 + result.schema）；ui/ 骨架（token 四文件 + mock + 第一�
 
 ## Phase M2 — 单轮内核跑通（engine + 基建模块群 + cli）
 
-**状态**：`- [ ]` 未开始
+**状态**：**M2.1 地基 `- [x]` 已完成（2026-10-11，提交至 `8ceb0cd`）**；M2.2 / M2.3 `- [ ]` 未开始
+
+**M2.1 实际结果**：地基七模块全部落地并各自成 commit——`version`（VERSION 单点 +
+pyproject dynamic）、`state`（路径单点 / 原子写 / 跨进程锁，B-71/72/73）、
+`schemas/model.py`（data-model v1.1 的 pydantic 绑定 + 一致性护栏）、`gesta`
+（append-only JSONL + fold 回放 + 可重建索引，B-45/46/74；工具结果 O_EXCL，B-24）、
+`config`（分层合并 + strip 用户专属字段，B-57/75）、`secrets`（keyring 优先 + 文件回落）、
+`capability`（opt-in 旗标）、`workspaces`（哈希身份 + 可见性判定）；三条硬断言落地两条
+（append-only、状态迁移唯一入口，权限无绕过留 M2.2 limen）。契约修订：data-model v1.0 →
+v1.1（queued→cancelled，ADR-0014）；依赖引入 pydantic v2 / keyring / import-linter
+（ADR-0013）；依赖裁决 ADR-0012（gesta、capability 以矩阵为准，overview §6 已回写）。
+M2.1 出口判据逐项：落盘可回放（`tests/integration/test_gesta_roundtrip.py` 绿）；
+原子写 / 文件锁 / 会话删除对抗用例绿（崩溃注入、真实子进程锁争用与死亡释放、活跃拒删）；
+坑覆盖率 100%（B-71–B-75 全 covered，B-24/B-45/46/47/57 回填测试名）；每条护栏测试
+附负向验证（VERSION 格式与 static version 注入、append-only 护栏初版没咬住单参数
+`open("w")` 后修正为双形式、transitions 旁路 import 注入、依赖矩阵 bogus 包注入）。
+**偏离留痕**：① gesta 摘要索引以 JSON 承载，SQLite FTS 搜索索引按 B-46 推迟至 M4
+（无第二个真实使用者）；② `third_party/` 通知生成推迟至 M2.3（同因）；
+③ 本期无用户可感知能力，前端跟随（mock 事件流流式渲染）按计划留待 M2 收口统一验证。
 
 **做什么**（= structure §11 M2 行）：`engine`（内置循环）、`tools`（七工具）、`limen`、`context`、`gesta`、`providers`、`prompts`、`config`、`state`、`secrets`、`capability`、`workspaces`、`version`、`cli`、`serve` 雏形；`VERSION`、`third_party/`；`evals/runner`。
 
