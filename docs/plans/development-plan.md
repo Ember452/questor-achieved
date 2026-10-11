@@ -71,12 +71,12 @@ runner 协议 + result.schema）；ui/ 骨架（token 四文件 + mock + 第一�
 - ✅ 已补：**前端文档空缺**——`ui/` 此前无任何说明，现新增 `ui/README.md`（目录职责、命令、
   mock 与生成物不可手改边界、**会话真相永不镜像到前端状态**的约束），并接进 `docs/README.md`
   与 structure §7。
-- ⚠ 待裁：**`just` 未安装**——门禁单一入口在开发机上无法执行。安装指引（三选一）：
-  `winget install Casey.Just`、`scoop install just`、`choco install just`；装后重开终端，
-  `just --version` 验证，再 `just setup && just check`。**系统工具安装由用户执行**，
-  不代劳也不擅自改换 nox（若宁愿换 nox，按 ADR-0008 失效条件记一条新 ADR）。
-- ⚠ 未做：M1b 清单项 **`tests/contract/` 与 `tests/fixtures/` 未创建**（已核实不存在）；
-  按 §10 物化原则它们随 M2 首批用例落地，此处只登记偏差。
+- ✅ 已补：M1b 清单项 **`tests/contract/` 与 `tests/fixtures/`** 已按 §11 的占位例外建立
+  （各自 README 写明本套件断言什么、为何存在、以及"收集 0 条属预期不作门禁依据"）。
+- ⚠ 已登记不可用：**`just` 本机装不上**——`winget install Casey.Just` 能找到包（1.58.0）但下载
+  GitHub Release 被网络拦截（`0x80072f19`）；`cargo`/`choco`/`scoop` 均无；PyPI 上同名包无法
+  核实来源，故**不装未知来源**。退路已成文（AGENTS §四 + `ADR-0009`）：按 `justfile` 的 `check`
+  配方逐条手动跑，不另写一份包装；"本地与 CI 同源"当前由 CI 逐条执行 + `pre-commit run --all-files` 证明。
 - ℹ 工具教训：核查行号/行数一律用 Python `splitlines()` 或 .NET `ReadAllLines`；PowerShell 5.1 的
   `Get-Content` 实测把 1076 行的参照文件读成 1004 行，曾据此误判"引用错位"（详见 ADR-0008）。
 

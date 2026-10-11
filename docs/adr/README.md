@@ -34,6 +34,7 @@
 | 0003 | 仓库边界与依赖拓扑（不依赖参照项目代码） | planned |
 | 0004 | 语义唯一来源与 adapter 位置 | planned |
 | 0005 | 工作区修订号与 turn↔revision 绑定 | planned |
-| 0006 | 桌面壳选型与浏览器面板边界（Tauri 优先，镜像而非同页） | planned |
+| [0006](0006-desktop-shell-and-browser-panel.md) | 桌面壳选型与浏览器面板边界（Tauri 优先，镜像而非同页） | accepted |
 | [0007](0007-windows-sandbox.md) | Windows 沙箱策略：诚实降级 + 进程树管理，强隔离走可选执行环境 | accepted |
 | [0008](0008-gate-scope-and-citation-checks.md) | 门禁范围与内容一致性、引用核查工具规范 | accepted |
+| [0009](0009-gate-entry-just.md) | 门禁入口用 just，及本机装不上时的退路 | accepted |
