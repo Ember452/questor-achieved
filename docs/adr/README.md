@@ -40,3 +40,5 @@
 | [0009](0009-gate-entry-just.md) | 门禁入口用 just，及本机装不上时的退路 | accepted |
 | [0010](0010-notes-anchored-and-expiring.md) | 学习笔记：锚点化 + 过期即删 | accepted |
 | [0011](0011-branch-protection-mode.md) | 分支保护形态：required checks，但不强制 PR（附 required 名单真相表） | accepted |
+| [0012](0012-module-dependency-rulings.md) | gesta 与 capability 的依赖方向裁决（以矩阵为准，回写 overview §6） | accepted |
+| [0013](0013-m2-foundation-dependencies.md) | M2.1 地基依赖引入（pydantic v2 / keyring / import-linter） | accepted |

@@ -218,7 +218,8 @@ Commit message 一律英文 Conventional Commits（本项目面向国际开源�
 ```
 
 scope = 模块目录名（`engine` `tools` `limen` `habena` `vigilia` `gesta` `evidence`
-`orchestration` `providers` `review` `serve` `cli` `docs` `ci`）。一个 commit = 一个可独立回滚的逻辑变更，
+`orchestration` `providers` `review` `serve` `cli` `docs` `ci` `state` `config` `secrets`
+`capability` `workspaces` `version` `context` `prompts` `schemas`）。一个 commit = 一个可独立回滚的逻辑变更，
 实现与其测试同 commit；禁止巨型 commit，也禁止每次保存一提交。
 
 **推送目标与保护形态**（`ADR-0011`）：取 B 方案——required checks 但不强制 PR，因此

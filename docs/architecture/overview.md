@@ -185,7 +185,7 @@ IM 渠道、远程与移动端、多账号与费用治理、
 | `engine` | 循环、turn 生命周期、事件流、引擎注册表与契约 | `tools` `limen` `gesta` | wuu `agentengine`（形状）＋ FlowCoder（行为） |
 | `tools` | 工具登记、schema、执行与结果封装 | `limen` | wuu `internal/tools`、FlowCoder |
 | `limen` | **唯一权威权限门**：三档、可达性推导、敏感路径守卫 | 无业务依赖 | wuu `boundary.go` 规格 |
-| `gesta` | 会话记录与验收导出 | `engine` 事件 | wuu session 语义 |
+| `gesta` | 会话记录与验收导出（事件与实体形状经 `schemas` 承载，对 engine 无感知） | `schemas` `state` `config` | wuu session 语义 |
 | `review` | 工作区修订号、真实 diff、turn↔revision 绑定 | git CLI | wuu Review 语义 |
 | `habena` | 插话收件箱、排队、接管与暂停、取消传播 | `engine` | wuu `session/inbox`、`held_user_work` |
 | `vigilia` | 值守长跑、调度、唤醒检查点、僵尸运行清扫 | `engine` | EvoFlow scheduler＋自建状态机 |
@@ -201,7 +201,7 @@ IM 渠道、远程与移动端、多账号与费用治理、
 | `config` | 类型化配置加载与作用域合并、热改错误通知 | `state` | wuu `internal/config`、`runtimeconfig` |
 | `state` | 路径单点解析、原子写、跨进程文件锁、存储编码 | 标准库 | wuu `statepath`、`securefs`、`storelock`、`storagecodec`、`shellpath` |
 | `secrets` | 凭据存储（OS keyring 优先）与守卫 | `state` | wuu `credentialstore`、`authstorage` |
-| `capability` | feature flag 与能力开关（L4 渐进启用的机制） | `config` | wuu `capability`、`harness` |
+| `capability` | feature flag 与能力开关（L4 渐进启用的机制；配置值由上层组装注入，本模块不读 config） | `schemas` | wuu `capability`、`harness` |
 | `workspaces` | 工作区注册与路径可见性 | `state` | wuu `workspaces` |
 | `worktree` | Git worktree 生命周期与隔离 | `workspaces` | wuu `worktree` |
 | `sessiontrace` | 会话轨迹回放（不重跑工具、不联系模型） | `gesta` | wuu `sessiontrace` |
