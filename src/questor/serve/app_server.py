@@ -78,6 +78,9 @@ class AppServer:
 
     create_engine: Callable[[str, PermissionMode], Engine]
     principal: str = field(default_factory=_local_principal)
+    #: 本地 host 的默认工作区 id（serve http 起服务时登记 --cwd）；客户端不传
+    #: workspace_id 时回落它。工作区身份单点在 workspaces（sha256[:16]），前端不造 id。
+    default_workspace_id: str | None = None
     feature_flags: FeatureFlags = field(default_factory=FeatureFlags)
     max_concurrency: int = 2
     issues: tuple[str, ...] = ()
@@ -195,9 +198,10 @@ class AppServer:
 
     async def thread_create(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
         del ctx
-        workspace_id = params.get("workspace_id")
+        # workspace_id 缺省回落服务端默认（本地 host 的 cwd）；不硬让前端造 hash id
+        workspace_id = params.get("workspace_id") or self.default_workspace_id
         if not isinstance(workspace_id, str) or not workspace_id:
-            raise ValueError("thread/create 缺少必需字段 workspace_id")
+            raise ValueError("thread/create 缺少 workspace_id，且服务端未配置默认工作区")
         # data-model.md §2：engine_id "创建时绑定，不静默切换（未知引擎显式报错）"。
         # 本期只有内建引擎；收下 engine_id 又不路由会造"记了 codex、跑的却是 questor-engine"
         # 的两套真相，故非内建一律显式拒（外部引擎路由随 M6 engine/adapters）。
@@ -501,9 +505,11 @@ class AppServer:
         path = str(params.get("path", ""))
         if not path:
             raise ValueError("files/read 需要 path")
-        workspace_id = str(params.get("workspace_id") or ctx.workspace_id or "")
+        workspace_id = str(
+            params.get("workspace_id") or ctx.workspace_id or self.default_workspace_id or ""
+        )
         if not workspace_id:
-            raise ValueError("files/read 需要 workspace_id（params 或 ctx）")
+            raise ValueError("files/read 需要 workspace_id（params、ctx 或服务端默认）")
         workspace = get_workspace(workspace_id)
         if workspace is None:
             raise ProtocolError("invalid_params", f"未注册 workspace: {workspace_id}")
@@ -533,9 +539,11 @@ class AppServer:
 
     async def files_list(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
         sub = str(params.get("path", "."))
-        workspace_id = str(params.get("workspace_id") or ctx.workspace_id or "")
+        workspace_id = str(
+            params.get("workspace_id") or ctx.workspace_id or self.default_workspace_id or ""
+        )
         if not workspace_id:
-            raise ValueError("files/list 需要 workspace_id")
+            raise ValueError("files/list 需要 workspace_id（params、ctx 或服务端默认）")
         workspace = get_workspace(workspace_id)
         if workspace is None:
             raise ProtocolError("invalid_params", f"未注册 workspace: {workspace_id}")

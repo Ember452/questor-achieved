@@ -34,7 +34,6 @@ export function Sidebar() {
     setErr(null);
     try {
       const r = await client.call("thread/create", {
-        workspace_id: "ws-local",
         title,
       });
       setNewTitle("");

@@ -220,7 +220,14 @@ def _cmd_serve_http(args: argparse.Namespace) -> int:
         return build_engine(model=model, cwd=cwd, mode=mode)
 
     ui_dist = Path(args.ui_dist) if args.ui_dist else Path("ui/dist")
-    app = create_app(create_engine=_factory, ui_dist=ui_dist if ui_dist.is_dir() else None)
+    # 本地 host 代表一个工作区：起服务时就把 --cwd 登记为默认（路径单点解析在
+    # workspaces），前端建会话/列文件不传 workspace_id 时落到它，避免瞎造 "ws-local" 幽灵 id。
+    default_workspace_id = ensure_workspace_for_root(Path(cwd))
+    app = create_app(
+        create_engine=_factory,
+        ui_dist=ui_dist if ui_dist.is_dir() else None,
+        default_workspace_id=default_workspace_id,
+    )
     try:
         run_server(app, host=args.host, port=args.port)
     finally:

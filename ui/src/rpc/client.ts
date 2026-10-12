@@ -16,6 +16,8 @@ import type {
   FilesReadResult,
   FilesListParams,
   FilesListResult,
+  ThreadShowParams,
+  ThreadShowResult,
   InitializeParams,
   InitializeResult,
   SessiontraceGetParams,
@@ -49,6 +51,7 @@ export interface Api {
   initialize: { params: InitializeParams; result: InitializeResult };
   "thread/create": { params: ThreadCreateParams; result: ThreadCreateResult };
   "thread/list": { params: ThreadListParams; result: ThreadListResult };
+  "thread/show": { params: ThreadShowParams; result: ThreadShowResult };
   "turn/start": { params: TurnStartParams; result: TurnStartResult };
   "turn/steer": { params: TurnSteerParams; result: TurnSteerResult };
   "review/turn_diff": { params: ReviewTurnDiffParams; result: ReviewTurnDiffResult };

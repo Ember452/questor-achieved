@@ -205,7 +205,7 @@ export interface InitializeResult {
  */
 export interface ThreadCreateParams {
   id?: Id;
-  workspace_id: Id;
+  workspace_id?: Id;
   title?: string | null;
   engine_id?: Id;
   permission_mode?: PermissionMode;

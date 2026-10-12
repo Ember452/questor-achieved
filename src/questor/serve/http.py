@@ -38,13 +38,15 @@ def create_app(
     *,
     create_engine: Callable[[str, PermissionMode], Engine],
     ui_dist: Path | None = None,
+    default_workspace_id: str | None = None,
 ) -> Starlette:
     """装配一个 Starlette app：WS 端点 + 可选静态伺服（`ui/dist` 存在时挂）。
 
     每次连接 `subscribe()` 一个 Fanout 订阅；AppServer 是单例，跨连接共享 runs / inboxes。
+    `default_workspace_id` 是本地 host 的默认工作区（serve 起服务时登记 --cwd）。
     """
     fanout = Fanout()
-    app_server = AppServer(create_engine=create_engine)
+    app_server = AppServer(create_engine=create_engine, default_workspace_id=default_workspace_id)
     ws_endpoint = make_ws_handler(app_server, fanout)
     routes: list[Mount | WebSocketRoute] = [WebSocketRoute("/ws", ws_endpoint)]
     if ui_dist is not None and ui_dist.is_dir():

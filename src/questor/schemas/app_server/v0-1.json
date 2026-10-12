@@ -237,7 +237,7 @@
     },
     "ThreadCreateParams": {
       "type": "object",
-      "required": ["workspace_id"],
+      "required": [],
       "properties": {
         "id": { "$ref": "#/$defs/Id" },
         "workspace_id": { "$ref": "#/$defs/Id" },

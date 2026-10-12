@@ -60,6 +60,20 @@ export function ConversationPane() {
           if (n.params.status === "completed" || n.params.status === "failed") {
             markLastAssistantDone();
           }
+          // 回合结束 → 拉该会话最新 turn 喂给 Review 面板（turn/start 响应不含
+          // turn_id，落盘后从 thread/show 取；单线程本地即最后一条）。
+          if (n.params.status === "completed" && activeSessionId) {
+            void client
+              .call("thread/show", { thread_id: activeSessionId })
+              .then((r) => {
+                const turns = r.turns as { id?: string }[];
+                const last = turns[turns.length - 1];
+                if (last?.id) setActiveTurn(last.id);
+              })
+              .catch(() => {
+                /* 拉取失败不影响回合完成呈现 */
+              });
+          }
           break;
         case "notice/compact":
           appendMessage({
@@ -80,6 +94,8 @@ export function ConversationPane() {
     appendMessage,
     markLastAssistantDone,
     setRunStatus,
+    activeSessionId,
+    setActiveTurn,
   ]);
 
   return (
@@ -110,7 +126,6 @@ function Composer() {
     if (!threadId) {
       // 无活跃会话时自动新建一条以 text 为标题的会话（M3 出口判据 1 的手工冒烟入口）
       const created = await client.call("thread/create", {
-        workspace_id: "ws-local",
         title: text.slice(0, 60),
       });
       threadId = created.thread.id;
