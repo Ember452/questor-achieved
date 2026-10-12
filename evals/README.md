@@ -41,6 +41,23 @@ Questor agent 与 FlowCoder agent 各写一个满足 `Solver` 协议的 adapter�
 两个 solver，各产出一份 result.json（失败也发布），共用 failure_tax 四分类对齐
 失败率语义，对比报告给逐任务通过矩阵。
 
+## 可比性口径（ADR-0021：2026-10-12 定）
+
+"失败率不高于参照"只在这些条件下才是可执行的判据，否则它会退化成无法验证的口号：
+
+1. **可比集**：双方都能以纯文件 + 路径门档跑通的任务（Questor `standard` 档 vs
+   FlowCoder 非交互模式），逐任务同 prompt、同 fixture commit、同 timeout、同 grader。
+2. **`not_in_baseline`**：需要 Docker/沙箱才能安全执行的任务显式标注不参与基线对比
+   （Questor 侧沙箱属 M8）——**标注而非剔除**，不让它从判据里悄悄消失。
+3. **`not_comparable`**：干预柱任务（插话/接管）——FlowCoder 的 `-p` 非交互模式没有
+   插话通道，只发 Questor 侧结果并标此注，不猜分。
+4. **档位映射表**：FlowCoder 的权限档是六档
+   （`default|acceptEdits|plan|bypassPermissions|custom|dontAsk`），Questor 是三档；
+   adapter 必须走显式映射表并声明"映射不承诺等价保护"（与 M6 引擎权限映射同一口径，
+   2026-10-12 实测：`flowcoder --mode read_only` 直接报参数错）。
+5. **跑批时点**：对照基线首跑不卡 M2.3 出口，挂在 M3 出口前（ADR-0021）。
+
 ## 变更记录
 
 - 2026-10-11：骨架建立；N=12 钉死；任务主题定稿（tasks/tasks.json）。
+- 2026-10-12：新增"可比性口径"（ADR-0021）；对照基线首跑移出 M2.3 出口。

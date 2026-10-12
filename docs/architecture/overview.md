@@ -192,10 +192,10 @@ IM 渠道、远程与移动端、多账号与费用治理、
 | `vigilia` | 值守长跑、调度、唤醒检查点、僵尸运行清扫 | `engine` | EvoFlow scheduler＋自建状态机 |
 | `evidence` | "声称的检查"与真实记录输出的并排核对、验收证据出口 | `review` `tools` | wuu Review 语义 + EvoFlow 任务总结 |
 | `orchestration` | Plan／Goal／看板／验收与打回 | `engine` `vigilia` | EvoFlow |
-| `providers` | 模型客户端、用量与能力声明 | 无 | FlowCoder |
+| `providers` | 模型客户端、用量与能力声明（自建 wire 层 over httpx，不接厂商 SDK——ADR-0016） | `schemas` `state` | FlowCoder（行为对照，形状不照搬） |
 | `serve` | 网关、协议服务、SSE／WS | 全部上层 | wuu app-server（形状） |
 | `cli` | 命令行入口 | `serve` 或直连内核 | wuu exec |
-| `prompts` | 运行时提示词与指令资产（随包发布，禁止内联在代码里） | 无 | wuu `prompts/`、EvoFlow `prompt_blocks_*` |
+| `prompts` | 运行时提示词与指令资产（随包发布，禁止内联在代码里）与分块装配（ADR-0018） | `schemas`（只取类型，不取业务） | wuu `prompts/`、EvoFlow `prompt_blocks_*` |
 | `extensions` | 插件宿主与能力扩展（`mcp` `skills` `hooks` `code_index` 在其下）；内核不得反向 import 它 | `schemas` + 公开扩展接口 | wuu `internal/pluginhost`、EvoFlow `plugins/skills` |
 | `context` | 上下文预算、自适应压缩、压缩边界记录、超预算结果落盘与回读 | `gesta` `providers`（仅用量结构） | wuu `context`、`contextbudget`、`compact` |
 | `schemas` | 协议与数据契约 schema（纯 JSON Schema，真相源） | 无 | wuu `packages/protocol` |
@@ -316,7 +316,7 @@ IM 渠道、远程与移动端、多账号与费用治理、
 | --- | --- | --- |
 | M0 | 仓库骨架、门禁、ADR-0001 | **已完成**（`1778ac1`、`e7aef72`） |
 | M1 | 扫描三资产落盘 + 契约文档与 schema + 契约测试骨架 | 坑目录 ≥50 条且各有归属模块；schema 能生成前端类型 |
-| M2 | 单轮能跑：内置引擎 + 8 工具 + `limen` + 会话落盘 + CLI（**M2.1 地基与 M2.2 内核已完成** 2026-10-11，见 development-plan） | 一个真实小任务完整跑通并落盘可回放 |
+| M2 | 单轮能跑：内置引擎 + 8 工具 + `limen` + 会话落盘 + CLI（**已完成 2026-10-12**：M2.1/M2.2/M2.3 全部勾销，见 development-plan 的 M2.3 实际结果） | 一个真实小任务完整跑通并落盘可回放（已真机验证：`questor exec` 写文件→读回，会话 last_seq=22 可回放） |
 | M3 | 工作台数据面：`review` 修订号与 turn↔revision + Files/Review 面板 + 插话与排队；**同一 `ui/` 构建产物同时供桌面与本地网页宿主** | 面板显示真实 diff；插话在下一个工具边界被消费；接管即停；网页默认只绑 `127.0.0.1` 且无第二套契约 |
 | M4 | 长跑与编排：Goal + 看板 + 任务总结 + 确认/打回 | 端到端链跑通；状态机无旁路写入 |
 | M5 | 验收闭环：任务总结 → 确认／打回，并把"声称的检查"与真实记录输出并排核对 | 任一验收结论都能指向具体记录条目；没有复跑也不轻信 |

@@ -54,8 +54,16 @@ runner 协议 + result.schema）；ui/ 骨架（token 四文件 + mock + 第一�
 - ✅ 已修：**门禁范围有洞**——`just lint` 与 CI 只跑 `ruff check src tests`，把 `evals/`、`scripts/`
   两类生产 Python 排除在外；后果是仓库里已存在 4 个 ruff 错 + 1 个未格式化文件而 CI 全绿。
   现已把四个目录同时纳入 just 与 CI。
-- ✅ 已修：**`just check` 不等于 AGENTS §四 的四件套**（原只含 lint/arch/gen-check），且 **CI 从不跑 pyright**、
-  **`check_specs.py` 从未被任何 CI 调用**（出口判据的机械核查只在本地自述）。现 check = lint+types+test+arch+specs+gen-check+前端 typecheck，CI 同步。
+- ✅ 已修：**`just check` 不等于 AGENTS §四 的四件套**（原只含 lint/arch/gen-check）。现 check =
+  lint+types+test+arch+specs+gen-check+前端 typecheck。**本行原写"CI 从不跑 pyright"与
+  "`check_specs.py` 从未被任何 CI 调用"与现状不符；M2.3 二次核对时我一度把它改成另一句错话
+  （"没有任何 CI 步骤比对 generated/"），两句都已按现实修正**：`ci.yml` 的 lint job 仍跑
+  `ruff check`/`format --check`/`lint-imports`/`pyright`/`check_specs`/`check_notes`/
+  `npm run gen:check`/`ui typecheck`/`uv build`/`pre-commit run --all-files`（L35-54），
+  test job 的 windows leg 再跑一次 `gen:check` 拦 B-68 跨平台漂移（L93）。
+  **真的缺的只有两件**：生成器脚本住在 `ui/scripts/` 而非 `structure.md` §9 规定的
+  `scripts/gen/`（定义点归属错），与 `third_party/THIRD-PARTY-NOTICES` 的生成器完全不存在——
+  两者都是阶段 G 的实体工作，补救口径见 ADR-0019（已按此改写前提）。
 - ✅ 已修：**`testenv` 的反向守卫只是文档声称**（fake_home 模块 docstring 说"tests/architecture 会检查"，
   实际没有该测试）；已落 `test_production_code_never_imports_testenv`，并做负向验证（注入违规文件→FAILED，
   删除→3 passed）。同时新增 `test_reverse_guards_have_teeth`，防止矩阵在"无可检对象"时空转。
@@ -110,7 +118,27 @@ runner 协议 + result.schema）；ui/ 骨架（token 四文件 + mock + 第一�
 
 ## Phase M2 — 单轮内核跑通（engine + 基建模块群 + cli）
 
-**状态**：**M2.1 地基 `- [x]` 已完成（2026-10-11，提交至 `599cd02`（rebase Dependabot 合并后 hash，原 8ceb0cd））**；**M2.2 内核 `- [x]` 已完成（2026-10-11，提交至 `3ec32c4`）**；M2.3 `- [ ]` 未开始
+**状态**：**M2.1 地基 `- [x]` 已完成（2026-10-11，提交至 `599cd02`）**；**M2.2 内核 `- [x]` 已完成（2026-10-11，提交至 `3ec32c4`）**；**M2.3 体验闭环 `- [x]` 已完成（2026-10-12，待提交）**；**M2 总出口 `- [x]` 已达成**
+
+**M2.3 实际结果（2026-10-12）**：契约先行——ADR-0016（自建 httpx wire 层，不接厂商 SDK）、
+0017（上下文工程事实入正文，data-model v1.2）、0018（提示词类型化分块与缓存边界）、
+0019（生成链定义点归位）、0020（接口面提前：UI 注册表骨架与 `HandlerCtx`/`principal`）、
+0021（M2 出口拆分：evals 基线移出）。代码：`providers`（两协议 + 韧性 + 能力三档）、
+`prompts` 分块、`context` Layer1/Layer2/rehydrate、`serve` 雏形（信封/分发/通知映射/五方法/stdio）、
+`cli`（薄壳，能力全经 serve）。`ModelPort` 定形为 `stream(ModelRequest)` + `capabilities` + `aclose`，
+B-08 的输出上限改为逐请求携带。**M2 总出口已真机验证**：`questor exec` 在真实 Anthropic 兼容
+端点上跑通“写文件→读回”并落盘可回放（`session list` 可见 last_seq=22），`cache_read=1792` 同步观测到。
+坑目录 88 条（新增 B-81–B-88）；`Message`/`ToolResultBlock` 改 frozen 使 B-25 由类型兼管。
+**本轮真机/护栏当场抬出的三个真缺陷**（都已修并钉住）：B-85 静默丢记录、B-86 审计缺全文、
+B-88 assistant 轮次不入历史（fake model 永远测不出，只有真端点会 400）。
+
+**M2.3 偏离留痕**：① evals N=12 对照基线首跑按 ADR-0021 移出本期出口，挂 M3 出口前；
+② 阶段 G 只完成了“定归属”部分（ADR-0019），`scripts/gen/` 实际搬迁与 `third_party/notices`
+生成器本期未做（CI 已在跑 `gen:check`，R4 不是裸承诺）；③ 阶段 I（ui 用 generated 类型驱动
+流式渲染）未做，前端仍住 mock——记为偏离，补救里程碑 **M3**（AGENTS §五 前端跟随）；
+④ `cli init` / `session show` 未做（后者需先给 `protocol.md` §3 加 `thread/show`）；
+⑤ `turn/start` 的后台 run 需 `wait_idle()` 才能观测到完整通知流（B-01 修正后已绿）；
+WS/SSE 传输与反向请求通道属 M3。
 
 **M2.1 实际结果**：地基七模块全部落地并各自成 commit——`version`（VERSION 单点 +
 pyproject dynamic）、`state`（路径单点 / 原子写 / 跨进程锁，B-71/72/73）、
@@ -173,7 +201,10 @@ M2.2 出口判据逐项：**单轮跑通**（`tests/integration/test_single_turn
 **出口判据**（§12 总出口：一个真实小任务完整跑通并落盘可回放；内部分三段）：
 - M2.1 地基（state / gesta / config / version / secrets / capability / workspaces）：落盘可回放；原子写、文件锁、会话删除的对抗用例绿；
 - M2.2 内核（engine / tools / limen / prompts）：单轮跑通；权限矩阵（三档 × 工具类）测试全绿；
-- M2.3 体验闭环（context / providers / serve 雏形 / cli）：压缩后 resume 可恢复；真实任务全链 + evals 对照 FlowCoder 同 N=12 任务基线首跑归档（**基线 = FlowCoder 为主，EvoFlow 按任务类型可选，wuu 不作基线**——与 structure §8 一致）。
+- M2.3 体验闭环（context / providers / serve 雏形 / cli）：压缩后 resume 可恢复；
+  真实任务全链（单轮 + 跨 turn resume，从 cli 与 serve stdio 各跑一次）并落盘可回放。
+  **evals 对照基线首跑已移出本期出口**（ADR-0021）：改挂 M3 出口前，基线仍为
+  FlowCoder 为主、EvoFlow 按任务类型可选、wuu 不作基线（与 structure §8 一致）。
 
 每段出口附：该模块坑目录 B-NN 覆盖率 100% + 每条护栏测试的负向验证输出。
 
@@ -184,6 +215,7 @@ M2.2 出口判据逐项：**单轮跑通**（`tests/integration/test_single_turn
 **状态**：`- [ ]` 未开始
 
 **做什么**（= structure §11 M3 行）：`review`（修订号 + turn↔revision）、`habena`（插话/接管/取消）、`sessiontrace`（轨迹回放，不重跑工具不联系模型）、`worktree`；`ui/` 与 `desktop/src-tauri/`、`assets/`；`contracts.yml`/`desktop.yml` 两个 workflow。
+**本期额外两个接口面（ADR-0020：它们属接口，不得后置）**：① `ui/` 视图注册表**骨架**（`PanelDescriptor` + 单一渲染分发点 + 护栏：新面板只能登记不得改外壳）——M3 是第一个真接面板，此时建最便宜；② `principal` 传递位已随 M2.3 的 `serve` `HandlerCtx` 落定（本期不写任何鉴权判定）。
 
 **怎么做**：
 1. diff 在**写工具执行时刻**计算并随工具结果持久化（wuu 语义：前端吃结构化 diff，不事后重读文件猜测）；
@@ -284,7 +316,7 @@ M2.2 出口判据逐项：**单轮跑通**（`tests/integration/test_single_turn
 
 | 档 | 内容 | 出口判据 |
 | --- | --- | --- |
-| **E1 界面面全量** | Files 预览（语法/图片/PDF）、Review 逐文件 + 已阅态、Terminal（`@xterm/xterm`）、看板 DAG（`@xyflow/react`）、主题 token 与**视图注册表**成型 | 三柱各有一个完整可演示面板；新增面板只能走注册表，不得改内核 |
+| **E1 界面面全量** | Files 预览（语法/图片/PDF）、Review 逐文件 + 已阅态、Terminal（`@xterm/xterm`）、看板 DAG（`@xyflow/react`）、主题 token 与**视图注册表**成型（注：注册表**骨架已提前至 M3**，ADR-0020；E1 只补面板与 token 主题，不从 0 建）| 三柱各有一个完整可演示面板；新增面板只能走注册表，不得改内核 |
 | **E2 引擎矩阵** | 外部引擎从 3 个扩到 5+（ACP 家族为主）；权限映射表补齐；引擎目录四态呈现 | 契约测试全引擎同绿；映射不承诺等价保护必须显式标注 |
 | **E3 插件与示例生态** | 内置插件 6–8 个（每个自带单测与集成测，与第三方同契约）、`examples/` 扩到 5 例、`packages/` 发布物（仅在有第二使用者时） | 关插件即停产品行为；示例照 README 能独立跑通 |
 
