@@ -78,6 +78,10 @@ class ManagedProcess:
     exited: bool = False
     exit_code: int | None = None
     truncated: bool = False
+    #: 唤醒周期（秒）：None = 不周期唤醒；由 process 工具的 wake 动作设置（M4 vigilia）
+    wake_interval_s: float | None = None
+    #: 上次唤醒时刻（monotonic 秒）；due_wakes 据此判定到期
+    last_wake_at: float = 0.0
 
 
 class ProcessManagerError(Exception):
@@ -119,6 +123,7 @@ class ProcessManager:
             command=command,
             popen=popen,
             job=job,
+            last_wake_at=time.monotonic(),
         )
         with self._lock:
             self._processes[process.process_id] = process
@@ -164,6 +169,42 @@ class ProcessManager:
             process.popen.stdin.flush()
         except (OSError, ValueError) as exc:
             raise ProcessManagerError(f"写入 stdin 失败：{exc}") from exc
+
+    def set_wake_interval(self, process_id: str, seconds: float | None) -> None:
+        """设置后台进程的唤醒周期（秒）；None 表示取消周期唤醒。
+
+        语义：周期唤醒让长跑中的 Agent 在后台进程持续产出时按固定节拍被"叫醒"查看输出，
+        而不是干等进程结束。设置时把 `last_wake_at` 重置为此刻，避免下一次立即到点。
+        """
+        if seconds is not None and seconds <= 0:
+            raise ProcessManagerError(f"唤醒周期必须为正数：{seconds!r}")
+        process = self.get(process_id)
+        with self._lock:
+            process.wake_interval_s = seconds
+            process.last_wake_at = time.monotonic()
+
+    def due_wakes(self, now: float | None = None) -> list[str]:
+        """返回"到点该唤醒且仍有未读输出"的后台进程 id（vigilia 的唤醒检查点消费）。
+
+        `now` 缺省用 `time.monotonic()`；注入以便测试。只读查询，不动缓冲。
+        """
+        moment = time.monotonic() if now is None else now
+        due: list[str] = []
+        with self._lock:
+            for process in self._processes.values():
+                if process.exited or process.wake_interval_s is None:
+                    continue
+                if moment - process.last_wake_at < process.wake_interval_s:
+                    continue
+                if process.stdout_chunks or process.stderr_chunks:
+                    due.append(process.process_id)
+        return due
+
+    def mark_woken(self, process_id: str, *, now: float | None = None) -> None:
+        """把进程的唤醒时刻推进到 `now`（消费一次唤醒后调用，防重复唤醒）。"""
+        process = self.get(process_id)
+        with self._lock:
+            process.last_wake_at = time.monotonic() if now is None else now
 
     def stop(self, process_id: str) -> None:
         """停树：Windows TerminateJobObject，POSIX killpg；持对象句柄，无 PID 复用窗口。"""

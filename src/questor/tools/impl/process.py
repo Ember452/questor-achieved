@@ -1,7 +1,8 @@
-"""process 工具：后台进程管理（列/读/写 stdin/停；"改唤醒周期"随 M4 vigilia）。
+"""process 工具：后台进程管理（列/读/写 stdin/停/改唤醒周期）。
 
 只管理**本会话经 run 派生**的进程——停止通过持有的活对象句柄执行，
 天然没有 PID 复用窗口（data-model §3.1 三元组校验的等价实现，理由见 processmgr）。
+"改唤醒周期"（M4）：把长跑中的后台进程设为按固定节拍被唤醒查看输出，而非干等退出。
 """
 
 from __future__ import annotations
@@ -16,17 +17,20 @@ from questor.tools.processmgr import ProcessManagerError
 
 
 class ProcessParams(BaseModel):
-    action: Literal["list", "read", "write", "stop"]
+    action: Literal["list", "read", "write", "stop", "wake"]
     process_id: str | None = None
     data: str | None = None
     """write 动作写入 stdin 的内容。"""
+    seconds: float | None = None
+    """wake 动作设置的唤醒周期（秒）；None 表示取消周期唤醒。"""
 
 
 class ProcessTool(Tool):
     name = "process"
     description = (
         "Manage background processes started by 'run': list, read accumulated "
-        "output, write to stdin, or stop (kills the whole process tree). "
+        "output, write to stdin, stop (kills the whole process tree), or set a "
+        "wake interval so long-running processes surface output on a cadence. "
         "Stopping is not undoable."
     )
     kind = "process"
@@ -36,7 +40,7 @@ class ProcessTool(Tool):
 
     def mutates_for(self, params: BaseModel) -> bool:
         assert isinstance(params, ProcessParams)
-        return params.action in ("write", "stop")
+        return params.action in ("write", "stop", "wake")
 
     async def execute(self, params: BaseModel, ctx: ToolContext) -> ToolResult:
         assert isinstance(params, ProcessParams)
@@ -64,6 +68,13 @@ class ProcessTool(Tool):
                     return ToolResult(output="write requires 'data'", is_error=True)
                 ctx.processes.write_stdin(params.process_id, params.data)
                 return ToolResult(output=f"wrote {len(params.data)} chars to stdin")
+            if params.action == "wake":
+                ctx.processes.set_wake_interval(params.process_id, params.seconds)
+                label = "off" if params.seconds is None else f"{params.seconds:g}s"
+                return ToolResult(
+                    output=f"process {params.process_id} wake interval = {label}",
+                    data={"process_id": params.process_id, "wake_interval_s": params.seconds},
+                )
             # stop
             ctx.processes.stop(params.process_id)
             return ToolResult(
