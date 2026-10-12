@@ -10,6 +10,11 @@ M2.2 只落 engine 当期消费的四件：system_core / converge_message /
 max_tokens_escalation / max_tokens_recovery。**文档视距**：plan 提醒随 M4
 orchestration、摘要协议随 M2.3 context——不预置未消费的资产。
 
+M2.3 分块装配（ADR-0018）：`system_core` 拆为 `agent_identity` + `questor_rules`，与
+`tool_policy` 一起构成**稳定前缀**；`assemble`/`system_assembly` 产出 `PromptAssembly`
+（类型住 `schemas/llm.py`，本模块只做资产与装配），`cache_boundary` 之前的块全为稳定块，
+违反即抛 `PromptAssemblyError`（B-81）。护栏只断言**边界索引与块归属**，不断言字节。
+
 ## 方法与决策
 
 - **缺资产/缺占位符显式爆炸**（PromptNotFoundError/KeyError），不静默渲染空串

@@ -142,7 +142,18 @@ async def test_single_turn_full_chain(tmp_path: pathlib.Path) -> None:
         assert view.last_seq == len(records)
 
         # 模型收到的工具结果里有 run 的真实输出（对话面完整）
-        model_requests = model.requests
-        final_round_messages = model_requests[-1][0]
+        final_round_messages = model.requests[-1].messages
         tool_texts = " ".join(r.content for m in final_round_messages for r in m.tool_results)
         assert "42" in tool_texts
+
+        # B-88 回归钉：每一条 tool_result 必须能在前一条 assistant 消息里找到配对的
+        # tool_use。真实 Anthropic 端点对悬空 tool_result 直接 400（fake 不校验，
+        # 所以这条只能靠断言守）。
+        for index, message in enumerate(final_round_messages):
+            if not message.tool_results:
+                continue
+            assert index > 0, "tool_result 不能是历史首条"
+            previous = final_round_messages[index - 1]
+            paired = {call.id for call in previous.tool_calls}
+            for result in message.tool_results:
+                assert result.tool_use_id in paired, f"悬空 tool_result：{result.tool_use_id}"

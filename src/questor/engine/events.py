@@ -27,6 +27,32 @@ class Delta:
 
 
 @dataclass(frozen=True)
+class Thinking:
+    """推理增量（可见柱：过程不得为了好看而隐去）。
+
+    与 ``Delta`` 同为**传输态**，不落盘；协议侧的事件族名要等 M3 前端真接时连呈现与
+    持久化形状一起定（现在先占住内核语义，避免事后改 port）——因此 ``event_type_of``
+    暂归 "internal"，并在 development-plan 留痕。
+    """
+
+    text: str
+
+
+@dataclass(frozen=True)
+class CompactNotice:
+    """压缩通知（`notice/compact`）：started/compacted/noop/breaker_open/failed。
+
+    不落盘为 Event——压缩真相是 `context.boundary` 记录（ADR-0017），事件是推送态；
+    两边各存一转会漂移（与 delta 同一取舍）。
+    """
+
+    kind: str
+    before_tokens: int = 0
+    after_tokens: int = 0
+    reason: str = ""
+
+
+@dataclass(frozen=True)
 class ToolCallStarted:
     tool_use_id: str
     name: str
@@ -46,6 +72,9 @@ class ToolCallCompleted:
 class Usage:
     input_tokens: int
     output_tokens: int
+    #: 缓存命中/新建分量：只报 input/output 就看不出一条运行到底省了多少（B-28 的观测面）
+    cache_read: int = 0
+    cache_creation: int = 0
 
 
 @dataclass(frozen=True)
@@ -72,10 +101,12 @@ class LoopFailed:
 AgentEvent = (
     TurnStarted
     | Delta
+    | Thinking
     | ToolCallStarted
     | ToolCallCompleted
     | Usage
     | RunStatus
+    | CompactNotice
     | Converging
     | LoopCompleted
     | LoopFailed
@@ -94,4 +125,6 @@ def event_type_of(event: AgentEvent) -> str:
         return "turn/usage"
     if isinstance(event, RunStatus):
         return "run/status"
-    return "internal"  # TurnStarted/Converging/Loop* 是循环内部节拍，不单独入协议族
+    if isinstance(event, CompactNotice):
+        return "notice/compact"
+    return "internal"  # TurnStarted/Thinking/Converging/Loop* 是循环内部节拍，不单独入协议族

@@ -228,7 +228,7 @@ async def test_budget_converge_keeps_readonly_tools(tmp_path: pathlib.Path) -> N
         events = await _collect(_engine(model, tmp_path, max_seconds=0.0), "thread-eng01", "x")
         assert any(isinstance(e, Converging) for e in events)
         assert isinstance(events[-1], LoopCompleted)
-        _, _, tools = model.requests[0]
+        tools = model.requests[0].tools
         names = {t["name"] for t in tools}
         assert "write" not in names and "run" not in names
         assert "read" in names and "list" in names
@@ -277,17 +277,18 @@ def test_output_recovery_escalates_once_then_retries(tmp_path: pathlib.Path) -> 
     from questor.engine.conversation import Conversation
     from questor.engine.model import LLMResponse
 
-    model = FakeModel([])
     conv = Conversation()
     state = OutputRecoveryState()
     hit = LLMResponse(stop_reason="max_tokens")
-    first = _handle(hit, conv, model, state)
+    # B-08 的新形状：上限在内核逐请求携带，恢复层只回传"下一轮用什么值"
+    first = _handle(hit, conv, 8_000, state)
     assert first.retry and first.state.max_tokens_escalated
-    assert model.max_output_tokens == MAX_TOKENS_CEILING
-    second = _handle(hit, conv, model, first.state)
+    assert first.max_output_tokens == MAX_TOKENS_CEILING
+    second = _handle(hit, conv, MAX_TOKENS_CEILING, first.state)
     assert second.retry and second.state.recoveries == 1
+    assert second.max_output_tokens == MAX_TOKENS_CEILING  # 不反复拉高
     # 非 max_tokens 轮清零计数（B-08 的另一半）
-    ok = _handle(LLMResponse(stop_reason="end_turn"), conv, model, second.state)
+    ok = _handle(LLMResponse(stop_reason="end_turn"), conv, 8_000, second.state)
     assert ok.retry is False and ok.state.recoveries == 0
 
 
@@ -295,8 +296,7 @@ def test_output_recovery_gives_up_after_budget(tmp_path) -> None:  # noqa: ARG00
     from questor.engine.conversation import Conversation
     from questor.engine.model import LLMResponse
 
-    model = FakeModel([])
     conv = Conversation()
     state = OutputRecoveryState(max_tokens_escalated=True, recoveries=3)
-    decision = _handle(LLMResponse(stop_reason="max_tokens"), conv, model, state)
+    decision = _handle(LLMResponse(stop_reason="max_tokens"), conv, MAX_TOKENS_CEILING, state)
     assert decision.retry is False  # 次数耗尽，放任模型自收敛

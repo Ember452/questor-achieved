@@ -22,19 +22,32 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from questor.context import (
+    BudgetOutcome,
+    CompactBreaker,
+    ReplacementState,
+    apply_tool_result_budget,
+    auto_compact,
+    recovery_attachment,
+    should_auto_compact,
+    spilled_representations,
+)
+from questor.context.rehydrate import rebuild_history, state_from_view
 from questor.engine import constants as C
 from questor.engine.conversation import Conversation, ToolResultBlock
 from questor.engine.events import (
     AgentEvent,
+    CompactNotice,
     Converging,
     Delta,
     LoopCompleted,
     LoopFailed,
     RunStatus,
+    Thinking,
     ToolCallCompleted,
     ToolCallStarted,
     TurnStarted,
@@ -45,13 +58,17 @@ from questor.engine.model import (
     ModelPort,
     StreamDelta,
     StreamEnd,
+    StreamThinking,
     StreamToolCall,
     ToolCall,
 )
 from questor.engine.output_recovery import OutputRecoveryState, handle_output_token_limit
+from questor.gesta import load_thread
 from questor.gesta.transitions import InvalidTransition
 from questor.gesta.writer import ThreadWriter
-from questor.prompts import render
+from questor.prompts import render, summary_assembly, system_assembly
+from questor.schemas.context import ContextBoundary, ContextReplacements
+from questor.schemas.llm import LLMUsage, Message, ModelRequest, PromptAssembly
 from questor.schemas.model import (
     Item,
     ItemKind,
@@ -72,6 +89,8 @@ from questor.tools.registry import ToolCallRequest, ToolRegistry
 class TurnRequest:
     thread_id: str
     user_text: str
+    #: 从盘上重建会话历史后继续（跳 turn resume，M2.3 出口判据）
+    resume: bool = False
 
 
 class Engine:
@@ -85,6 +104,9 @@ class Engine:
         ctx: ToolContext,
         mode: PermissionMode,
         roots: list[str],
+        prompt: PromptAssembly | None = None,
+        replacements: ReplacementState | None = None,
+        context_window: int | None = None,
         engine_id: str = "questor-engine",
         max_iterations: int = C.MAX_ITERATIONS,
         max_seconds: float | None = None,
@@ -95,6 +117,14 @@ class Engine:
         self._ctx = ctx
         self._mode = mode
         self._roots = roots
+        #: system 装配在组装点定好（ADR-0018）；缺省只用随包资产，项目指令与环境事实
+        #: 由 cli/serve 传入。每 run 重注入时复用同一装配（B-11）。
+        self._prompt = prompt if prompt is not None else system_assembly()
+        #: Layer1 的替换决策（跨轮保持，并落盘成 `context.replacements` 记录）
+        self._replacements = replacements if replacements is not None else ReplacementState()
+        #: 窗口宽度优先用显式给定（装配点的配置），否则用端点声明（B-82）
+        self._context_window = context_window or model.capabilities.context_window
+        self._breaker = CompactBreaker()
         self._engine_id = engine_id
         self._max_iterations = max_iterations
         self._max_seconds = max_seconds
@@ -123,7 +153,9 @@ class Engine:
                 created_at=utc_timestamp_now(),
             ),
         )
-        conversation = Conversation()
+        conversation = Conversation(
+            self._resume_history(request.thread_id) if request.resume else []
+        )
         await self._persist_message_item(writer, run.id, "user", request.user_text)
         conversation.add_user(request.user_text)
 
@@ -133,6 +165,16 @@ class Engine:
         except asyncio.CancelledError:
             await self._cancel_cleanup(writer, run)
             raise
+
+    def _resume_history(self, thread_id: str) -> list[Message]:
+        """从会话正文重建历史，并把 Layer1 的替换决策一并恢复。
+
+        模型上一轮看到的是预览，这一轮还得是同一份预览——否则前缀变了，
+        预算与缓存两头都对不上（B-25 的跳 turn 面）。
+        """
+        view = load_thread(thread_id)
+        self._replacements = state_from_view(view)
+        return rebuild_history(view, self._replacements)
 
     # ---- 状态迁移（迁移记录 + run/status 事件同批落盘） ----
 
@@ -153,6 +195,8 @@ class Engine:
 
         started = time.monotonic()
         recovery: list[OutputRecoveryState] = [OutputRecoveryState()]
+        # 输出上限属本 run 的预算（B-08）：从端点声明起手，触顶后由恢复层提一档
+        ceiling: list[int] = [self._model.capabilities.max_output_tokens]
         converging = False
         unknown: list[int] = [0]  # 熔断计数（可变容器传引用，B-03：并行批不清零）
         total_turns = 0
@@ -169,11 +213,16 @@ class Engine:
 
             tools = self._tool_schemas(converging)  # B-02：收敛轮保留只读工具
             box: list[LLMResponse] = []
-            async for event in self._stream_once(writer, run, conversation, tools, box, recovery):
+            async for event in self._stream_once(
+                writer, run, conversation, tools, box, recovery, ceiling
+            ):
                 yield event
             response = box.pop()
 
             await self._persist_assistant_message(writer, run.id, response)
+            # 历史必须接上 assistant 那一轮：只落盘不进历史，下一轮的 tool_result
+            # 就没有配对的 tool_use，真实端点会直接拒（B-88；fake model 不校验配对所以长期未现）
+            conversation.add_assistant(response.text, list(response.tool_calls))
 
             if not response.tool_calls:
                 async for event in self._finish(writer, run, total_turns, response.text):
@@ -242,7 +291,7 @@ class Engine:
             blocks.append(
                 ToolResultBlock(
                     tool_use_id=outcome.request.tool_use_id,
-                    content=outcome.result.output[-40_000:],
+                    content=outcome.result.output,
                     is_error=outcome.result.is_error,
                 )
             )
@@ -258,45 +307,75 @@ class Engine:
         tools: list[dict[str, object]],
         box: list[LLMResponse],
         recovery: list[OutputRecoveryState],
+        ceiling: list[int],
     ) -> AsyncIterator[AgentEvent]:
         """一次模型调用（含 B-08 max_tokens 恢复循环：提上限一次 + 最多 3 次分段续写）。"""
         while True:
-            system = render("system_core")
+            # 历史保持原文；发给模型的是应用 Layer1 后的视图（B-25）——投影不落回 history
+            view = await asyncio.to_thread(
+                apply_tool_result_budget,
+                conversation.history,
+                thread_id=writer.thread_id,
+                state=self._replacements,
+            )
+            await self._persist_replacements(writer, run, view)
+            async for notice in self._maybe_compact(writer, run, conversation, view.messages):
+                yield notice
+            request = ModelRequest(
+                messages=conversation.history,
+                prompt=self._prompt,
+                tools=tools,
+                max_output_tokens=ceiling[0],
+            )
             text_parts: list[str] = []
+            thinking_parts: list[str] = []
             calls: list[ToolCall] = []
-            usage = (0, 0)
+            usage = LLMUsage()
             stop_reason = "end_turn"
 
-            async for event in self._model.stream(conversation.history, system, tools):
+            async for event in self._model.stream(request):
                 if isinstance(event, StreamDelta):
                     yield Delta(text=event.text)
                     text_parts.append(event.text)
+                elif isinstance(event, StreamThinking):
+                    # 推理过程只透出、不写进正文：写进正文就会同时存在两套"模型说了什么"
+                    yield Thinking(text=event.text)
+                    thinking_parts.append(event.text)
                 elif isinstance(event, StreamToolCall):
                     calls.append(event.call)
                 elif isinstance(event, StreamEnd):
-                    usage = (event.input_tokens, event.output_tokens)
+                    usage = event.usage
                     stop_reason = event.stop_reason
 
             response = LLMResponse(
                 text="".join(text_parts),
+                thinking="".join(thinking_parts),
                 tool_calls=tuple(calls),
                 stop_reason=stop_reason,
-                input_tokens=usage[0],
-                output_tokens=usage[1],
+                usage=usage,
             )
-            conversation.record_usage_anchor(response.input_tokens, response.output_tokens)
-            yield Usage(input_tokens=response.input_tokens, output_tokens=response.output_tokens)
+            conversation.record_usage_anchor(response.usage)
+            yield Usage(
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                cache_read=response.usage.cache_read,
+                cache_creation=response.usage.cache_creation,
+            )
             await self._persist_event(
                 writer,
                 run,
                 "turn/usage",
                 {
-                    "input_tokens": response.input_tokens,
-                    "output_tokens": response.output_tokens,
+                    "input_tokens": response.usage.input_tokens,
+                    "output_tokens": response.usage.output_tokens,
+                    "cache_read": response.usage.cache_read,
+                    "cache_creation": response.usage.cache_creation,
                 },
             )
-            decision = handle_output_token_limit(response, conversation, self._model, recovery[0])
+            decision = handle_output_token_limit(response, conversation, ceiling[0], recovery[0])
             recovery[0] = decision.state
+            if decision.max_output_tokens is not None:
+                ceiling[0] = decision.max_output_tokens
             if not decision.retry:
                 break  # 恢复轮已在上方注入续写提示，重流一次
         box.append(response)
@@ -395,6 +474,103 @@ class Engine:
 
     # ---- 持久化助手 ----
 
+    async def _persist_replacements(
+        self, writer: ThreadWriter, run: Run, view: BudgetOutcome
+    ) -> None:
+        """把本轮新增的替换决策追写进正文（无增量时不落盘，不制造噪声记录）。
+
+        落盘的是**决策本身**（哪个结果被换成什么表示），不是被替换前的原文——原文已在
+        tool_result Item 里（单一真相）；模型看到的表示与审计看到的表示因此可对账。
+        """
+        if not view.records:
+            return
+        payload = ContextReplacements(
+            thread_id=writer.thread_id,
+            run_id=run.id,
+            turn_id=run.turn_id,
+            records=tuple(view.records),
+            stale_boundary_turn=view.stale_boundary_turn,
+            created_at=utc_timestamp_now(),
+        )
+        await asyncio.to_thread(writer.add_context_replacements, payload)
+
+    async def _maybe_compact(
+        self, writer: ThreadWriter, run: Run, conversation: Conversation, view: list[Message]
+    ) -> AsyncIterator[AgentEvent]:
+        """Layer2 压缩闸（B-20/21/22/23/28 的执行点）：不需要压时零事件。
+
+        压缩只改内存里的会话视图与追加一条 `context.boundary`；原文 Item 不动，
+        所以下一轮的 request 与今天的审计用的是同一份真相。
+        """
+        current = conversation.current_tokens()
+        if not should_auto_compact(current, self._context_window):
+            return
+        outcome = await auto_compact(
+            view,
+            summarize=self._summarize,
+            context_window=self._context_window,
+            current_tokens=current,
+            transcript_ref=f"sessions/{writer.thread_id}.jsonl",
+            attachment=recovery_attachment(spilled_representations(view), self._tool_inventory()),
+            breaker=self._breaker,
+        )
+        if outcome.kind != "compacted":
+            if outcome.reason:
+                yield CompactNotice(kind=outcome.kind, reason=outcome.reason)
+            return
+        conversation.replace_history(outcome.messages)
+        await asyncio.to_thread(
+            writer.add_context_boundary,
+            ContextBoundary(
+                thread_id=writer.thread_id,
+                run_id=run.id,
+                turn_id=run.turn_id,
+                summary=outcome.summary,
+                kept_item_ids=self._kept_item_ids(writer, outcome.kept),
+                before_tokens=outcome.before_tokens,
+                after_tokens=outcome.after_tokens,
+                reinjected=("tool_inventory", "spilled_results") if outcome.messages else (),
+                transcript_ref=f"sessions/{writer.thread_id}.jsonl",
+                created_at=utc_timestamp_now(),
+            ),
+        )
+        yield CompactNotice(
+            kind="compacted",
+            before_tokens=outcome.before_tokens,
+            after_tokens=outcome.after_tokens,
+        )
+
+    async def _summarize(self, prefix: Sequence[Message]) -> str:
+        """摘要 pass 的模型调用：不带工具、不收主 system（B-29 的资产自己说话）。"""
+        request = ModelRequest(
+            messages=[*prefix, Message(role="user", content=render("summary_request"))],
+            prompt=summary_assembly(),
+            max_output_tokens=self._model.capabilities.max_output_tokens,
+            tools=[],
+        )
+        parts: list[str] = []
+        async for event in self._model.stream(request):
+            if isinstance(event, StreamDelta):
+                parts.append(event.text)
+        return "".join(parts)
+
+    def _tool_inventory(self) -> str:
+        """可用工具清单（压缩后重注入用，B-11）。"""
+        return "\n".join(f"- {name}" for name in sorted(self._registry.names()))
+
+    @staticmethod
+    def _kept_item_ids(writer: ThreadWriter, kept: Sequence[Message]) -> tuple[str, ...]:
+        """把保留尾部映射回它的 Item id（resume 时按 id 重建，不靠字节偏移）。
+
+        映射不上的（合成出的工具结果聚合消息没有单一对应 Item）不造假 id：宁可少了
+        一条可重建线索，也不写一个对不上的标识。
+        """
+        by_text: dict[str, str] = {}
+        for item in writer.view().items:
+            if item.kind.value == "message":
+                by_text[str(item.payload.get("text", ""))] = item.id
+        return tuple(by_text[message.content] for message in kept if message.content in by_text)
+
     async def _persist_item(self, writer: ThreadWriter, item: Item) -> None:
         await asyncio.to_thread(writer.add_item, item)
 
@@ -478,10 +654,13 @@ def _tool_result_payload(
         "name": outcome.request.tool_name,
         "is_error": outcome.result.is_error,
         "elapsed_s": round(outcome.elapsed_s, 3),
-        "preview": output[:2000],
         **outcome.result.data,  # 语义退出码 / sandboxed 标注 / 后台 pid 等进审计记录
     }
-    if spill_file is not None:
+    if spill_file is None:
+        # 未落盘时存全文：只存 preview 会让正文里缺少模型实际看到过的字节（B-86）
+        payload["output"] = output
+    else:
+        payload["preview"] = output[:2000]
         payload["spilled"] = spill_file
         payload["truncated"] = truncated
     return payload

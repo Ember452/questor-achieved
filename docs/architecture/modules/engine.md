@@ -5,8 +5,11 @@
 ## 职责与边界
 
 内置引擎循环：turn 生命周期（queued→running→终态，经 gesta 白名单）、事件双轨
-（对外 AgentEvent + 落盘 gesta 记录）、止损三重（M2.2 = 迭代数 + 时间维）。
+（对外 AgentEvent + 落盘 gesta 记录）、止损三重（M2.2 = 迭代数 + 时间维；token/成本
+维随 M2.3 providers 的真实用量累计接入）。
 ModelPort 是内核定义的 port（R1）——providers（M2.3）注册实现，循环不按厂商分支。
+M2.3 形状定死：port 的方法签名只收 `ModelRequest`（住 `schemas/llm.py`），新字段
+不再改签名；`aclose` 与 `capabilities` 是 port 的必备项（B-82/B-83）。
 
 ## 方法与决策
 
@@ -23,9 +26,14 @@ ModelPort 是内核定义的 port（R1）——providers（M2.3）注册实现�
 - **B-03 熔断**：未知工具连续 ≥3 终止；计数在 `_dispatch` 的批结果处裁决，
   并行批不清零、串行已知成功才清零。第一版实现丢了跨迭代累加——fake model 的
   "脚本耗尽即响亮报错"设计把它当场抓了出来（这正是 fake 对齐真实语义的价值）。
-- **B-08 恢复**：max_tokens → `set_max_output_tokens(64k)` 提上限一次 + 最多 3 次
-  分段续写；非触顶轮计数清零；状态每 run 重置。恢复循环下沉在 `_stream_once`
-  （FlowCoder 同款形状）。
+- **B-08 恢复**（M2.3 改形）：max_tokens 触顶后把**下一次请求的 `max_output_tokens`**
+  提到天花板（由循环持有 `ceiling`，经 `RecoveryDecision.max_output_tokens` 回传）+ 最多
+  3 次分段续写；非触顶轮计数清零；状态每 run 重置。**不再用 `set_max_output_tokens`
+  写客户端内部状态**——同一个预算数字只能有一处真相，且并发共享一个客户端时
+  逐请求携带才是对的（见 `engine/model.py` 的 port 注释）。
+- **推理可见（M2.3）**：`StreamThinking` → 对外 `Thinking` 事件；**不写进正文**（写进去
+  就会同时存在两套"模型说了什么"）。协议侧的事件族名待 M3 前端真接时连呈现与持久化
+  形状一并定（`events.py` 已留痕），本期 `event_type_of` 归 "internal"。
 - **取消传播**：CancelledError → 停进程树（ProcessManager 活对象句柄，无 PID 复用
   窗口）→ cancelled 终态 → **放行** CancelledError（AGENTS 纪律）。测试用
   `athrow(CancelledError)` 注入（aclose 只给 GeneratorExit，不是同一语义）。

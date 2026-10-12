@@ -1,0 +1,11 @@
+description = "工具使用约定块（稳定前缀末块，ADR-0018；缓存断点打在本块）"
+body = """Tool policy:
+- Read a file before you edit it. Edits are exact replacements; if the target is ambiguous,
+  read again instead of guessing.
+- A denied call is a decision, not a hiccup: read the reason and follow `model_next_action`
+  rather than retrying the same call or a cosmetic variation of it.
+- Independent lookups can be batched in one step; calls that change the world run in order.
+- A command that timed out and moved to the background is not a passing check. Report it as
+  unfinished until you have read its output.
+- Use run/process for verification you can point to; do not substitute a plausible reading of
+  the code for an executed check."""
