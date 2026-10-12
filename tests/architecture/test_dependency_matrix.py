@@ -78,10 +78,13 @@ ALLOWED_IMPORTS: dict[str, frozenset[str]] = {
             "extensions",
         }
     ),
-    "cli": frozenset({"serve", "engine", "providers", "config", "schemas"}),
+    # version 是叶模块（只读 VERSION），cli 的 `questor version` 需要它；structure §5 已同步
+    "cli": frozenset({"serve", "engine", "providers", "config", "schemas", "version"}),
     "testenv": frozenset({"*"}),  # 仅测试基建；生产代码禁止 import（反向由评审保证）
     "schemas": frozenset(),
-    "prompts": frozenset(),
+    # prompts 只取 schemas 的 wire 类型（PromptBlock/PromptAssembly 等，ADR-0018）：
+    # 类型住无依赖层，装配行为住 prompts，避开 providers 反向 import prompts。
+    "prompts": frozenset({"schemas"}),
 }
 
 
