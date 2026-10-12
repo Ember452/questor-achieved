@@ -20,9 +20,13 @@
 
 ## 对照评测的 N
 
-**N = 12**（4 可见 + 4 干预 + 4 验证），2026-10-11 钉死于 `tasks/tasks.json`。
-development-plan 中所有"与参照实现同 N 个真实任务"一律指这 12 个。任务定义变更
-须在本 README 变更记录处留痕，且**基线必须用新任务集重跑**。
+初始 **N = 12**（4 可见 + 4 干预 + 4 验证），2026-10-11 钉死于 `tasks/tasks.json`。
+**M5（2026-10-12）扩充至 N = 17**：验证柱新增 3 条直接跑验收证据链（`verify-evidence-verified`
+/ `verify-evidence-missing-record` / `verify-evidence-mismatch`）、干预柱 1 条跑值守 task 派发
+（`intervene-schedule-task-dispatch`）、可见柱 1 条跑工具账本（`visible-tool-call-ledger`）。
+任务定义变更已在本节留痕；**基线必须用新任务集重跑**（本机无凭据，首跑仍 pending，不凑基线）。
+开发计划中"与参照实现同 N 个真实任务"的**可比子集**仍为双方都能纯文件跑通的可见/验证任务
+（干预柱按口径 3 标 `not_comparable`）；新增的证据链/派发任务为 Questor 侧能力覆盖。
 
 ## 布局
 
@@ -62,3 +66,7 @@ Questor agent 与 FlowCoder agent 各写一个满足 `Solver` 协议的 adapter�
 - 2026-10-11：骨架建立；N=12 钉死；任务主题定稿（tasks/tasks.json）。
 - 2026-10-12：新增"可比性口径"（ADR-0021）；对照基线首跑移出 M2.3 出口。
 - 2026-10-12（M3d）：`adapters/mode_map.md` 落档位映射表；M3d 首跑因本机无凭据**未跑**，出口判据 5 记为 pending（诚实标注优先，不凑基线）。
+- 2026-10-12（M5）：三柱任务集扩充 12→17（+3 验证证据链、+1 干预值守派发、+1 可见工具账本）；
+  `runner/grading.py` 把 `replay_audit`/`recorded_output` 两类 grading 接到真实 `evidence`/编排 store
+  只读函数（`tests/integration/test_evals_grading.py` 用 M5 report 机器造真实证据离线核验）。
+  **基线仍 pending**（无凭据），新集需重跑后方可发布对照结果。

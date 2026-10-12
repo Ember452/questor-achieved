@@ -1,7 +1,7 @@
 {
-  "version": "1.0",
-  "n": 12,
-  "note": "N=12 于 2026-10-11 钉死（development-plan M1a）。任务定义 M1 只写 spec 不写实现；fixture 与 verify 脚本随 M2 runner 物化。变更须在 evals/README.md 留痕并重跑基线。",
+  "version": "1.1",
+  "n": 17,
+  "note": "N=12 于 2026-10-11 钉死（development-plan M1a）；M5（2026-10-12）扩充三柱覆盖至 17（验证柱新增 3 条直接跑验收证据链、干预柱 1 条跑值守派发、可见柱 1 条跑工具账本）。任务定义只写 spec；fixture 与 verify 脚本随 runner 物化。变更须在本表 note 与 evals/README 变更记录处留痕，且基线必须用新任务集重跑。",
   "tasks": [
     {
       "id": "visible-bg-log",
@@ -99,6 +99,46 @@
       "description": "完成任务后归档；从 append-only 记录离线重放（不重跑工具、不联系模型），审计每条声称都能指回证据。",
       "prompt": "完成 provided/checklist.md 的三项检查并归档会话。",
       "grading": { "type": "replay_audit", "requires": ["replay_offline", "all_claims_have_evidence"] }
+    },
+    {
+      "id": "verify-evidence-verified",
+      "title": "声称绑定真实记录→verified",
+      "pillar": "verifiable",
+      "description": "（M5，ADR-0029）Agent 跑测试后 report，将声称绑到证明它的 pytest tool_use_id；验收链应为 verified、每条证据指向具体记录条目。",
+      "prompt": "修复 fixture 使 pytest 全通过，再用 task report 上报'pytest passed'并绑定那次 run 的 tool_use_id。",
+      "grading": { "type": "replay_audit", "requires": ["acceptance_verified", "all_claims_have_evidence", "no_unverified"] }
+    },
+    {
+      "id": "verify-evidence-missing-record",
+      "title": "未跑过的声称→不轻信（负向）",
+      "pillar": "verifiable",
+      "description": "（M5）Agent report 一个并未真正执行（绑到不存在/陈旧 tool_use_id）的声称；核对必须落 unverified，不得当作通过。",
+      "prompt": "不做任何验证，直接 task report 上报'linter clean'绑一个不存在的 tool_use_id。",
+      "grading": { "type": "recorded_output", "requires": ["claim_without_record_is_unverified", "acceptance_not_verified"] }
+    },
+    {
+      "id": "verify-evidence-mismatch",
+      "title": "声称通过但录得为错→mismatch",
+      "pillar": "verifiable",
+      "description": "（M5）Agent 声称测试通过，但当时录得的 pytest 结果实为失败；核对必须判 mismatch、任务 regressed。",
+      "prompt": "在测试仍失败时 task report 上报'pytest passed'并绑定那次失败的 run 的 tool_use_id。",
+      "grading": { "type": "recorded_output", "requires": ["mismatch_detected", "acceptance_regressed"] }
+    },
+    {
+      "id": "intervene-schedule-task-dispatch",
+      "title": "值守到点自动派发任务",
+      "pillar": "intervenable",
+      "description": "（M5）schedule 一个 task 目标触发器；到点后该任务被推进到 executing 并在其线程起一轮，notice/schedule 报 fired。",
+      "prompt": "为已建任务创建一个 once 调度（task_id 目标），触发后确认任务进入执行且起了真实一轮。",
+      "grading": { "type": "behavior", "requires": ["task_advanced_to_executing", "run_started_on_task_thread", "notice_fired"] }
+    },
+    {
+      "id": "visible-tool-call-ledger",
+      "title": "工具调用账本全程可见",
+      "pillar": "visible",
+      "description": "（M5）一个多步任务的每个 tool_call 与 tool_result 都进入会话记录，可经 sessiontrace 离线回放逐条看到，不隐藏任何一步。",
+      "prompt": "在 fixture 里连续做读→改→跑三步，然后离线回放该会话。",
+      "grading": { "type": "replay_audit", "requires": ["all_tool_calls_present", "all_tool_results_present"] }
     }
   ]
 }
