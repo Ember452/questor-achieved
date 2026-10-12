@@ -29,6 +29,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from questor.gesta.transitions import InvalidTransition, is_terminal, transition
+from questor.schemas.context import ContextBoundary, ContextReplacements
 from questor.schemas.model import (
     Event,
     ForkOrigin,
@@ -90,6 +91,10 @@ class ThreadView(BaseModel):
     runs: tuple[Run, ...]
     items: tuple[Item, ...]
     events: tuple[Event, ...]
+    #: 上下文工程的替换决策追加历史（ADR-0017）：恢复时由 `context.rehydrate` 重放
+    context_replacements: tuple[ContextReplacements, ...] = ()
+    #: 压缩边界历史（ADR-0017）：resume 重建与"它当时看到什么"的对账入口
+    context_boundaries: tuple[ContextBoundary, ...] = ()
     last_seq: int
 
 
@@ -131,6 +136,10 @@ _RECORD_KINDS = frozenset(
         "run.status",
         "item.appended",
         "event.appended",
+        # 上下文工程事实与正文同流（ADR-0017）；新 kind 必须同时有
+        # _FoldState.apply 分支与 ThreadView 字段（B-85 的护栏就断言这两条）
+        "context.replacements",
+        "context.boundary",
     }
 )
 
@@ -173,6 +182,8 @@ class _FoldState:
         self.runs: list[Run] = []
         self.items: list[Item] = []
         self.events: list[Event] = []
+        self.context_replacements: list[ContextReplacements] = []
+        self.context_boundaries: list[ContextBoundary] = []
         self.last_seq = 0
         self.last_recorded_at: str | None = None
 
@@ -218,6 +229,11 @@ class _FoldState:
             self.items.append(Item.model_validate(payload))
         elif record.kind == "event.appended":
             self.events.append(Event.model_validate(payload))
+        elif record.kind == "context.replacements":
+            # 载荷由 pydantic 模型把门：字段不对就是写错了一整条记录，显式爆炸不静默跳过
+            self.context_replacements.append(ContextReplacements.model_validate(payload))
+        elif record.kind == "context.boundary":
+            self.context_boundaries.append(ContextBoundary.model_validate(payload))
 
     def _require_thread(self) -> Thread:
         if self.thread is None:
@@ -235,6 +251,8 @@ class _FoldState:
             runs=tuple(self.runs),
             items=tuple(self.items),
             events=tuple(self.events),
+            context_replacements=tuple(self.context_replacements),
+            context_boundaries=tuple(self.context_boundaries),
             last_seq=self.last_seq,
         )
 

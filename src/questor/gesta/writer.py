@@ -34,6 +34,7 @@ from questor.gesta.store import (
     _upsert_index_entry_locked,
 )
 from questor.gesta.transitions import transition as _transition
+from questor.schemas.context import ContextBoundary, ContextReplacements
 from questor.schemas.model import (
     Event,
     ForkOrigin,
@@ -161,6 +162,35 @@ class ThreadWriter:
             )
             self._append_locked(state, "event.appended", placed.model_dump(mode="json"))
             return placed
+
+    # ---- 上下文工程记录（写入口单点） ----
+
+    def add_context_replacements(self, payload: ContextReplacements) -> ContextReplacements:
+        """追加一条上下文工程记录（`context.replacements`，ADR-0017）。
+
+        写入口只在本文：`context` 不得自己开文件也不得旁路写盘，否则 append-only 与
+        seq 分配会失去单点（`tests/architecture/test_gesta_append_only.py` 强制）。
+        """
+        state = self._require_open()
+        with store_lock(sessions_dir(), timeout=self._lock_timeout):
+            self._append_context_locked(state, "context.replacements", payload)
+        return payload
+
+    def add_context_boundary(self, payload: ContextBoundary) -> ContextBoundary:
+        """追加一条压缩边界记录（`context.boundary`，ADR-0017）。"""
+        state = self._require_open()
+        with store_lock(sessions_dir(), timeout=self._lock_timeout):
+            self._append_context_locked(state, "context.boundary", payload)
+        return payload
+
+    def _append_context_locked(self, state: _FoldState, kind: str, payload: Any) -> None:
+        """上下文记录的共用路径：先校归属，再走同一把锁与同一个追加器。"""
+        thread_id = getattr(payload, "thread_id", None)
+        if thread_id != self._thread_id:
+            raise ThreadStoreError(
+                f"记录归属线程 {thread_id!r} 与句柄线程 {self._thread_id!r} 不一致"
+            )
+        self._append_locked(state, kind, payload.model_dump(mode="json"))
 
     # ---- 内部 ----
 
