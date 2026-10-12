@@ -57,3 +57,4 @@
 | [0026](0026-vigilia-scheduling-and-sweep.md) | vigilia 调度与清扫语义：声明式触发器 + tick 游标幂等 + 唤醒检查点 | accepted |
 | [0027](0027-evidence-minimal-and-export-interface.md) | evidence 最小版：声称 vs 录得的并排核对，export 形状先定死为接口 | accepted |
 | [0028](0028-protocol-additive-evolution.md) | 协议演进规则：加性方法/通知不升版本，破坏性改动才升 | accepted |
+| [0029](0029-acceptance-loop-evidence-writepoint.md) | 验收闭环：状态机强制、evidence 生产写入点、声称显式绑定 tool_use_id | accepted |
