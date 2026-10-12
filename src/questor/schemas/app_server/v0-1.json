@@ -875,6 +875,8 @@
         "interval_seconds": { "type": ["integer", "null"], "minimum": 1 },
         "cron": { "type": ["string", "null"] },
         "next_fire_at": { "type": ["string", "null"] },
+        "task_id": { "type": ["string", "null"], "description": "task 目标（M5）；为 null 时走 thread 目标" },
+        "thread_id": { "type": ["string", "null"], "description": "thread 目标的会话；task 目标为任务所属线程" },
         "created_at": { "$ref": "#/$defs/Timestamp" }
       },
       "additionalProperties": false
@@ -1123,14 +1125,15 @@
     },
     "ScheduleCreateParams": {
       "type": "object",
-      "required": ["trigger_kind", "thread_id", "prompt"],
+      "required": ["trigger_kind"],
       "properties": {
         "trigger_kind": { "type": "string", "enum": ["once", "interval", "cron"] },
         "interval_seconds": { "type": ["integer", "null"], "minimum": 1, "description": "interval 必填" },
         "cron": { "type": ["string", "null"], "description": "cron 必填：5 字段表达式（分 时 日 月 周）" },
         "next_fire_at": { "type": ["string", "null"], "description": "UTC 秒级时刻；缺省为立即到点" },
-        "thread_id": { "type": "string", "description": "M4 触发目标：到点在它起一轮" },
-        "prompt": { "type": "string", "description": "那轮的用户文本指令" }
+        "thread_id": { "type": ["string", "null"], "description": "thread 目标：到点在它起一轮（与 prompt 同时必填）" },
+        "prompt": { "type": ["string", "null"], "description": "thread 目标那轮的用户文本指令" },
+        "task_id": { "type": ["string", "null"], "description": "task 目标（M5）：到点派发该任务执行；给了即以 task 为准，不再需 thread_id+prompt" }
       },
       "additionalProperties": false
     },

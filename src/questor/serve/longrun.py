@@ -17,6 +17,7 @@ http 宿主（`serve http` 的长跑形态），stdio sidecar 不挂——`goal/
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime as dt
 import logging
 
@@ -24,6 +25,8 @@ from questor.gesta import InvalidTransition, load_thread
 from questor.gesta.store import ThreadStoreError, list_threads, transition_run
 from questor.orchestration import goal as orch_goal
 from questor.orchestration import store as orch_store
+from questor.orchestration import tasks as orch_tasks
+from questor.orchestration.transitions import InvalidTaskTransition
 from questor.schemas.model import RunStatus, utc_timestamp_now
 from questor.schemas.vigilia import ScheduleTrigger
 from questor.serve.app_server import AppServer
@@ -117,12 +120,37 @@ class LongRunDriver:
             logger.exception("长跑 tick 循环异常退出（驱动停摆，需重启宿主）")
 
     async def _fire(self, trigger: ScheduleTrigger) -> None:
-        """到点动作：在目标线程起一轮。目标不合法/线程不存在 → 异常上浮，由调度器如实标 skipped。"""
+        """到点动作：task 目标→派发任务；thread 目标→起一轮。
+
+        目标不合法/线程不存在 → 异常上浮，由调度器如实标 skipped（不谎报 fired）。
+        """
+        if trigger.task_id is not None:
+            await self._fire_task(trigger)
+            return
         if not trigger.thread_id or not trigger.prompt:
-            raise VigiliaStoreError(f"触发目标暂只支持 thread_id+prompt：{trigger.id}")
+            raise VigiliaStoreError(f"触发目标缺 thread_id+prompt 或 task_id：{trigger.id}")
         await self._server.turn_start(
             {"thread_id": trigger.thread_id, "user_text": trigger.prompt},
             self._ctx(f"vigilia-{trigger.id}"),
+        )
+
+    async def _fire_task(self, trigger: ScheduleTrigger) -> None:
+        """到点派发任务（M5，ADR-0029）：先把任务推进到 executing，再在其线程起一轮。
+
+        调度的建立即用户对"到点跑这个任务"的预先授权，故此处直走领域函数 `tasks.start_task`
+        （不经 service 的逐次授权门）；任务已 reviewed/completed 等不可迁移态则跳过 start，
+        但仍下发本轮指令（幂等，一次调度不因子状态重复报错）。
+        """
+        task = await asyncio.to_thread(orch_tasks.get_task, trigger.task_id or "")
+        if not task.thread_id:
+            raise VigiliaStoreError(
+                f"任务 {trigger.task_id} 无所属线程，到点无法派发：{trigger.id}"
+            )
+        with contextlib.suppress(InvalidTaskTransition):
+            await asyncio.to_thread(orch_tasks.start_task, task.id)
+        await self._server.turn_start(
+            {"thread_id": task.thread_id, "user_text": trigger.prompt or task.title},
+            self._ctx(f"vigilia-task-{trigger.id}"),
         )
 
     # ---- Goal 轮自驱 ----

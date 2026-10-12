@@ -17,6 +17,7 @@ from questor.gesta import load_thread
 from questor.gesta.store import add_run, transition_run
 from questor.orchestration import goal as orch_goal
 from questor.orchestration import store as orch_store
+from questor.orchestration import tasks as orch_tasks
 from questor.schemas.model import PermissionMode, Run, RunStatus, utc_timestamp_now
 from questor.serve.app_server import AppServer
 from questor.serve.assembly import build_engine, ensure_workspace_for_root
@@ -190,6 +191,57 @@ def test_driver_tick_fires_interval_trigger(tmp_path: pathlib.Path) -> None:
         runs = load_thread(thread_id).runs
         assert len(runs) >= 1
         assert runs[-1].status.value == "completed"
+
+    asyncio.run(run())
+
+
+def test_schedule_create_task_target(tmp_path: pathlib.Path) -> None:
+    """M5：schedule/create 接受 task 目标；不存在的任务被拒；DTO 回显 task_id。"""
+    server, _notes = _server(tmp_path)
+    ctx = _ctx()
+
+    async def run() -> None:
+        thread_id = (await server.thread_create({"title": "t"}, ctx))["thread"]["id"]
+        task = orch_tasks.create_task(title="nightly", thread_id=thread_id)
+        with pytest.raises(ProtocolError):  # 不存在的 task → 拒
+            await server.schedule_create(
+                {"trigger_kind": "once", "task_id": "task-nope0000000"}, ctx
+            )
+        created = await server.schedule_create({"trigger_kind": "once", "task_id": task.id}, ctx)
+        assert created["schedule"]["task_id"] == task.id
+        assert created["schedule"]["thread_id"] is None  # 目标由任务携带，不重复存线程
+
+    asyncio.run(run())
+
+
+def test_driver_fires_task_target(tmp_path: pathlib.Path) -> None:
+    """M5：到点派发任务——_fire 把任务推进到 executing 并在其线程起一轮（notice fired）。"""
+    server, notes = _server(tmp_path, turns=4)
+    ctx = _ctx()
+
+    async def run() -> None:
+        thread_id = (await server.thread_create({"title": "t"}, ctx))["thread"]["id"]
+        task = orch_tasks.create_task(title="run me", thread_id=thread_id)
+        await server.schedule_create(
+            {"trigger_kind": "interval", "interval_seconds": 1, "task_id": task.id}, ctx
+        )
+        driver = LongRunDriver(server, tick_seconds=0.05)
+        await driver.start()
+        try:
+            for _ in range(200):
+                await asyncio.sleep(0.05)
+                if any(
+                    n.method == "notice/schedule" and n.params["outcome"] == "fired" for n in notes
+                ):
+                    break
+        finally:
+            await driver.stop()
+            await server.wait_idle()
+
+        assert any(n.method == "notice/schedule" and n.params["outcome"] == "fired" for n in notes)
+        reloaded = orch_tasks.get_task(task.id)
+        assert reloaded.status.value in ("executing", "reviewed", "completed")
+        assert len(load_thread(thread_id).runs) >= 1
 
     asyncio.run(run())
 

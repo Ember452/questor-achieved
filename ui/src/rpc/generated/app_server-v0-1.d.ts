@@ -788,6 +788,14 @@ export interface ScheduleDTO {
   interval_seconds?: number | null;
   cron?: string | null;
   next_fire_at?: string | null;
+  /**
+   * task 目标（M5）；为 null 时走 thread 目标
+   */
+  task_id?: string | null;
+  /**
+   * thread 目标的会话；task 目标为任务所属线程
+   */
+  thread_id?: string | null;
   created_at: Timestamp;
 }
 /**
@@ -1059,13 +1067,17 @@ export interface ScheduleCreateParams {
    */
   next_fire_at?: string | null;
   /**
-   * M4 触发目标：到点在它起一轮
+   * thread 目标：到点在它起一轮（与 prompt 同时必填）
    */
-  thread_id: string;
+  thread_id?: string | null;
   /**
-   * 那轮的用户文本指令
+   * thread 目标那轮的用户文本指令
    */
-  prompt: string;
+  prompt?: string | null;
+  /**
+   * task 目标（M5）：到点派发该任务执行；给了即以 task 为准，不再需 thread_id+prompt
+   */
+  task_id?: string | null;
 }
 /**
  * This interface was referenced by `QuestorAppServer`'s JSON-Schema

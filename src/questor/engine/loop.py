@@ -22,7 +22,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from collections.abc import AsyncGenerator, AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -146,6 +146,17 @@ class Engine:
         一个 engine 实例上多次 attach 以最后一次为准（重建会话同一引擎实例不会旧新混用）。
         """
         self._inbox = inbox
+
+    def attach_orchestration_publisher(self, publisher: Callable[[str, dict], None]) -> None:
+        """M5（ADR-0029）：serve 把宿主事件循环发布器递给编排端口的 report（与 inbox 同形态）。
+
+        只递给实现了 `bind_publisher` 的端口（`OrchestrationService`）；鸭子类型避免把
+        “宿主接线”当作模型动作写进 `OrchestrationPort` 协议。未递到时 report 仍落盘与
+        驱动验收态，只是不实时推送（诚实）。
+        """
+        bind = getattr(self._ctx.orchestration, "bind_publisher", None)
+        if callable(bind):
+            bind(publisher)
 
     async def run_turn(self, request: TurnRequest) -> AsyncGenerator[AgentEvent, None]:
         """执行一轮 turn：用户输入 → 模型/工具循环 → 终态；事件与落盘双轨。"""

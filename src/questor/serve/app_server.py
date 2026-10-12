@@ -126,6 +126,9 @@ class AppServer:
     #: 真实并发限流：initialize 回显的 max_concurrency 必须有执行体兑现（非空头支票）。
     #: lazy 建（首次 turn_start 时在 loop 内），上限 = max_concurrency。
     _run_sem: asyncio.Semaphore | None = field(default=None, repr=False)
+    #: turn_start 时捕获的运行中事件循环；report 在 worker 线程里经它 `call_soon_threadsafe`
+    #: 把通知 hop 回循环（Fanout.put_nowait 非线程安全，B-96 同一顺序承诺才成立）。
+    _loop: asyncio.AbstractEventLoop | None = field(default=None, repr=False)
     #: 输出汇：旧单一 callback 保留为测试钩子；新多宿主走 _fanout
     _notify: Callable[[Notification], None] | None = None
     #: M3a-3 插话队列与接管栅栏（同线程 lazily 建）
@@ -152,6 +155,17 @@ class AppServer:
     def publish(self, notification: Notification) -> None:
         """同宿件（长跑驱动等）的公开通知入口：仍经唯一单点 `_publish`，不开第二条道。"""
         self._publish(notification)
+
+    def _orchestration_publisher(self, kind: str, payload: dict[str, Any]) -> None:
+        """编排 report 在工作线程里回调的通知出口：hop 回事件循环再 `_publish`。
+
+        `Fanout.publish` 用 `put_nowait`（非线程安全）；故不直发，而是 `call_soon_threadsafe`
+        排回 loop。未捕获 loop（未起轮）则静默丢弃——report 本体已落盘，推送只是锦上添花。
+        """
+        loop = self._loop
+        if loop is None:
+            return
+        loop.call_soon_threadsafe(self._publish, Notification(kind, payload))
 
     # ---- 方法表 ----
 
@@ -321,6 +335,10 @@ class AppServer:
         engine = self.create_engine(thread_id, ctx.permission_mode)
         # M3a-3：把插话队列挂到 engine（B-67/94 消费点在 iteration 起点）
         engine.attach_inbox(self._inbox_for(thread_id))
+        # M5（ADR-0029）：捕获运行中 loop，把事件循环发布器递给编排端口——模型经
+        # `task report` 工具触发时，report 在 worker 线程里经此 hop 回循环发 evidence/reported。
+        self._loop = asyncio.get_running_loop()
+        engine.attach_orchestration_publisher(self._orchestration_publisher)
         # max_concurrency 的真实执行体：lazy 建信号量（此时必在 event loop 内），
         # 超上限的 run 在 _pump 里排队，而不是并发突破——让 initialize 的回显成为承诺。
         if self._run_sem is None:
@@ -838,11 +856,24 @@ class AppServer:
         return {"task": task.model_dump(mode="json")}
 
     async def task_start(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        """开始执行（pending/planned → executing）：唯一经 `tasks.start_task` 的入口。
+
+        与直跑不同处：start 同步把验收态 `proposed → accepted_by_user → executing`（授权即
+        记录），后续模型 `task report` 才能从 `executing` 进 `reported`（data-model §3.2）。
+        """
         del ctx
+        task_id = str(params.get("task_id", ""))
+        if not task_id:
+            raise ValueError("task/start 需要 task_id")
         self._gate_or_deny(
             "start_execution", has_plan=True, authorized=bool(params.get("authorized", False))
         )
-        return await self._task_transition(params, TaskStatus.EXECUTING, "task/start")
+        try:
+            task = await asyncio.to_thread(orch_tasks.start_task, task_id)
+        except (orch_store.TaskNotFound, InvalidTaskTransition) as exc:
+            raise ProtocolError("invalid_params", str(exc)) from exc
+        self._publish_task(task)
+        return {"task": task.model_dump(mode="json")}
 
     async def task_pause(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
         del ctx
@@ -861,9 +892,18 @@ class AppServer:
         return await self._task_transition(params, TaskStatus.REVIEWED, "task/review")
 
     async def task_reject(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
-        """打回重做（reviewed → executing）——M4 出口链一环。"""
+        """打回重做（reviewed → executing）——M4 出口链一环；同步把 regressed 验收态回
+        executing（为下一轮 `report` 重开）。"""
         del ctx
-        return await self._task_transition(params, TaskStatus.EXECUTING, "task/reject")
+        task_id = str(params.get("task_id", ""))
+        if not task_id:
+            raise ValueError("task/reject 需要 task_id")
+        try:
+            task = await asyncio.to_thread(orch_tasks.reject_task, task_id)
+        except (orch_store.TaskNotFound, InvalidTaskTransition) as exc:
+            raise ProtocolError("invalid_params", str(exc)) from exc
+        self._publish_task(task)
+        return {"task": task.model_dump(mode="json")}
 
     async def task_retry(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
         del ctx
@@ -953,10 +993,10 @@ class AppServer:
         return {"goal": goal.model_dump(mode="json")}
 
     async def schedule_create(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
-        """新建值守触发器（M4 目标形态：`thread_id`+`prompt` 到点起一轮）。
+        """新建值守触发器（目标二选一：`task_id` 派发任务，或 `thread_id`+`prompt` 起一轮）。
 
         校验全在此层做足：kind 枚举、interval 秒数、cron 5 字段形状、目标字段——
-        落库的触发器必须可执行，不能等 tick 现场才爆（task 目标随 M5 派发接线）。
+        落库的触发器必须可执行，不能等 tick 现场才爆（task 目标 M5 已接线）。
         """
         del ctx
         kind_raw = str(params.get("trigger_kind", ""))
@@ -967,14 +1007,23 @@ class AppServer:
                 "invalid_params",
                 f"schedule/create 未知 trigger_kind：{kind_raw!r}（可选 once/interval/cron）",
             ) from None
-        thread_id = str(params.get("thread_id", ""))
-        prompt = str(params.get("prompt", ""))
-        if not thread_id or not prompt:
+        task_id = _opt_str(params.get("task_id"))
+        thread_id = _opt_str(params.get("thread_id"))
+        prompt = _opt_str(params.get("prompt"))
+        # 目标二选一（data-model/vigilia 声明式，不分枝）：给了 task_id 即以 task 为准，
+        # 否则需 thread_id + prompt 起一轮。两者都缺即拒（落库的触发器必须可执行）。
+        if task_id is None and not (thread_id and prompt):
             raise ProtocolError(
                 "invalid_params",
-                "schedule/create 需要 thread_id 与 prompt"
-                "（M4 触发目标仅为‘到点起一轮’；task 目标随 M5 接线）",
+                "schedule/create 需要 task_id（M5 派发目标），或 thread_id + prompt（到点起一轮）",
             )
+        if task_id is not None:
+            try:
+                await asyncio.to_thread(orch_tasks.get_task, task_id)
+            except orch_store.TaskNotFound as exc:
+                raise ProtocolError(
+                    "invalid_params", f"schedule/create 的 task 不存在：{task_id!r}"
+                ) from exc
         interval_seconds = params.get("interval_seconds")
         cron = _opt_str(params.get("cron"))
         if kind is TriggerKind.INTERVAL and not (
@@ -1002,6 +1051,7 @@ class AppServer:
             interval_seconds=interval_seconds if kind is TriggerKind.INTERVAL else None,
             cron=cron if kind is TriggerKind.CRON else None,
             next_fire_at=next_fire,
+            task_id=task_id,
             thread_id=thread_id,
             prompt=prompt,
             created_at=now,
@@ -1090,6 +1140,8 @@ def _schedule_dump(trigger: ScheduleTrigger) -> dict[str, Any]:
         "interval_seconds": trigger.interval_seconds,
         "cron": trigger.cron,
         "next_fire_at": trigger.next_fire_at,
+        "task_id": trigger.task_id,
+        "thread_id": trigger.thread_id,
         "created_at": trigger.created_at,
     }
 
