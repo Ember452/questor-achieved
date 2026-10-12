@@ -30,7 +30,9 @@ __all__ = [
     "add_trigger",
     "get_trigger",
     "load_view",
+    "record_tick",
     "set_checkpoint",
+    "set_sweep_cursor",
     "update_trigger",
 ]
 
@@ -152,8 +154,35 @@ def update_trigger(trigger: ScheduleTrigger) -> ScheduleTrigger:
 
 
 def set_checkpoint(checkpoint: ScheduleCheckpoint) -> ScheduleCheckpoint:
-    """写入唤醒检查点（每次 tick 收尾调用；重启据此续跑）。"""
+    """整体写入唤醒检查点（初始化/测试用；日常更新走 :func:`record_tick` 或
+    :func:`set_sweep_cursor`——两个写方各自只推进自己的字段）。"""
     with store_lock(vigilia_dir()):
         view = load_view()
+        _append_locked("schedule.checkpoint", checkpoint.model_dump(mode="json"), view.last_seq)
+        return checkpoint
+
+
+def record_tick(last_tick_at: str) -> ScheduleCheckpoint:
+    """tick 收尾记 `last_tick_at`，**持锁下读盘保留当前清扫游标**。
+
+    tick 开头读到的是旧游标：若照旧游标整写回，会盖掉 tick 执行窗口内清扫已推进的
+    游标（回退即重查同一 top-N，B-40 空转洞重开）。读-改-写在锁内完成。
+    """
+    with store_lock(vigilia_dir()):
+        view = load_view()
+        checkpoint = ScheduleCheckpoint(
+            last_tick_at=last_tick_at, sweep_cursor=view.checkpoint.sweep_cursor
+        )
+        _append_locked("schedule.checkpoint", checkpoint.model_dump(mode="json"), view.last_seq)
+        return checkpoint
+
+
+def set_sweep_cursor(cursor: int) -> ScheduleCheckpoint:
+    """推进清扫游标，持锁下保留当前 `last_tick_at`（与 :func:`record_tick` 对称）。"""
+    with store_lock(vigilia_dir()):
+        view = load_view()
+        checkpoint = ScheduleCheckpoint(
+            last_tick_at=view.checkpoint.last_tick_at, sweep_cursor=cursor
+        )
         _append_locked("schedule.checkpoint", checkpoint.model_dump(mode="json"), view.last_seq)
         return checkpoint

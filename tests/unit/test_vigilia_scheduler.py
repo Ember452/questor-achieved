@@ -59,6 +59,27 @@ def _trigger(
     )
 
 
+def test_tick_does_not_rewind_sweep_cursor_advanced_during_fire() -> None:
+    """B-40 回归：tick 收尾写检查点时不得拿 tick 开头读到的旧视图，
+    把中途（fire 回调里）清扫推进的游标回退——游标回退等于重查同一 top-N。"""
+    trigger = _trigger(TriggerKind.ONCE, next_fire_at="2026-10-12T07:59:59Z")
+    store.add_trigger(trigger)
+    store.set_checkpoint(ScheduleCheckpoint(last_tick_at="2026-10-12T07:00:00Z", sweep_cursor=5))
+    scheduler = Scheduler()
+
+    async def run() -> None:
+        async def fire(_t: ScheduleTrigger) -> None:
+            # 模拟 tick 执行窗口内清扫推进了一批（5 → 9）
+            store.set_checkpoint(
+                ScheduleCheckpoint(last_tick_at="2026-10-12T07:30:00Z", sweep_cursor=9)
+            )
+
+        await scheduler.tick(NOW, fire)
+
+    asyncio.run(run())
+    assert store.load_view().checkpoint.sweep_cursor == 9  # tick 不得把游标写回旧值 5
+
+
 def test_once_fires_once_and_is_idempotent() -> None:
     """B-42：once 到点触发一次，成功后写 once_fired；第二次 tick 不再触发。"""
     fired: list[str] = []

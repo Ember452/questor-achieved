@@ -19,7 +19,6 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from questor.schemas.vigilia import (
-    ScheduleCheckpoint,
     ScheduleTrigger,
     TriggerKind,
 )
@@ -149,6 +148,8 @@ class TickOutcome:
 
     trigger_id: str
     outcome: str  # fired | skipped
+    #: 触发器类型（once/interval/cron）；通知形状需要它，这里带上免得上层再读盘
+    kind: str = ""
 
 
 class Scheduler:
@@ -177,10 +178,8 @@ class Scheduler:
         due = [t for t in view.triggers if is_due(t, now)]
         semaphore = asyncio.Semaphore(self._max_concurrent)
         results = await asyncio.gather(*(self._fire(t, now, fire, semaphore) for t in due))
-        checkpoint = ScheduleCheckpoint(
-            last_tick_at=format_timestamp(now), sweep_cursor=view.checkpoint.sweep_cursor
-        )
-        await asyncio.to_thread(store.set_checkpoint, checkpoint)
+        # 只推进 last_tick_at：游标由清扫自己写（持锁读-改-写，防回退 B-40）
+        await asyncio.to_thread(store.record_tick, format_timestamp(now))
         return list(results)
 
     async def _fire(
@@ -198,12 +197,12 @@ class Scheduler:
             # （否则 per-task 锁只串行化、不阻断重复触发——B-49 的实质）。
             fresh = await asyncio.to_thread(_reload_trigger, trigger.id)
             if fresh is None or not is_due(fresh, now):
-                return TickOutcome(trigger.id, "skipped")
+                return TickOutcome(trigger.id, "skipped", trigger.trigger_kind.value)
             try:
                 await fire(fresh)
             except Exception:  # noqa: BLE001 - 单个触发器失败不能带走整个 tick
                 logger.warning("触发器 %s 执行失败，本轮不标记为已触发", trigger.id, exc_info=True)
-                return TickOutcome(trigger.id, "skipped")
+                return TickOutcome(trigger.id, "skipped", fresh.trigger_kind.value)
             advanced = advance(fresh, now)
             try:
                 await asyncio.to_thread(store.update_trigger, advanced)
@@ -213,7 +212,7 @@ class Scheduler:
                 logger.warning(
                     "触发器 %s 已触发但写回失败（不阻塞本轮）", trigger.id, exc_info=True
                 )
-        return TickOutcome(trigger.id, "fired")
+        return TickOutcome(trigger.id, "fired", fresh.trigger_kind.value)
 
 
 def _reload_trigger(trigger_id: str) -> ScheduleTrigger | None:

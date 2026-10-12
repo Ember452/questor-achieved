@@ -17,7 +17,6 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from questor.schemas.vigilia import ScheduleCheckpoint
 from questor.vigilia import store
 from questor.vigilia.constants import SWEEP_BATCH_MIN
 
@@ -73,9 +72,8 @@ class StaleSweeper:
         if not self._enabled:
             return SweepResult(cursor=cursor, scanned=0, reconciled=())
         picked, next_cursor = next_batch(stale_ids, cursor, self._batch)
-        store.set_checkpoint(
-            ScheduleCheckpoint(last_tick_at=view.checkpoint.last_tick_at, sweep_cursor=next_cursor)
-        )
+        # 只推进游标：last_tick_at 由 tick 自己写（持锁读-改-写，两写方互不覆写）
+        store.set_sweep_cursor(next_cursor)
         if picked:
             logger.info(
                 "清扫 reconcile %d 个 stale 运行（游标 %d→%d）", len(picked), cursor, next_cursor
@@ -88,9 +86,7 @@ class StaleSweeper:
         if not self._enabled:
             return SweepResult(cursor=view.checkpoint.sweep_cursor, scanned=0, reconciled=())
         ordered = tuple(sorted(stale_ids))
-        store.set_checkpoint(
-            ScheduleCheckpoint(last_tick_at=view.checkpoint.last_tick_at, sweep_cursor=0)
-        )
+        store.set_sweep_cursor(0)
         if ordered:
             logger.info("启动 reconcile %d 个 stale 运行", len(ordered))
         return SweepResult(cursor=0, scanned=len(ordered), reconciled=ordered)
