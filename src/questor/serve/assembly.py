@@ -23,8 +23,9 @@ from questor.tools.filestate import FileStateCache
 from questor.tools.impl.registry_default import build_default_registry
 from questor.tools.impl.todo import TodoStore
 from questor.tools.processmgr import ProcessManager
+from questor.workspaces import register as register_workspace
 
-__all__ = ["build_engine", "exec_turn", "project_rules_for"]
+__all__ = ["build_engine", "ensure_workspace_for_root", "exec_turn", "project_rules_for"]
 
 _PROJECT_RULES_FILES = ("AGENTS.md", "CLAUDE.md", ".cursorrules")
 
@@ -87,3 +88,16 @@ async def exec_turn(
         TurnRequest(thread_id=thread_id, user_text=user_text, resume=resume)
     ):
         yield event
+
+
+def ensure_workspace_for_root(root: Path) -> str:
+    """取路径对应的 workspace id（未注册即登记）。CLI / 桌面壳 / 远程都走本入口。
+
+    存在意义：overview §14 将“路径单点解析”列为已留门——workspace_id 的归一化
+    (sha256[:16]) 只住在 workspaces，上层不得自己再算一遍。本函数给 cli 提供
+    合矩阵的接入入口（cli → serve → workspaces），避免产生第二处真相。
+
+    同步接口：内部 workspaces.register 含跨进程文件锁，调用方在 async 上下文里请走
+    ``await asyncio.to_thread(ensure_workspace_for_root, root)``。
+    """
+    return register_workspace(root).id

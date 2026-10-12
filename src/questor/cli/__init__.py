@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
 import os
 import sys
 import uuid
@@ -24,7 +23,7 @@ from questor.config import load_config
 from questor.providers import ModelSpec, ProtocolName, create_model
 from questor.schemas.model import PermissionMode
 from questor.serve import AppServer
-from questor.serve.assembly import build_engine, exec_turn
+from questor.serve.assembly import build_engine, ensure_workspace_for_root, exec_turn
 from questor.serve.dispatch import HandlerCtx
 from questor.serve.envelope import encode_line
 from questor.serve.notifications import notification_of
@@ -140,11 +139,14 @@ async def _cmd_session_list() -> int:
 async def _create_thread(args: argparse.Namespace) -> str:
     thread_id = f"thread-{uuid.uuid4().hex[:12]}"
     workdir = Path(args.cwd).expanduser().resolve()
+    # workspace_id 归一化单点在 workspaces.register（overview §14 路径单点解析）；
+    # CLI 不得自己算 sha256，否则修哈希时两边会偷偷漂移。
+    workspace_id = await asyncio.to_thread(ensure_workspace_for_root, workdir)
     server = AppServer(create_engine=_no_engine)
     await server.thread_create(
         {
             "id": thread_id,
-            "workspace_id": hashlib.sha256(str(workdir).encode("utf-8")).hexdigest()[:16],
+            "workspace_id": workspace_id,
             "title": args.user_text[:60],
             "permission_mode": args.mode,
         },

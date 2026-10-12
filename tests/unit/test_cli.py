@@ -8,6 +8,7 @@ B-87 的断言只有一条硬规则：**`--json` 时 stdout 的每一行都必�
 from __future__ import annotations
 
 import json
+import pathlib
 
 import pytest
 
@@ -16,6 +17,8 @@ from questor.config import ConfigSnapshot
 from questor.providers import ProtocolName
 from questor.testenv.fake_home import fake_home
 from questor.testenv.fake_model import FakeModel, ScriptedTurn
+
+_CLI_SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "questor" / "cli" / "__init__.py"
 
 
 def _snapshot(model: dict[str, object]) -> ConfigSnapshot:
@@ -196,3 +199,19 @@ def test_exec_closes_model_even_when_the_run_fails(
         main(["exec", "说句话", "--cwd", str(tmp_path), "--json"])
 
     assert model.closed is True
+
+
+def test_cli_does_not_recompute_workspace_id() -> None:
+    """workspace_id 归一化单点在 workspaces.register（sha256[:16]）。
+
+    CLI 自己算 sha256 会形成两处真相：workspaces 修哈希算法时 CLI 偷偷不一致，
+    违反 overview §14“路径单点解析”的已留门。正确做法：经 serve.assembly.ensure_workspace_for_root
+    （矩阵上 cli 只可 import serve，不直接碰 workspaces）。
+    """
+    src = _CLI_SRC.read_text(encoding="utf-8")
+    assert "hashlib.sha256" not in src, (
+        "cli/__init__.py 直接算 workspace_id 哈希：改走 serve.assembly.ensure_workspace_for_root"
+    )
+    assert "import hashlib" not in src, (
+        "cli 不再需要 hashlib——workspace_id 由 workspaces.register 单点产出"
+    )
