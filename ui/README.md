@@ -10,17 +10,17 @@
 | `src/app-shell/` | 三栏骨架（侧栏 / 会话 / 工作区面板）；M3 起接真实数据 |
 | `src/design/` | `tokens.css`（语义 token）、`themes.css`（主题覆盖）、`base.css`、`useTheme` |
 | `src/rpc/generated/` | **由 schema 生成，禁止手改**（`just gen` 覆盖；CI 断言重新生成后无 diff） |
-| `src/rpc/mock.ts` | mock 协议服务，**只服务于 M1–M2 的 UI 开发**；M3 真接后删除或降级为测试替身 |
+| `src/rpc/mock.ts` | mock 协议服务，**只服务于 M1–M2 的 UI 开发**；M3 真接后降级为测试替身 |
 | `src/state/` | 工作台状态（面板可见性、主题等 UI-local 状态；会话状态的归属见下） |
-| `scripts/gen-types.mjs` | schema → TS 类型生成器（`json-schema-to-typescript`） |
+| `noop.js` | `scripts/gen/types.mjs` 里 `createRequire` 的路径锚点（ADR-0019），不参与运行时逻辑 |
 
 ## 命令
 
 ```bash
 npm --prefix ui ci
 npm --prefix ui run dev          # 浏览器开发（vite）
-npm --prefix ui run gen          # 重新生成类型
-npm --prefix ui run gen:check    # 生成后 git diff 必须为空
+just gen                          # 重新生成类型（定义点：scripts/gen/types.mjs）
+just gen-check                    # 生成后 git diff 必须为空
 npm --prefix ui run typecheck    # tsc --noEmit
 npm --prefix ui run build        # 产出 dist/（不入库）
 ```

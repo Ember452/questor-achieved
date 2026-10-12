@@ -2,16 +2,26 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "questor/app_server/v0-1.json",
   "title": "QuestorAppServer",
-  "description": "qst-app-server/v0.1 跨进程信封与方法契约（真相源：docs/architecture/protocol.md v1.0）。错误码是字符串；能力 opt-in。",
+  "description": "qst-app-server/v0.1 跨进程信封与方法契约（真相源：docs/architecture/protocol.md v1.0）。错误码是字符串；能力 opt-in。$defs 里每个方法/通知族都有 Params/Result/Notification 形状，护栏 test_schemas_method_families 逐项对账；跨进程 DTO 与 model/v1.json 字段一致。",
   "$defs": {
     "Id": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]*$"
     },
+    "Timestamp": {
+      "type": "string",
+      "description": "UTC ISO-8601",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
     "PermissionMode": {
       "type": "string",
       "description": "与 model/v1.json#/$defs/PermissionMode 保持一致（护栏测试校验）",
       "enum": ["read_only", "standard", "unconfined"]
+    },
+    "RunStatus": {
+      "type": "string",
+      "description": "与 model/v1.json#/$defs/RunStatus 保持一致；steered/waiting 是 running 的旁态",
+      "enum": ["queued", "running", "steered", "waiting", "completed", "failed", "cancelled"]
     },
     "ProtocolVersion": {
       "type": "string",
@@ -22,7 +32,7 @@
       "required": ["id", "method"],
       "properties": {
         "id": { "type": "string" },
-        "method": { "type": "string", "description": "方法名，见 protocol.md §3 方法表" },
+        "method": { "type": "string", "description": "方法名，具体形状见 $defs.<Method>Params" },
         "params": { "type": "object" }
       },
       "additionalProperties": false
@@ -72,6 +82,65 @@
       },
       "additionalProperties": false
     },
+
+    "ThreadDTO": {
+      "type": "object",
+      "description": "跨进程可见 Thread（字段与 model/v1.json#/$defs/Thread 一致，护栏 test_schema_bindings 对账）",
+      "required": ["id", "workspace_id", "engine_id", "permission_mode", "pinned", "archived", "created_at", "updated_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "workspace_id": { "$ref": "#/$defs/Id" },
+        "title": { "type": ["string", "null"] },
+        "engine_id": { "$ref": "#/$defs/Id" },
+        "permission_mode": { "$ref": "#/$defs/PermissionMode" },
+        "pinned": { "type": "boolean" },
+        "archived": { "type": "boolean" },
+        "created_at": { "$ref": "#/$defs/Timestamp" },
+        "updated_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "WorkspaceDTO": {
+      "type": "object",
+      "required": ["id", "name", "root_paths", "revision", "created_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "name": { "type": "string" },
+        "root_paths": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+
+    "DiffHunk": {
+      "type": "object",
+      "description": "一段 unified diff 的变更块（review.compute_diff 产出）",
+      "required": ["old_start", "old_lines", "new_start", "new_lines", "body"],
+      "properties": {
+        "old_start": { "type": "integer", "minimum": 0 },
+        "old_lines": { "type": "integer", "minimum": 0 },
+        "new_start": { "type": "integer", "minimum": 0 },
+        "new_lines": { "type": "integer", "minimum": 0 },
+        "body": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "FileDiff": {
+      "type": "object",
+      "description": "一个文件的完整变更（写时算、随 Item.payload 落盘）",
+      "required": ["path", "created", "hunks", "content_fingerprint", "byte_size", "unified"],
+      "properties": {
+        "path": { "type": "string" },
+        "created": { "type": "boolean" },
+        "hunks": { "type": "array", "items": { "$ref": "#/$defs/DiffHunk" } },
+        "content_fingerprint": { "type": "string" },
+        "byte_size": { "type": "integer", "minimum": 0 },
+        "unified": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
     "InitializeParams": {
       "type": "object",
       "required": ["client_version", "capabilities"],
@@ -97,10 +166,25 @@
     },
     "InitializeResult": {
       "type": "object",
-      "required": ["protocol_version", "status", "issues", "build", "host", "permissions", "engines", "feature_flags", "max_concurrency"],
+      "required": [
+        "protocol_version",
+        "status",
+        "issues",
+        "build",
+        "host",
+        "principal",
+        "threads",
+        "permissions",
+        "engines",
+        "feature_flags",
+        "max_concurrency",
+        "methods",
+        "notification_families",
+        "client_capabilities"
+      ],
       "properties": {
         "protocol_version": { "$ref": "#/$defs/ProtocolVersion" },
-        "status": { "type": "string", "enum": ["ready", "needs_setup"], "description": "needs_setup 时连接仍可用" },
+        "status": { "type": "string", "enum": ["ready", "needs_setup"] },
         "issues": { "type": "array", "items": { "type": "string" } },
         "build": {
           "type": "object",
@@ -120,12 +204,14 @@
           },
           "additionalProperties": false
         },
+        "principal": { "type": "string", "description": "本机归属标识；本期仅传递与回显（ADR-0020），不含鉴权" },
+        "threads": { "type": "array", "items": { "$ref": "#/$defs/Id" } },
         "permissions": {
           "type": "object",
           "required": ["mode"],
           "properties": {
             "mode": { "$ref": "#/$defs/PermissionMode" },
-            "sandboxed": { "type": "boolean", "description": "当前执行是否被 OS 沙箱覆盖（ADR-0007）" }
+            "sandboxed": { "type": "boolean" }
           },
           "additionalProperties": false
         },
@@ -141,21 +227,477 @@
             "additionalProperties": false
           }
         },
-        "feature_flags": { "type": "object" },
-        "max_concurrency": { "type": "integer", "minimum": 1 }
+        "feature_flags": { "type": "array", "items": { "type": "string" } },
+        "max_concurrency": { "type": "integer", "minimum": 1 },
+        "methods": { "type": "array", "items": { "type": "string" } },
+        "notification_families": { "type": "array", "items": { "type": "string" } },
+        "client_capabilities": { "type": "object" }
       },
       "additionalProperties": false
     },
-    "SteerParams": {
+    "ThreadCreateParams": {
+      "type": "object",
+      "required": ["workspace_id"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "workspace_id": { "$ref": "#/$defs/Id" },
+        "title": { "type": ["string", "null"] },
+        "engine_id": { "$ref": "#/$defs/Id" },
+        "permission_mode": { "$ref": "#/$defs/PermissionMode" }
+      },
+      "additionalProperties": false
+    },
+    "ThreadCreateResult": {
+      "type": "object",
+      "required": ["thread"],
+      "properties": { "thread": { "$ref": "#/$defs/ThreadDTO" } },
+      "additionalProperties": false
+    },
+    "ThreadListParams": {
+      "type": "object",
+      "required": [],
+      "properties": {},
+      "additionalProperties": false
+    },
+    "ThreadListResult": {
+      "type": "object",
+      "required": ["threads", "principal"],
+      "properties": {
+        "threads": { "type": "array", "items": { "$ref": "#/$defs/ThreadDTO" } },
+        "principal": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "ThreadRenameParams": {
+      "type": "object",
+      "required": ["thread_id", "title"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "title": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "ThreadRenameResult": {
+      "type": "object",
+      "required": ["thread"],
+      "properties": { "thread": { "$ref": "#/$defs/ThreadDTO" } },
+      "additionalProperties": false
+    },
+    "ThreadArchiveParams": {
+      "type": "object",
+      "required": ["thread_id", "archived"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "archived": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "ThreadArchiveResult": {
+      "type": "object",
+      "required": ["thread"],
+      "properties": { "thread": { "$ref": "#/$defs/ThreadDTO" } },
+      "additionalProperties": false
+    },
+    "ThreadDeleteParams": {
+      "type": "object",
+      "required": ["thread_id"],
+      "properties": { "thread_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "ThreadDeleteResult": {
+      "type": "object",
+      "required": ["deleted"],
+      "properties": { "deleted": { "type": "boolean" } },
+      "additionalProperties": false
+    },
+    "ThreadShowParams": {
+      "type": "object",
+      "required": ["thread_id"],
+      "properties": { "thread_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "ThreadShowResult": {
+      "type": "object",
+      "required": ["thread"],
+      "properties": {
+        "thread": { "$ref": "#/$defs/ThreadDTO" },
+        "turns": { "type": "array", "items": { "type": "object" } },
+        "items": { "type": "array", "items": { "type": "object" } },
+        "events": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": false
+    },
+    "ThreadForkParams": {
+      "type": "object",
+      "required": ["thread_id"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "new_thread_id": { "$ref": "#/$defs/Id" },
+        "workspace_id": { "$ref": "#/$defs/Id" },
+        "mode": { "type": "string", "enum": ["local", "worktree"] }
+      },
+      "additionalProperties": false
+    },
+    "ThreadForkResult": {
+      "type": "object",
+      "required": ["thread", "mode"],
+      "properties": {
+        "thread": { "$ref": "#/$defs/ThreadDTO" },
+        "mode": { "type": "string", "enum": ["local", "worktree"] }
+      },
+      "additionalProperties": false
+    },
+    "TurnStartParams": {
+      "type": "object",
+      "required": ["thread_id", "user_text"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "user_text": { "type": "string" },
+        "resume": { "type": "boolean" },
+        "client_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "TurnStartResult": {
+      "type": "object",
+      "required": ["thread_id", "accepted", "origin"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "accepted": { "type": "boolean" },
+        "origin": { "type": "string", "enum": ["user", "steer"] }
+      },
+      "additionalProperties": false
+    },
+    "TurnSteerParams": {
       "type": "object",
       "required": ["thread_id", "client_id", "content"],
       "properties": {
         "thread_id": { "$ref": "#/$defs/Id" },
-        "client_id": { "type": "string", "description": "幂等键：INSERT OR IGNORE + history 判重" },
+        "client_id": { "type": "string", "description": "幂等键（B-63）" },
         "content": { "type": "string" },
         "expected_turn_id": {
           "type": ["string", "null"],
-          "description": "空=旧客户端兼容放行；非空不匹配当前 turn=拒绝"
+          "description": "空=旧客户端兼容放行；非空不匹配当前 turn=拒绝（B-64）"
+        }
+      },
+      "additionalProperties": false
+    },
+    "TurnSteerResult": {
+      "type": "object",
+      "required": ["accepted", "thread_id"],
+      "properties": {
+        "accepted": { "type": "boolean" },
+        "thread_id": { "$ref": "#/$defs/Id" }
+      },
+      "additionalProperties": false
+    },
+
+    "TurnSteeredNotification": {
+      "type": "object",
+      "description": "iteration 起点消费插话时发（B-67/94）；client_id 回链供宿主幂等判重",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "turn/steered" },
+        "params": {
+          "type": "object",
+          "required": ["thread_id", "client_id", "content"],
+          "properties": {
+            "thread_id": { "$ref": "#/$defs/Id" },
+            "client_id": { "type": "string" },
+            "content": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "TurnQueueParams": {
+      "type": "object",
+      "required": ["thread_id", "client_id", "content"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "client_id": { "type": "string" },
+        "content": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "TurnQueueResult": {
+      "type": "object",
+      "required": ["accepted", "thread_id"],
+      "properties": {
+        "accepted": { "type": "boolean" },
+        "thread_id": { "$ref": "#/$defs/Id" }
+      },
+      "additionalProperties": false
+    },
+    "TurnDequeueParams": {
+      "type": "object",
+      "required": ["thread_id", "client_id"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "client_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "TurnDequeueResult": {
+      "type": "object",
+      "required": ["removed"],
+      "properties": { "removed": { "type": "boolean" } },
+      "additionalProperties": false
+    },
+    "RunStopParams": {
+      "type": "object",
+      "required": ["thread_id"],
+      "properties": { "thread_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "RunStopResult": {
+      "type": "object",
+      "required": ["thread_id", "cancelling"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "cancelling": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "SessionControlParams": {
+      "type": "object",
+      "required": ["thread_id", "action"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "action": { "type": "string", "enum": ["take_over", "pause", "release"] },
+        "expected_revision": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "CAS 栅栏：stale 进程不能撤销人的接管（overview §12）"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SessionControlResult": {
+      "type": "object",
+      "required": ["holder", "revision"],
+      "properties": {
+        "holder": { "type": "string", "enum": ["user", "agent"] },
+        "revision": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "WorkspaceStatusParams": {
+      "type": "object",
+      "required": [],
+      "properties": {
+        "workspace_id": { "$ref": "#/$defs/Id" }
+      },
+      "additionalProperties": false
+    },
+    "WorkspaceStatusResult": {
+      "type": "object",
+      "required": ["workspaces"],
+      "properties": {
+        "workspaces": { "type": "array", "items": { "$ref": "#/$defs/WorkspaceDTO" } }
+      },
+      "additionalProperties": false
+    },
+    "WorkspaceRevisionParams": {
+      "type": "object",
+      "required": ["workspace_id"],
+      "properties": { "workspace_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "WorkspaceRevisionResult": {
+      "type": "object",
+      "required": ["revision"],
+      "properties": { "revision": { "type": "integer", "minimum": 0 } },
+      "additionalProperties": false
+    },
+
+    "ReviewTurnDiffParams": {
+      "type": "object",
+      "required": ["thread_id", "turn_id"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "turn_id": { "$ref": "#/$defs/Id" }
+      },
+      "additionalProperties": false
+    },
+    "ReviewTurnDiffResult": {
+      "type": "object",
+      "required": ["diffs"],
+      "properties": {
+        "diffs": { "type": "array", "items": { "$ref": "#/$defs/FileDiff" } }
+      },
+      "additionalProperties": false
+    },
+    "FilesReadParams": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "workspace_id": { "$ref": "#/$defs/Id" },
+        "expected_revision": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "FilesReadResult": {
+      "type": "object",
+      "required": ["content", "revision", "content_fingerprint"],
+      "properties": {
+        "content": { "type": "string" },
+        "revision": { "type": "integer", "minimum": 0 },
+        "content_fingerprint": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "FilesListParams": {
+      "type": "object",
+      "required": [],
+      "properties": {
+        "path": { "type": "string" },
+        "workspace_id": { "$ref": "#/$defs/Id" },
+        "recursive": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "FilesListEntry": {
+      "type": "object",
+      "required": ["kind", "path"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["file", "dir"] },
+        "path": { "type": "string" },
+        "size": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "FilesListResult": {
+      "type": "object",
+      "required": ["entries", "revision"],
+      "properties": {
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/FilesListEntry" } },
+        "revision": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "ContentReadParams": {
+      "type": "object",
+      "required": ["thread_id", "tool_use_id"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "tool_use_id": { "type": "string" },
+        "offset": { "type": ["integer", "null"], "minimum": 0 },
+        "limit": { "type": ["integer", "null"], "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "ContentReadResult": {
+      "type": "object",
+      "required": ["content", "truncated"],
+      "properties": {
+        "content": { "type": "string" },
+        "truncated": { "type": "boolean" },
+        "next_offset": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "AttachmentReadParams": {
+      "type": "object",
+      "required": ["thread_id", "attachment_id"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "attachment_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "AttachmentReadResult": {
+      "type": "object",
+      "required": ["content_b64", "mime", "filename"],
+      "properties": {
+        "content_b64": { "type": "string" },
+        "mime": { "type": "string" },
+        "filename": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "SessiontraceGetParams": {
+      "type": "object",
+      "required": ["thread_id"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "turn_id": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "TurnTraceDTO": {
+      "type": "object",
+      "required": ["turn_id", "seq", "origin", "run_ids", "items", "events"],
+      "properties": {
+        "turn_id": { "$ref": "#/$defs/Id" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "origin": { "type": "string", "enum": ["user", "steer"] },
+        "run_ids": { "type": "array", "items": { "$ref": "#/$defs/Id" } },
+        "items": { "type": "array", "items": { "type": "object" } },
+        "events": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": false
+    },
+    "SessiontraceGetResult": {
+      "type": "object",
+      "description": "给定 turn_id 时返回单 trace；否则返回整线程的 turns 列表",
+      "required": [],
+      "properties": {
+        "trace": { "oneOf": [{ "$ref": "#/$defs/TurnTraceDTO" }, { "type": "null" }] },
+        "turns": { "type": "array", "items": { "$ref": "#/$defs/TurnTraceDTO" } }
+      },
+      "additionalProperties": false
+    },
+
+    "DeltaNotification": {
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "delta" },
+        "params": {
+          "type": "object",
+          "required": ["text"],
+          "properties": { "text": { "type": "string" } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "ItemStartedNotification": {
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "item/started" },
+        "params": {
+          "type": "object",
+          "required": ["tool_use_id", "name"],
+          "properties": {
+            "tool_use_id": { "type": "string" },
+            "name": { "type": "string" },
+            "arguments": { "type": "object" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "ItemCompletedNotification": {
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "item/completed" },
+        "params": {
+          "type": "object",
+          "required": ["tool_use_id", "name", "is_error"],
+          "properties": {
+            "tool_use_id": { "type": "string" },
+            "name": { "type": "string" },
+            "is_error": { "type": "boolean" },
+            "elapsed_s": { "type": "number" }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -167,12 +709,45 @@
         "method": { "const": "turn/usage" },
         "params": {
           "type": "object",
-          "required": ["run_id", "input_tokens", "output_tokens"],
+          "required": ["input_tokens", "output_tokens", "cache_read", "cache_creation"],
           "properties": {
-            "run_id": { "$ref": "#/$defs/Id" },
             "input_tokens": { "type": "integer", "minimum": 0 },
             "output_tokens": { "type": "integer", "minimum": 0 },
-            "cost_usd": { "type": ["number", "null"] }
+            "cache_read": { "type": "integer", "minimum": 0 },
+            "cache_creation": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "RunStatusNotification": {
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "run/status" },
+        "params": {
+          "type": "object",
+          "required": ["status"],
+          "properties": { "status": { "$ref": "#/$defs/RunStatus" } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "NoticeCompactNotification": {
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "notice/compact" },
+        "params": {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": { "type": "string", "enum": ["started", "compacted", "noop", "failed", "breaker_open"] },
+            "before_tokens": { "type": ["integer", "null"], "minimum": 0 },
+            "after_tokens": { "type": ["integer", "null"], "minimum": 0 },
+            "reason": { "type": ["string", "null"] }
           },
           "additionalProperties": false
         }

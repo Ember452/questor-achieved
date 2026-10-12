@@ -1,11 +1,11 @@
 """架构护栏：serve 的方法名与通知族必须逐字落在 protocol.md 的清单里。
 
-为什么盯文档而不是生成的 schema：`protocol.md` 自己声明"本文件是跨进程边界的唯一真相源"，
-而 `schemas/app_server/v0-1.json` 的 `Request.method` / `Notification.method` 今天仍是自由
-字符串（改成枚举要重跑生成链，属 M3 前端真接那一批）。所以本期直接对照真相源核对，
-M3 扩枚举时这条护栏照样有效——它断言的是"实现与契约文档不漂移"，不是"实现与 JSON 不漂移"。
+与同目 `test_schemas_method_families.py` 的分工：本文件断言"实现面 ↔ 契约文档"不漂
+（`_methods()` 项项在 §3 表首列，`PROTOCOL_NOTIFICATIONS` 项项在 §4 表首列）；
+后者断言"实现面 ↔ schema 形状"齐全（已实现的每个方法都有 `<Method>Params/Result`）。
+两层一起才搭起 R4“跨进程边界只有一个真相源”：名字、形状、实现三处同进。
 
-前端接口的钉子就在这里：M3 换 WS/SSE 传输时不得改名，因为名字合法性由本文判定。
+前端接口的钉子就在这里：M3 换 WS 传输时不得改名（ADR-0023），因为名字合法性由本文件判定。
 """
 
 from __future__ import annotations

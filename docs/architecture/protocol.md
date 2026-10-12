@@ -38,7 +38,7 @@
 | 方法 | 说明 |
 | --- | --- |
 | `initialize` | 握手（见 §5） |
-| `thread/create` / `thread/list` / `thread/rename` / `thread/archive` / `thread/delete` | 会话管理；删除需 idle（运行中、活跃侧聊拒绝）；归档运行中拒绝 |
+| `thread/create` / `thread/list` / `thread/rename` / `thread/archive` / `thread/delete` / `thread/show` | 会话管理；删除需 idle（运行中、活跃侧聊拒绝）；归档运行中拒；`thread/show` 返回 Thread + 历史 fold |
 | `thread/search` | 跨会话搜索，命中带上下文定位到具体消息 |
 | `thread/fork` | `{thread_id, turn_seq, mode: local\|worktree}`；三级历史回退 + live 分叉 |
 
@@ -58,6 +58,7 @@
 | 方法 | 说明 |
 | --- | --- |
 | `workspace/status` / `workspace/revision` | 修订号查询（data-model §4） |
+| `sessiontrace/get` | 会话轨迹回放（`{thread_id, turn_id?}` → 按 turn 投影 items/events；不重跑工具不联系模型） |
 | `review/turn_diff` | 某一 turn 的逐文件真实 diff（写时刻持久化的结构化 diff） |
 | `files/read` / `files/list` | 读取绑定修订号；不匹配拒绝 |
 | `content/read` / `attachment/read` | **deferred content**：大内容按引用延迟取 |
@@ -75,7 +76,7 @@
 
 | 通知 | 说明 |
 | --- | --- |
-| `turn/queued` `turn/steered` `turn/held` | turn 生命周期旁态（data-model §3.1） |
+| `turn/queued` `turn/steered` `turn/held` | turn 生命周期旁态（data-model §3.1）；M3a-3 实装 `turn/steered`，`turn/queued` / `turn/held` 随 M4 一并定 |
 | `turn/usage` | 用量（限流推送，前端自行算速率） |
 | `item/started` `item/completed` `item/removed` | Item 生命周期（tool_call/tool_result 含写时刻 diff） |
 | `delta` / `replace` | 流式文本双通道 |
