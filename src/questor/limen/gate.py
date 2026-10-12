@@ -1,16 +1,19 @@
 """权威门：Boundary 三元组 + 短路判定链 + 模型可读错误方言。
 
 结构直译 wuu ``boundary.go``：``{Enforce, AllowMutations, Guards}``。判定顺序
-（B-34：短路先决、命中即返回、层间不合并）：
+（B-34：短路先决、命中即返回、层间不合并回溯），与 :func:`decide` 内注释号对齐：
 
-1. **只读闸**：``not allow_mutations and call.mutates`` → deny（B-50 原则：
-   mutates 判定在守卫之前——read_only 的粒度问题在调用方的 mutates 标记里解决）；
-2. **敏感路径守卫**（全档位）：写恒拒（B-54）；读在非 unconfined 拒、unconfined
-   降级为脱敏放行；
-3. **危险命令守卫**（全档位，B-32）；
-4. **路径门**（``enforce_paths`` 时）：B-30 二段 resolve + 根集合比较；
-   缺路径参数视为 deny（B-31）；
-5. 兜底 allow。
+1. **参数提权前哨**（B-55 的门内侧）：工具参数里携带 ``permission_mode`` 且与当前
+   档位不同 → 硬拒（提权只能改会话、不能改单次调用）；
+2. **只读闸**（B-50：mutates 判定先于守卫）：``not allow_mutations and call.mutates``
+   → deny——read_only 的粒度问题在调用方的 mutates 标记里解决；
+3. **缺路径**（B-31）：触路径工具没给 path 或给空串 → deny，unconfined 同样适用
+   ——缺参数属调用形状错误，不是“无边界可查”；
+4. **敏感路径守卫**（全档位；B-53 按段匹配 + 源码豁免，B-54 写恒拒/读降级）：
+   写恒拒；读在非 unconfined 拒、unconfined 降级为脱敏放行；
+5. **危险命令守卫**（全档位，B-32）；
+6. **路径门**（``enforce_paths`` 时）：B-30 二段 resolve + 根集合比较；
+7. 兜底 allow。
 
 Guard 契约（B-51）：硬 allow/deny 与审批严格分层——本门**没有** ask 结果，
 也不等待用户输入；审批收紧归 habena（M3）。

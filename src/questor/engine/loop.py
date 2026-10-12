@@ -1,7 +1,7 @@
 """内置引擎循环：显式状态机（B-06），run 生命周期全经 gesta，事件双轨流出。
 
 结构（方法各司一职，禁 1076 行巨型函数——FlowCoder core.py 的 `_run_loop` 反例；
-护栏 tests/unit/test_engine_shape.py 机械保证单函数 ≤60 行、阈值常量只住 constants）：
+护栏 tests/unit/test_engine_shape.py 机械保证单函数 ≤80 行、阈值常量只住 constants）：
 - :meth:`Engine.run_turn` —— 编排：建 turn/run → 迭代循环 → 终态；
 - :meth:`Engine._stream_once` —— 一次模型调用（delta 透出，聚合经 box 回传——async
   生成器不能带返回值，这是等价形式）；

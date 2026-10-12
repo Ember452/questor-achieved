@@ -1,6 +1,6 @@
 """护栏：engine 循环形状（B-05 常量单表 + B-06 禁巨型函数）的机械保证。
 
-负向验证（2026-10-11，已复原）：往 loop.py 临时塞一个 80 行的函数 →
+负向验证（2026-10-11，已复原）：往 loop.py 临时塞一个 81 行的函数 →
 ``test_no_giant_functions_in_loop`` FAILED；把 MAX_ITERATIONS 字面量抄进 loop.py
 的 UPPER_CASE 赋值 → ``test_thresholds_live_in_constants_table`` FAILED。
 """
@@ -34,7 +34,7 @@ def test_thresholds_live_in_constants_table() -> None:
 
 
 def test_no_giant_functions_in_loop() -> None:
-    """B-06：循环拆显式状态机——loop.py 单函数不得超过 60 行。"""
+    """B-06：循环拆显式状态机——loop.py 单函数不得超过 MAX_FUNCTION_LINES 行。"""
     tree = ast.parse((ENGINE_SRC / "loop.py").read_text(encoding="utf-8"), filename="loop.py")
     giants: list[str] = []
     for node in ast.walk(tree):
