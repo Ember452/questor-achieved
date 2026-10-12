@@ -37,7 +37,10 @@ export function BoardPanel({ threadId }: PanelProps) {
     });
   }, [load]);
 
-  async function act(method: "task/reject" | "task/complete" | "task/start", taskId: string) {
+  async function act(
+    method: "task/review" | "task/reject" | "task/complete" | "task/start",
+    taskId: string,
+  ) {
     try {
       await client.call(method, { task_id: taskId, authorized: true });
     } catch (err) {
@@ -80,6 +83,15 @@ export function BoardPanel({ threadId }: PanelProps) {
                         打回
                       </button>
                     </div>
+                  )}
+                  {t.status === "executing" && (
+                    <button
+                      type="button"
+                      onClick={() => void act("task/review", t.id)}
+                      className="mt-1 rounded border border-border px-2 py-0.5 text-foreground-subtle"
+                    >
+                      提交待审
+                    </button>
                   )}
                   {(t.status === "pending" || t.status === "planned") && (
                     <button

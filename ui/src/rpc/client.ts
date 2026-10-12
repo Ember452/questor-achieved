@@ -32,6 +32,8 @@ import type {
   TaskStartResult,
   TaskRejectParams,
   TaskRejectResult,
+  TaskReviewParams,
+  TaskReviewResult,
   TaskCompleteParams,
   TaskCompleteResult,
   Notification,
@@ -82,6 +84,7 @@ export interface Api {
   "task/list": { params: TaskListParams; result: TaskListResult };
   "task/show": { params: TaskShowParams; result: TaskShowResult };
   "task/start": { params: TaskStartParams; result: TaskStartResult };
+  "task/review": { params: TaskReviewParams; result: TaskReviewResult };
   "task/reject": { params: TaskRejectParams; result: TaskRejectResult };
   "task/complete": { params: TaskCompleteParams; result: TaskCompleteResult };
 }

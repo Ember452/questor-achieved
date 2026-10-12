@@ -79,12 +79,32 @@ def test_task_start_requires_authorization() -> None:
     asyncio.run(run())
 
 
-def test_task_reject_chain() -> None:
-    """转后台→任务总结→打回：executing → reviewed →（reject）→ executing。"""
+def test_task_review_enters_reviewed_and_publishes() -> None:
+    """产品路径必须能进 reviewed（执行完提交待审）：否则看板“待验收”列在真实链路永空。"""
     import asyncio
 
-    from questor.orchestration import store
-    from questor.schemas.orchestration import TaskStatus as TS
+    server, notes = _server()
+    ctx = _ctx()
+
+    async def run() -> None:
+        await server.task_plan({"steps": [{"title": "a"}]}, ctx)
+        task_id = (await server.task_create({"title": "t1"}, ctx))["task"]["id"]
+        # pending → reviewed 非法：白名单拒绝透为 ProtocolError
+        with pytest.raises(ProtocolError):
+            await server.task_review({"task_id": task_id}, ctx)
+        await server.task_start({"task_id": task_id, "authorized": True}, ctx)
+        reviewed = await server.task_review({"task_id": task_id}, ctx)
+        assert reviewed["task"]["status"] == "reviewed"
+        assert any(n.method == "task/status" and n.params["status"] == "reviewed" for n in notes)
+
+    asyncio.run(run())
+
+
+def test_task_reject_chain() -> None:
+    """转后台→任务总结→打回：executing → reviewed →（reject）→ executing。
+
+    进 reviewed 走 serve `task/review`（产品路径），不再直调 store，与 e2e 同口径。"""
+    import asyncio
 
     server, notes = _server()
     ctx = _ctx()
@@ -94,7 +114,7 @@ def test_task_reject_chain() -> None:
         task_id = (await server.task_create({"title": "t1"}, ctx))["task"]["id"]
         await server.task_start({"task_id": task_id, "authorized": True}, ctx)
         # 完成待审（reviewed）——任务总结卡在此状态出现；打回即 reviewed→executing
-        store.transition_task(task_id, TS.REVIEWED)
+        await server.task_review({"task_id": task_id}, ctx)
         rejected = await server.task_reject({"task_id": task_id}, ctx)
         assert rejected["task"]["status"] == "executing"
         assert any(n.method == "task/status" and n.params["status"] == "executing" for n in notes)

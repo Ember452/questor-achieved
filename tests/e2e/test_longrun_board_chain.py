@@ -5,7 +5,7 @@
 2. 落库并定稿计划（`task/plan`）；
 3. 建任务并授权执行（`task/create` + `task/start`，编排门两条都在）；
 4. **转后台**：`turn/start` 起一轮 run，run 在后台写文件（`wait_idle` 后观测）；
-5. **出任务总结**：任务进入 `reviewed`（待审）；
+5. **出任务总结**：`task/review` 提交待审（任务进入 `reviewed`）；
 6. **打回**：`task/reject`（reviewed → executing，打回重做）；
 7. **diff 可回看**：`review/turn_diff` 拿写时刻算的真实 diff。
 
@@ -21,9 +21,7 @@ import pytest
 from questor.engine import Engine
 from questor.engine.model import ToolCall
 from questor.gesta import load_thread
-from questor.orchestration import store as orch_store
 from questor.schemas.model import PermissionMode
-from questor.schemas.orchestration import TaskStatus as TS
 from questor.serve.app_server import AppServer
 from questor.serve.assembly import build_engine, ensure_workspace_for_root
 from questor.serve.dispatch import HandlerCtx
@@ -91,9 +89,10 @@ async def test_longrun_board_chain(tmp_path: pathlib.Path) -> None:
     turn_id = view.turns[-1].id
     assert view.runs[-1].status.value == "completed"
 
-    # 5. 任务总结：进入待审
-    orch_store.transition_task(task_id, TS.REVIEWED)
-    assert any(n.method == "task/status" and n.params["status"] == "executing" for n in notes)
+    # 5. 任务总结：经产品路径（serve `task/review`）进入待审
+    reviewed = await server.task_review({"task_id": task_id}, ctx)
+    assert reviewed["task"]["status"] == "reviewed"
+    assert any(n.method == "task/status" and n.params["status"] == "reviewed" for n in notes)
 
     # 6. 打回 → 重做（reviewed → executing）
     rejected = await server.task_reject({"task_id": task_id}, ctx)

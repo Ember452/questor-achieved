@@ -911,6 +911,20 @@ export interface TaskResumeResult {
 }
 /**
  * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskReviewParams".
+ */
+export interface TaskReviewParams {
+  task_id: Id;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskReviewResult".
+ */
+export interface TaskReviewResult {
+  task: TaskDTO;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
  * via the `definition` "TaskRejectParams".
  */
 export interface TaskRejectParams {
@@ -1025,6 +1039,40 @@ export interface GoalStopParams {
  */
 export interface GoalStopResult {
   goal: GoalDTO;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "ScheduleCreateParams".
+ */
+export interface ScheduleCreateParams {
+  trigger_kind: "once" | "interval" | "cron";
+  /**
+   * interval 必填
+   */
+  interval_seconds?: number | null;
+  /**
+   * cron 必填：5 字段表达式（分 时 日 月 周）
+   */
+  cron?: string | null;
+  /**
+   * UTC 秒级时刻；缺省为立即到点
+   */
+  next_fire_at?: string | null;
+  /**
+   * M4 触发目标：到点在它起一轮
+   */
+  thread_id: string;
+  /**
+   * 那轮的用户文本指令
+   */
+  prompt: string;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "ScheduleCreateResult".
+ */
+export interface ScheduleCreateResult {
+  schedule: ScheduleDTO;
 }
 /**
  * This interface was referenced by `QuestorAppServer`'s JSON-Schema

@@ -11,6 +11,7 @@ habena 一起做（本期无消费者，不做无消费者的形状，见 ADR-00
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import hashlib
 import logging
 import platform
@@ -64,7 +65,7 @@ from questor.schemas.orchestration import (
     Task,
     TaskStatus,
 )
-from questor.schemas.vigilia import ScheduleTrigger
+from questor.schemas.vigilia import ScheduleTrigger, TriggerKind
 from questor.serve.dispatch import Dispatcher, Handler, HandlerCtx
 from questor.serve.envelope import Notification, ProtocolError
 from questor.serve.fanout import Fanout
@@ -73,6 +74,7 @@ from questor.sessiontrace import project_thread, project_turn
 from questor.state.paths import thread_path
 from questor.version import build_commit, questor_version
 from questor.vigilia import store as vigilia_store
+from questor.vigilia.scheduler import cron_matches
 from questor.workspaces import (
     WorkspaceError,
     current_revision,
@@ -117,6 +119,9 @@ class AppServer:
     feature_flags: FeatureFlags = field(default_factory=FeatureFlags)
     max_concurrency: int = 2
     issues: tuple[str, ...] = ()
+    #: 长跑驱动接入位：宿主挂上 LongRunDriver 后，`goal/start` 即时唤醒轮循环；
+    #: 未接驱动的宿主（如 stdio sidecar）为 None，goal/start 只登记状态（诚实：不假装在驱）。
+    goal_waker: Callable[[str], None] | None = None
     _runs: dict[str, asyncio.Task[None]] = field(default_factory=dict, repr=False)
     #: 真实并发限流：initialize 回显的 max_concurrency 必须有执行体兑现（非空头支票）。
     #: lazy 建（首次 turn_start 时在 loop 内），上限 = max_concurrency。
@@ -143,6 +148,10 @@ class AppServer:
         self.fanout.publish(notification)
         if self._notify is not None:
             self._notify(notification)
+
+    def publish(self, notification: Notification) -> None:
+        """同宿件（长跑驱动等）的公开通知入口：仍经唯一单点 `_publish`，不开第二条道。"""
+        self._publish(notification)
 
     # ---- 方法表 ----
 
@@ -177,6 +186,7 @@ class AppServer:
             "task/start",
             "task/pause",
             "task/resume",
+            "task/review",
             "task/reject",
             "task/retry",
             "task/complete",
@@ -185,6 +195,7 @@ class AppServer:
             "goal/show",
             "goal/start",
             "goal/stop",
+            "schedule/create",
             "schedule/list",
             "schedule/enable",
             "schedule/disable",
@@ -221,6 +232,7 @@ class AppServer:
             "task/start": self.task_start,
             "task/pause": self.task_pause,
             "task/resume": self.task_resume,
+            "task/review": self.task_review,
             "task/reject": self.task_reject,
             "task/retry": self.task_retry,
             "task/complete": self.task_complete,
@@ -229,6 +241,7 @@ class AppServer:
             "goal/show": self.goal_show,
             "goal/start": self.goal_start,
             "goal/stop": self.goal_stop,
+            "schedule/create": self.schedule_create,
             "schedule/list": self.schedule_list,
             "schedule/enable": self.schedule_enable,
             "schedule/disable": self.schedule_disable,
@@ -335,6 +348,19 @@ class AppServer:
         pending = [task for task in self._runs.values() if not task.done()]
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
+
+    async def wait_thread_idle(self, thread_id: str) -> None:
+        """等某一线程在飞的 run 结束（Goal 轮驱动用：一轮未完不起下一轮）。
+
+        shield：调用方（驱动）被取消时不收 run 本体——停驱不停已发起的执行。
+        """
+        task = self._runs.get(thread_id)
+        if task is not None and not task.done():
+            await asyncio.shield(task)
+
+    def active_thread_ids(self) -> set[str]:
+        """本进程正在跑 run 的线程集——它们是运行态真值，清扫/reconcile 不得碰（B-44 的另一半）。"""
+        return {tid for tid, task in self._runs.items() if not task.done()}
 
     async def _pump(self, engine: Engine, request: TurnRequest, thread_id: str) -> None:
         del thread_id
@@ -826,6 +852,14 @@ class AppServer:
         del ctx
         return await self._task_transition(params, TaskStatus.EXECUTING, "task/resume")
 
+    async def task_review(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        """提交待审（executing → reviewed）：任务总结卡的产品侧入口。
+
+        没有它，看板“待验收”列在真实链路永空（只有测试直调 store 能到达）。
+        """
+        del ctx
+        return await self._task_transition(params, TaskStatus.REVIEWED, "task/review")
+
     async def task_reject(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
         """打回重做（reviewed → executing）——M4 出口链一环。"""
         del ctx
@@ -839,7 +873,8 @@ class AppServer:
         del ctx
         return await self._task_transition(params, TaskStatus.COMPLETED, "task/complete")
 
-    def _publish_goal(self, goal: Goal) -> None:
+    def publish_goal(self, goal: Goal) -> None:
+        """广播 goal/status：状态迁移与轮次记账都走此单一出口（驱动与 handler 同源）。"""
         self._publish(
             Notification(
                 "goal/status",
@@ -911,8 +946,72 @@ class AppServer:
             goal = await asyncio.to_thread(move, goal_id)
         except orch_store.OrchestrationStoreError as exc:
             raise ProtocolError("invalid_params", str(exc)) from exc
-        self._publish_goal(goal)
+        self.publish_goal(goal)
+        if action == "start" and self.goal_waker is not None:
+            # 接了驱动的宿主：立即唤醒轮循环，不等下一个 tick 的拾取扫描
+            self.goal_waker(goal_id)
         return {"goal": goal.model_dump(mode="json")}
+
+    async def schedule_create(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        """新建值守触发器（M4 目标形态：`thread_id`+`prompt` 到点起一轮）。
+
+        校验全在此层做足：kind 枚举、interval 秒数、cron 5 字段形状、目标字段——
+        落库的触发器必须可执行，不能等 tick 现场才爆（task 目标随 M5 派发接线）。
+        """
+        del ctx
+        kind_raw = str(params.get("trigger_kind", ""))
+        try:
+            kind = TriggerKind(kind_raw)
+        except ValueError:
+            raise ProtocolError(
+                "invalid_params",
+                f"schedule/create 未知 trigger_kind：{kind_raw!r}（可选 once/interval/cron）",
+            ) from None
+        thread_id = str(params.get("thread_id", ""))
+        prompt = str(params.get("prompt", ""))
+        if not thread_id or not prompt:
+            raise ProtocolError(
+                "invalid_params",
+                "schedule/create 需要 thread_id 与 prompt"
+                "（M4 触发目标仅为‘到点起一轮’；task 目标随 M5 接线）",
+            )
+        interval_seconds = params.get("interval_seconds")
+        cron = _opt_str(params.get("cron"))
+        if kind is TriggerKind.INTERVAL and not (
+            isinstance(interval_seconds, int)
+            and not isinstance(interval_seconds, bool)
+            and interval_seconds >= 1
+        ):
+            raise ProtocolError("invalid_params", "interval 触发器需要 interval_seconds ≥ 1")
+        if kind is TriggerKind.CRON:
+            if not cron:
+                raise ProtocolError(
+                    "invalid_params", "cron 触发器需要 5 字段表达式（分 时 日 月 周）"
+                )
+            try:
+                cron_matches(cron, dt.datetime.now(dt.UTC))
+            except ValueError as exc:
+                raise ProtocolError("invalid_params", f"cron 表达式非法：{exc}") from exc
+        now = utc_timestamp_now()
+        next_fire = _opt_str(params.get("next_fire_at")) or (
+            now if kind in (TriggerKind.ONCE, TriggerKind.INTERVAL) else None
+        )
+        trigger = ScheduleTrigger(
+            id=f"sch-{uuid.uuid4().hex[:12]}",
+            trigger_kind=kind,
+            interval_seconds=interval_seconds if kind is TriggerKind.INTERVAL else None,
+            cron=cron if kind is TriggerKind.CRON else None,
+            next_fire_at=next_fire,
+            thread_id=thread_id,
+            prompt=prompt,
+            created_at=now,
+            updated_at=now,
+        )
+        try:
+            stored = await asyncio.to_thread(vigilia_store.add_trigger, trigger)
+        except vigilia_store.VigiliaStoreError as exc:
+            raise ProtocolError("invalid_params", str(exc)) from exc
+        return {"schedule": _schedule_dump(stored)}
 
     async def schedule_list(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
         del params, ctx

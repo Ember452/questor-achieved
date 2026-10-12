@@ -9,7 +9,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from starlette.applications import Starlette
@@ -20,6 +21,7 @@ from questor.engine import Engine
 from questor.schemas.model import PermissionMode
 from questor.serve.app_server import AppServer
 from questor.serve.fanout import Fanout
+from questor.serve.longrun import LongRunDriver
 from questor.serve.ws import make_ws_handler
 
 _ALLOWED_LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
@@ -44,6 +46,9 @@ def create_app(
 
     每次连接 `subscribe()` 一个 Fanout 订阅；AppServer 是单例，跨连接共享 runs / inboxes。
     `default_workspace_id` 是本地 host 的默认工作区（serve 起服务时登记 --cwd）。
+
+    长跑驱动（LongRunDriver）挂 app 生命周期：启动即全量 reconcile（B-44），
+    tick 循环到点起轮，Goal 拾取与 `goal/start` 唤醒随接驱动生效（M4e.2 启动 hook）。
     """
     fanout = Fanout()
     app_server = AppServer(create_engine=create_engine, default_workspace_id=default_workspace_id)
@@ -51,7 +56,17 @@ def create_app(
     routes: list[Mount | WebSocketRoute] = [WebSocketRoute("/ws", ws_endpoint)]
     if ui_dist is not None and ui_dist.is_dir():
         routes.append(Mount("/", app=StaticFiles(directory=str(ui_dist), html=True)))
-    return Starlette(routes=routes)
+
+    @asynccontextmanager
+    async def lifespan(_app: Starlette) -> AsyncIterator[None]:
+        driver = LongRunDriver(app_server)
+        await driver.start()
+        try:
+            yield
+        finally:
+            await driver.stop()
+
+    return Starlette(routes=routes, lifespan=lifespan)
 
 
 def run_server(app: Starlette, *, host: str, port: int) -> None:

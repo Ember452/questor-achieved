@@ -1002,6 +1002,18 @@
       "properties": { "task": { "$ref": "#/$defs/TaskDTO" } },
       "additionalProperties": false
     },
+    "TaskReviewParams": {
+      "type": "object",
+      "required": ["task_id"],
+      "properties": { "task_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "TaskReviewResult": {
+      "type": "object",
+      "required": ["task"],
+      "properties": { "task": { "$ref": "#/$defs/TaskDTO" } },
+      "additionalProperties": false
+    },
     "TaskRejectParams": {
       "type": "object",
       "required": ["task_id"],
@@ -1107,6 +1119,25 @@
       "type": "object",
       "required": ["goal"],
       "properties": { "goal": { "$ref": "#/$defs/GoalDTO" } },
+      "additionalProperties": false
+    },
+    "ScheduleCreateParams": {
+      "type": "object",
+      "required": ["trigger_kind", "thread_id", "prompt"],
+      "properties": {
+        "trigger_kind": { "type": "string", "enum": ["once", "interval", "cron"] },
+        "interval_seconds": { "type": ["integer", "null"], "minimum": 1, "description": "interval 必填" },
+        "cron": { "type": ["string", "null"], "description": "cron 必填：5 字段表达式（分 时 日 月 周）" },
+        "next_fire_at": { "type": ["string", "null"], "description": "UTC 秒级时刻；缺省为立即到点" },
+        "thread_id": { "type": "string", "description": "M4 触发目标：到点在它起一轮" },
+        "prompt": { "type": "string", "description": "那轮的用户文本指令" }
+      },
+      "additionalProperties": false
+    },
+    "ScheduleCreateResult": {
+      "type": "object",
+      "required": ["schedule"],
+      "properties": { "schedule": { "$ref": "#/$defs/ScheduleDTO" } },
       "additionalProperties": false
     },
     "ScheduleListParams": {

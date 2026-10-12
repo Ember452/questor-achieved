@@ -74,10 +74,11 @@
 | `task/create` / `task/list` / `task/show` | 看板任务；`task/create` 须先过编排门（无 Plan → `need_plan_first`） |
 | `task/plan` | 写入/修订计划（Plan）；`requirement_revision` 递增即作废既有验收 |
 | `task/start` / `task/pause` / `task/resume` | 执行控制；`task/start` 须用户「开始执行」授权（`need_execution_authorization`） |
+| `task/review` | 提交待审（`executing → reviewed`）——任务总结卡/验收入口（v1.1 加性补登） |
 | `task/reject` / `task/retry` / `task/complete` | 验收打回（`reviewed → executing`）/ 重做 / 通过（`reviewed → completed`） |
 | `goal/create` / `goal/list` / `goal/show` | 后台自驱长跑目标 |
 | `goal/start` / `goal/stop` | 起跑/停止 Goal 长跑循环 |
-| `schedule/list` / `schedule/enable` / `schedule/disable` | 值守调度（`once`/`interval`/`cron`，vigilia） |
+| `schedule/create` / `schedule/list` / `schedule/enable` / `schedule/disable` | 值守调度（`once`/`interval`/`cron`，vigilia）；M4 触发目标仅 `thread_id`+`prompt`（到点起一轮），task 目标随 M5 派发接线（`v1.1` 加性补登 `create`） |
 | `evidence/get` | 按 subject（run/task/turn）取证据核对结果（声称 vs 录得） |
 
 ### 能力与配置
