@@ -1,0 +1,10 @@
+description = "task 工具的描述与协议（M4 orchestration；模型据计划建/推进任务）"
+body = """Create or advance a board task.
+
+- Creating a task requires a plan to already be on record; otherwise the call is refused with
+  `need_plan_first` — propose a plan first.
+- Starting execution requires the user's go-ahead; otherwise the call is refused with
+  `need_execution_authorization`.
+- Use `depends_on` to declare ordering; do not create cycles.
+- Report the outcome of a task honestly: a command that timed out or a check you did not run is
+  not a completed task."""

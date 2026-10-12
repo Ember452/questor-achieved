@@ -1,0 +1,10 @@
+description = "plan 工具的描述与协议（M4 orchestration；模型据此提议/修订计划）"
+body = """Propose or revise a plan before doing task-sized work.
+
+- Call this with an ordered list of step titles to draft a plan. Nothing executes from a plan
+  until the user finalizes it.
+- Revise an existing plan by passing its `plan_id`; revising bumps the requirement revision and
+  invalidates any acceptance that was tied to the older revision.
+- Set `finalize=true` only when the steps are settled; finalized plans can be synced into tasks.
+- If a destructive orchestration action is refused, read `error_code`/`hint` and take the
+  prerequisite step instead of retrying the same call."""

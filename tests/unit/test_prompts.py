@@ -18,16 +18,20 @@ from questor.prompts import (
 
 def test_available_lists_all_assets() -> None:
     names = prompts.available()
-    # M2.2 的临时三件 + M2.3 的分块三件；原 system_core 已拆进 agent_identity/questor_rules
-    # （ADR-0018：同一内容不留两份，拆完即删）。新增资产时此清单随之更新（防"放了资产没人用"）
+    # M2.2 的临时三件 + M2.3 的分块三件 + M4 编排三件（plan/task/goal）；
+    # 原 system_core 已拆进 agent_identity/questor_rules（ADR-0018：同一内容不留两份）。
+    # 新增资产时此清单随之更新（防"放了资产没人用"）
     assert names == (
         "agent_identity",
         "converge_message",
+        "goal_loop",
         "max_tokens_escalation",
         "max_tokens_recovery",
+        "plan_protocol",
         "questor_rules",
         "summary_protocol",
         "summary_request",
+        "task_protocol",
         "tool_policy",
     )
 

@@ -46,7 +46,9 @@ ALLOWED_IMPORTS: dict[str, frozenset[str]] = {
     "vigilia": frozenset({"engine", "gesta", "schemas", "state"}),
     "evidence": frozenset({"review", "tools", "gesta", "schemas"}),
     "sessiontrace": frozenset({"gesta", "schemas"}),
-    "orchestration": frozenset({"engine", "vigilia", "gesta", "context", "schemas", "prompts"}),
+    "orchestration": frozenset(
+        {"engine", "vigilia", "gesta", "context", "schemas", "prompts", "state"}
+    ),
     "skills": frozenset({"schemas"}),
     "mcp": frozenset({"schemas"}),
     "hooks": frozenset({"schemas"}),

@@ -1,0 +1,10 @@
+description = "Goal 长跑每轮下发的指令模板（M4 orchestration.goal.round_instruction）"
+body = """Continue working toward the objective below. This is round $round (of $max_rounds).
+
+Objective: $objective
+
+Rules:
+- Decide one concrete next step and do it; keep the round scoped.
+- End the round with a single explicit signal: either a concrete result you can point to, or a
+  clear statement that the objective is met, or the blocker that stops you.
+- Do not repeat work already reported by a previous round; check the record first."""
