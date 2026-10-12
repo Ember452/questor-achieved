@@ -10,6 +10,10 @@
 
 `aclose` 是生命周期收口点（B-83）：HTTP 客户端不关就会漏连接，而"谁创建谁关闭"
 的边界必须由 port 说清楚。
+
+`InboxPort` 是 M3a-3 给 engine 看的最小插话面：一个 `async drain()` 方法。engine 不
+反向 import habena（避免结构 §5 中 engine 白名单外依赖），运行时传入 `HabenaInbox`
+实例即可。
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
+from questor.schemas.habena import SteerMessage
 from questor.schemas.llm import (
     LLMUsage,
     ModelCapabilities,
@@ -32,6 +37,7 @@ from questor.schemas.llm import (
 
 __all__ = [
     "LLMResponse",
+    "InboxPort",
     "ModelPort",
     "ModelRequest",
     "StreamDelta",
@@ -68,3 +74,14 @@ class ModelPort(Protocol):
     def stream(self, request: ModelRequest) -> AsyncIterator[StreamEvent]: ...
 
     async def aclose(self) -> None: ...
+
+
+@runtime_checkable
+class InboxPort(Protocol):
+    """插话收件箱端口（M3a-3）：engine 只看 drain()，不反向 import habena。
+
+    实现方：`questor.habena.HabenaInbox`。engine 依赖 habena 会破结构 §5 白名单
+    且形成环（habena 允许 import engine）；本 port 把两侧隔开，运行时传入实例。
+    """
+
+    async def drain(self) -> list[SteerMessage]: ...

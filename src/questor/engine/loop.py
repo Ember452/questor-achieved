@@ -47,6 +47,7 @@ from questor.engine.events import (
     LoopCompleted,
     LoopFailed,
     RunStatus,
+    SteerConsumed,
     Thinking,
     ToolCallCompleted,
     ToolCallStarted,
@@ -54,6 +55,7 @@ from questor.engine.events import (
     Usage,
 )
 from questor.engine.model import (
+    InboxPort,
     LLMResponse,
     ModelPort,
     StreamDelta,
@@ -68,6 +70,7 @@ from questor.gesta.transitions import InvalidTransition
 from questor.gesta.writer import ThreadWriter
 from questor.prompts import render, summary_assembly, system_assembly
 from questor.schemas.context import ContextBoundary, ContextReplacements
+from questor.schemas.habena import SteerMessage
 from questor.schemas.llm import LLMUsage, Message, ModelRequest, PromptAssembly
 from questor.schemas.model import (
     Item,
@@ -111,6 +114,7 @@ class Engine:
         max_iterations: int = C.MAX_ITERATIONS,
         max_seconds: float | None = None,
         lock_timeout: float = C.LOCK_TIMEOUT_S,
+        inbox: InboxPort | None = None,
     ) -> None:
         self._model = model
         self._registry = registry
@@ -129,8 +133,19 @@ class Engine:
         self._max_iterations = max_iterations
         self._max_seconds = max_seconds
         self._lock_timeout = lock_timeout
+        #: M3a-3：iteration 起点前 drain 插话（B-67/94）；None 时循环与 M2.3 行为一致
+        self._inbox = inbox
 
     # ---- 编排入口 ----
+
+    def attach_inbox(self, inbox: InboxPort) -> None:
+        """M3a-3：serve 在 run_turn 前挂上插话队列（habena.HabenaInbox 实例）。
+
+        为什么需要 setter：`create_engine` 工厂契约 (thread_id, mode) 保持不动，
+        避免所有测试与 CLI 传参同改；serve 层建完 engine 后把 inbox 递给它。
+        一个 engine 实例上多次 attach 以最后一次为准（重建会话同一引擎实例不会旧新混用）。
+        """
+        self._inbox = inbox
 
     async def run_turn(self, request: TurnRequest) -> AsyncGenerator[AgentEvent, None]:
         """执行一轮 turn：用户输入 → 模型/工具循环 → 终态；事件与落盘双轨。"""
@@ -205,6 +220,11 @@ class Engine:
             total_turns = iteration
             yield TurnStarted(turn=iteration)
 
+            # M3a-3 插话消费点（B-67/94）：逻辑抽到 _consume_inbox_iteration，
+            # 本行不里堆事、保持 _loop 在 shape 护栏阈值下。
+            async for event in self._consume_inbox_iteration(writer, run, conversation):
+                yield event
+
             if not converging:
                 async for event in self._maybe_converge(writer, run, conversation, started):
                     yield event
@@ -253,6 +273,30 @@ class Engine:
         ):
             yield event
 
+    async def _consume_inbox_iteration(
+        self,
+        writer: ThreadWriter,
+        run: Run,
+        conversation: Conversation,
+    ) -> AsyncIterator[AgentEvent]:
+        """iteration 起点的插话消费（B-67/94）：无 inbox 或无新消息时零事件。"""
+        if self._inbox is None:
+            return
+        drained = await self._inbox.drain()
+        if not drained:
+            return
+        await self._transition(writer, run, RS.STEERED)
+        yield RunStatus(status=RS.STEERED.value)
+        for msg in drained:
+            await self._consume_steer(writer, run, conversation, msg)
+            yield SteerConsumed(
+                thread_id=writer.thread_id,
+                client_id=msg.client_id,
+                content=msg.content,
+            )
+        await self._transition(writer, run, RS.RUNNING)
+        yield RunStatus(status=RS.RUNNING.value)
+
     async def _maybe_converge(
         self,
         writer: ThreadWriter,
@@ -268,6 +312,35 @@ class Engine:
         message = render("converge_message", reason=reason)
         conversation.add_user(message)
         await self._persist_message_item(writer, run.id, "user", message, injected=True)
+
+    async def _consume_steer(
+        self,
+        writer: ThreadWriter,
+        run: Run,
+        conversation: Conversation,
+        msg: SteerMessage,
+    ) -> None:
+        """M3a-3：落 Origin.STEER 消息 Item + 塞历史，不新开 turn（B-67/94）。
+
+        Item 的 payload 带 `steered=True` 与 `client_id` 回链（供 UI 判重）；
+        conversation 里仍按 user 入——模型侧看到的与用户直接输一样，区别在审计侧。
+        """
+        conversation.add_user(msg.content)
+        await self._persist_item(
+            writer,
+            Item(
+                id=f"item-{uuid.uuid4().hex[:12]}",
+                run_id=run.id,
+                kind=ItemKind.MESSAGE,
+                payload={
+                    "role": "user",
+                    "text": msg.content,
+                    "steered": True,
+                    "client_id": msg.client_id,
+                },
+                created_at=utc_timestamp_now(),
+            ),
+        )
 
     async def _dispatch(
         self,

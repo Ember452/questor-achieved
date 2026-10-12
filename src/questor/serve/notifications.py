@@ -12,6 +12,7 @@ from questor.engine.events import (
     CompactNotice,
     Delta,
     RunStatus,
+    SteerConsumed,
     ToolCallCompleted,
     ToolCallStarted,
     Usage,
@@ -27,6 +28,7 @@ PROTOCOL_NOTIFICATIONS = frozenset(
         "item/started",
         "item/completed",
         "turn/usage",
+        "turn/steered",
         "run/status",
         "notice/compact",
     }
@@ -75,6 +77,15 @@ def notification_of(event: AgentEvent) -> Notification | None:
         )
     if isinstance(event, RunStatus):
         return Notification("run/status", {"status": event.status})
+    if isinstance(event, SteerConsumed):
+        return Notification(
+            "turn/steered",
+            {
+                "thread_id": event.thread_id,
+                "client_id": event.client_id,
+                "content": event.content,
+            },
+        )
     if isinstance(event, CompactNotice):
         return Notification(
             "notice/compact",

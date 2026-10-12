@@ -98,6 +98,20 @@ class LoopFailed:
     message: str
 
 
+@dataclass(frozen=True)
+class SteerConsumed:
+    """插话消费通知（turn/steered）：iteration 起点前从 inbox.drain() 拿到、写入
+    会话历史并落 Origin.STEER 消息 Item 后发出（B-67/94）。
+
+    不落盘为 Event：正文侧的 steered Item 才是真相（与 delta 同一取舍）；
+    client_id 回链供宿主幂等判重（B-63）。
+    """
+
+    thread_id: str
+    client_id: str
+    content: str
+
+
 AgentEvent = (
     TurnStarted
     | Delta
@@ -110,6 +124,7 @@ AgentEvent = (
     | Converging
     | LoopCompleted
     | LoopFailed
+    | SteerConsumed
 )
 
 
@@ -127,4 +142,6 @@ def event_type_of(event: AgentEvent) -> str:
         return "run/status"
     if isinstance(event, CompactNotice):
         return "notice/compact"
+    if isinstance(event, SteerConsumed):
+        return "turn/steered"
     return "internal"  # TurnStarted/Thinking/Converging/Loop* 是循环内部节拍，不单独入协议族
