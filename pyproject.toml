@@ -26,16 +26,18 @@ classifiers = [
   "Topic :: Utilities",
 ]
 dependencies = [
+    "httpx>=0.27",
     "keyring>=25.0",
     "pydantic>=2.0",
     "pywin32>=306 ; sys_platform == 'win32'",
 ]
 
-# Nothing is runnable yet: enabling the entry point belongs to the first CLI task,
-# together with src/questor/cli.py. Keeping it commented avoids advertising a
-# command that fails.
-# [project.scripts]
-# questor = "questor.cli:main"
+# 入口已打开：M2.3 的 cli 模块落地后，`questor` / `qst` 两个名字指向同一个 main。
+[project.scripts]
+questor = "questor.cli:main"
+qst = "questor.cli:main"
+
+# M2.3 的 providers 传输层选型（只引 httpx、不引厂商 SDK）见 ADR-0016。
 
 [dependency-groups]
 dev = [
@@ -104,13 +106,18 @@ source_modules = ["questor"]
 forbidden_modules = ["questor.testenv"]
 
 [[tool.importlinter.contracts]]
-name = "M2.1 地基分层：上层可依赖下层，同层独立（structure §5 矩阵的子集，随物化扩展）"
+name = "分层：上层可依赖下层，同层独立（structure §5 矩阵的子集，随物化扩展）"
 type = "layers"
 layers = [
+    "questor.cli",
+    "questor.serve",
     "questor.engine",
+    "questor.context",
     "questor.tools",
     "questor.limen | questor.workspaces | questor.gesta",
     "questor.config | questor.secrets",
     "questor.state",
+    "questor.providers",
+    "questor.prompts",
     "questor.capability | questor.version | questor.schemas",
 ]
