@@ -30,6 +30,10 @@ dependencies = [
     "keyring>=25.0",
     "pydantic>=2.0",
     "pywin32>=306 ; sys_platform == 'win32'",
+    # M3b-3 引入（ADR-0022）：serve 层 WS 传输与本地 http 宿主；uvicorn 只做本地 ASGI
+    # 服务器，M8 自托管部署若要 gunicorn/hypercorn 另开 ADR。不引 FastAPI/aiohttp。
+    "starlette>=0.40",
+    "uvicorn>=0.30",
 ]
 
 # 入口已打开：M2.3 的 cli 模块落地后，`questor` / `qst` 两个名字指向同一个 main。
@@ -111,10 +115,13 @@ type = "layers"
 layers = [
     "questor.cli",
     "questor.serve",
+    "questor.habena",
     "questor.engine",
+    "questor.sessiontrace",
     "questor.context",
     "questor.tools",
-    "questor.limen | questor.workspaces | questor.gesta",
+    "questor.review",
+    "questor.limen | questor.workspaces | questor.gesta | questor.worktree",
     "questor.config | questor.secrets",
     "questor.state",
     "questor.providers",

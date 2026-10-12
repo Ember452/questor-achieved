@@ -26,6 +26,7 @@ from questor.serve import AppServer
 from questor.serve.assembly import build_engine, ensure_workspace_for_root, exec_turn
 from questor.serve.dispatch import HandlerCtx
 from questor.serve.envelope import encode_line
+from questor.serve.http import assert_localhost_only, create_app, run_server
 from questor.serve.notifications import notification_of
 from questor.version import build_commit, questor_version
 
@@ -101,6 +102,14 @@ def _parser() -> argparse.ArgumentParser:
         default=PermissionMode.STANDARD.value,
     )
     execute.add_argument("--json", action="store_true", help="stdout 每行一帧通知（机读）")
+
+    serve = sub.add_parser("serve", help="启动长命服务（本地 http + WS）")
+    serve_sub = serve.add_subparsers(dest="serve_command", required=True)
+    http_run = serve_sub.add_parser("http", help="本地 http 宿主：ui/dist + /ws（ADR-0022）")
+    http_run.add_argument("--host", default="127.0.0.1", help="仅允 127.0.0.1 / localhost / ::1")
+    http_run.add_argument("--port", type=int, default=8765)
+    http_run.add_argument("--cwd", default=".", help="工作目录（新建会话的默认根）")
+    http_run.add_argument("--ui-dist", default=None, help="前端构建产物目录（缺省自动探 ui/dist）")
     return parser
 
 
@@ -111,6 +120,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_version(args)
         if args.command == "session":
             return asyncio.run(_cmd_session_list())
+        if args.command == "serve":
+            return _cmd_serve_http(args)
         return asyncio.run(_cmd_exec(args))
     except (ValueError, KeyError) as exc:
         _log(f"错误：{exc}")
@@ -184,3 +195,34 @@ def _emit(event: Any, *, machine: bool) -> None:
         return
     detail = getattr(event, "text", None) or getattr(event, "status", None) or ""
     _log(f"[{type(event).__name__}] {detail}")
+
+
+def _cmd_serve_http(args: argparse.Namespace) -> int:
+    """启动本地 http 宿主（ADR-0022）：assert_localhost_only 拒绝非本机绑定。
+
+    失败先返回非零码、不拉 uvicorn（`--host 0.0.0.0` 与未知 serve_command 都走这条路）。
+    依赖一个可用的 [model] 配置（与 exec 同一入口），否则拒绝启动避免"宿主已开但一调就 401"。
+    """
+    if getattr(args, "serve_command", None) != "http":
+        _log(f"未知 serve 子命令：{getattr(args, 'serve_command', None)!r}")
+        return 2
+    try:
+        assert_localhost_only(args.host)
+    except ValueError as exc:
+        _log(f"错误：{exc}")
+        return 2
+    snapshot = load_config(project_root=Path(args.cwd).expanduser().resolve())
+    spec = model_spec_from_config(snapshot.data)
+    model = create_model(spec)
+    cwd = str(Path(args.cwd).expanduser().resolve())
+
+    def _factory(thread_id: str, mode: PermissionMode):  # noqa: ANN001 - Engine 类型已知但循环依赖
+        return build_engine(model=model, cwd=cwd, mode=mode)
+
+    ui_dist = Path(args.ui_dist) if args.ui_dist else Path("ui/dist")
+    app = create_app(create_engine=_factory, ui_dist=ui_dist if ui_dist.is_dir() else None)
+    try:
+        run_server(app, host=args.host, port=args.port)
+    finally:
+        asyncio.run(model.aclose())  # B-83：服务退出时收口 HTTP 客户端
+    return 0
