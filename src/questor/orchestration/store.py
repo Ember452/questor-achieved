@@ -195,8 +195,22 @@ class _FoldState:
         self._replace_task(task.model_copy(update={"status": moved}))
 
     def _apply_invalidation(self, payload: dict[str, Any]) -> None:
-        requirement_revision = int(payload["requirement_revision"])
-        for task_id in payload.get("task_ids", []):
+        # 脏记录统一报存储错（B-76 口径：不得漏裸 KeyError/TypeError 给回放调用方）
+        raw_revision = payload.get("requirement_revision")
+        if raw_revision is None:
+            raise OrchestrationStoreError("acceptance.invalidated 记录缺 requirement_revision")
+        try:
+            requirement_revision = int(raw_revision)
+        except (TypeError, ValueError) as exc:
+            raise OrchestrationStoreError(
+                f"acceptance.invalidated 记录非法 requirement_revision：{raw_revision!r}"
+            ) from exc
+        task_ids = payload.get("task_ids", [])
+        if not isinstance(task_ids, list):
+            raise OrchestrationStoreError(
+                f"acceptance.invalidated 的 task_ids 非列表：{task_ids!r}"
+            )
+        for task_id in task_ids:
             task = next((t for t in self.tasks if t.id == task_id), None)
             if task is None:
                 continue

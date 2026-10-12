@@ -75,9 +75,9 @@ class PlanTool(Tool):
 
 
 class TaskParams(BaseModel):
-    """建任务或开始执行（其余状态由用户经 serve 推进）。"""
+    """建任务、同步子任务或开始执行（其余状态由用户经 serve 推进）。"""
 
-    action: Literal["create", "start"] = "create"
+    action: Literal["create", "sync", "start"] = "create"
     title: str | None = None
     task_id: str | None = None
     depends_on: list[str] = Field(default_factory=list)
@@ -106,6 +106,17 @@ class TaskTool(Tool):
                 is_error=True,
             )
         try:
+            if params.action == "sync":
+                if not params.plan_id:
+                    return ToolResult(output="task sync 需要 plan_id", is_error=True)
+                derived = await asyncio.to_thread(port.sync_subtasks, plan_id=params.plan_id)
+                return ToolResult(
+                    output=(
+                        f"synced {len(derived)} task(s) from plan {params.plan_id}\n"
+                        + "\n".join(f"  - {t.id} [{t.status.value}] {t.title}" for t in derived)
+                    ),
+                    data={"task_ids": [t.id for t in derived]},
+                )
             if params.action == "create":
                 if not params.title:
                     return ToolResult(output="task create 需要 title", is_error=True)

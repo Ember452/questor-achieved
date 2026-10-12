@@ -13,6 +13,7 @@ from questor.orchestration.plan import get_plan
 from questor.schemas.model import utc_timestamp_now
 from questor.schemas.orchestration import (
     Plan,
+    PlanStatus,
     PlanStep,
     PlanStepStatus,
     Task,
@@ -78,27 +79,35 @@ def get_task(task_id: str) -> Task:
 def sync_subtasks_from_plan(plan_id: str) -> list[Task]:
     """把**已定稿**计划的步骤同步派生为子任务，并回填 step.task_id。
 
+    未定稿即拒：领域不变式“定稿才派生”在此机械执行，不只写在 docstring 里。
+    每建一个任务就立即回填一次计划：中途崩溃时已回填的 step 重跑不再生成
+    重复任务（append-only 下的幂等重放；服务层的门另拒重复批量建）。
+
     这是编排门 `plan_subtasks_already_synced` 的来源：同步过一次后再批量建任务即被拒。
     """
-    plan = get_plan(plan_id)
+    current = get_plan(plan_id)
+    if current.status is not PlanStatus.FINALIZED:
+        raise store.OrchestrationStoreError(
+            f"只有已定稿计划可派生子任务（当前状态：{current.status.value}）"
+        )
     created: list[Task] = []
     steps: list[PlanStep] = []
-    for step in plan.steps:
+    for step in current.steps:
         if step.task_id:
             steps.append(step)
             continue
         task = create_task(
             title=step.title,
-            thread_id=plan.thread_id,
-            goal_id=plan.goal_id,
-            plan_id=plan.id,
-            requirement_revision=plan.requirement_revision,
+            thread_id=current.thread_id,
+            goal_id=current.goal_id,
+            plan_id=current.id,
+            requirement_revision=current.requirement_revision,
         )
         created.append(task)
         steps.append(step.model_copy(update={"task_id": task.id}))
-    if created:
-        store.update_plan(
-            plan.model_copy(update={"steps": tuple(steps), "updated_at": utc_timestamp_now()})
+        # 逐步回填：两任务之间崩溃时，已同步的步骤不会重跑再生成一份
+        current = store.update_plan(
+            current.model_copy(update={"steps": tuple(steps), "updated_at": utc_timestamp_now()})
         )
     return created
 

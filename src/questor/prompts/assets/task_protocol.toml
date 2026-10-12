@@ -5,6 +5,8 @@ body = """Create or advance a board task.
   `need_plan_first` — propose a plan first.
 - Starting execution requires the user's go-ahead; otherwise the call is refused with
   `need_execution_authorization`.
+- After a plan is finalized, use `sync` with its `plan_id` to derive one subtask per step;
+  steps already synced are never re-derived. Unfinalized plans are refused.
 - Use `depends_on` to declare ordering; do not create cycles.
 - Report the outcome of a task honestly: a command that timed out or a check you did not run is
   not a completed task."""

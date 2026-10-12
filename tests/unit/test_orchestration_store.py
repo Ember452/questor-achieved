@@ -66,6 +66,66 @@ def test_update_task_cannot_change_status() -> None:
         store.update_task(bumped)
 
 
+def test_record_round_rejected_when_goal_not_running() -> None:
+    """Goal 轮次记账必须同受白名单约束：空闲/已停的 Goal 不得记轮，
+    更不得经 record_round 绕开 _move 被翻成 completed。"""
+    g = goal.create_goal(thread_id="thread-1", objective="o", max_rounds=1)
+    with pytest.raises(store.OrchestrationStoreError):
+        goal.record_round(g.id)  # IDLE：未起跑不得记轮
+    goal.start_goal(g.id)
+    goal.stop_goal(g.id)  # CANCELLED 终态
+    with pytest.raises(store.OrchestrationStoreError):
+        goal.record_round(g.id)
+
+
+def _append_raw_record(payload_line: str) -> None:
+    """向记录流手工追加一行（制造回放时才可能遇到的脏记录）。"""
+    with orchestration_log_path().open("a", encoding="utf-8") as handle:
+        handle.write(payload_line + "\n")
+
+
+def test_invalidation_record_missing_revision_raises_store_error() -> None:
+    """脏作废记录回放必须报 OrchestrationStoreError，不得漏裸 KeyError（B-76 口径）。"""
+    task = tasks.create_task(title="t1")
+    _append_raw_record(
+        '{"seq": 99, "kind": "acceptance.invalidated", '
+        f'"payload": {{"task_ids": ["{task.id}"]}}, "recorded_at": "2026-10-12T00:00:00Z"}}'
+    )
+    with pytest.raises(store.OrchestrationStoreError):
+        store.load_view()
+
+
+def test_invalidation_record_bad_task_ids_raises_store_error() -> None:
+    """task_ids 非列表不得被逐字符迭代静默吞掉，必须拒。"""
+    tasks.create_task(title="t1")
+    _append_raw_record(
+        '{"seq": 99, "kind": "acceptance.invalidated", '
+        '"payload": {"task_ids": "oops", "requirement_revision": 2}, '
+        '"recorded_at": "2026-10-12T00:00:00Z"}'
+    )
+    with pytest.raises(store.OrchestrationStoreError):
+        store.load_view()
+
+
+def test_sync_subtasks_requires_finalized_plan() -> None:
+    """领域不变式：只有已定稿计划可派生子任务（“定稿才执行”不能只写在 docstring 里）。"""
+    p = plan.propose_plan(steps=["a", "b"])
+    with pytest.raises(store.OrchestrationStoreError):
+        tasks.sync_subtasks_from_plan(p.id)  # DRAFTING 不得派生
+    plan.finalize_plan(p.id)
+    assert len(tasks.sync_subtasks_from_plan(p.id)) == 2
+
+
+def test_sync_subtasks_is_idempotent_per_step() -> None:
+    """同步过的步骤（step.task_id 已回填）不重复派生——崩溃后重跑不造重复任务。"""
+    p = plan.finalize_plan(plan.propose_plan(steps=["a", "b"]).id)
+    created = tasks.sync_subtasks_from_plan(p.id)
+    again = tasks.sync_subtasks_from_plan(p.id)
+    assert len(created) == 2
+    assert again == []
+    assert len(store.load_view().tasks) == 2
+
+
 def test_requirement_revision_invalidates_acceptance() -> None:
     """需求改版递增 requirement_revision → 既有验收作废（追加作废记录，不改写）。"""
     p = plan.propose_plan(steps=["a", "b"], thread_id="thread-1")
@@ -152,6 +212,44 @@ def test_tools_go_through_the_port() -> None:
         assert not made.is_error
         ok = await task_tool.execute(TaskParams(action="create", title="t1"), ctx)
         assert not ok.is_error
+
+    asyncio.run(run())
+
+
+def test_service_sync_gate_requires_plan() -> None:
+    """sync 也是建任务：无落库计划时被门拒（need_plan_first）。"""
+    service = OrchestrationService(thread_id="thread-1")
+    with pytest.raises(OrchestrationGateError) as excinfo:
+        service.sync_subtasks(plan_id="plan-ghost")
+    assert excinfo.value.error_code == "need_plan_first"
+
+
+def test_tool_task_sync_action() -> None:
+    """模型侧 task 工具的 sync 动作（计划 D4：“按已定稿计划同步子任务”）。"""
+    ctx = ToolContext(
+        cwd=".",
+        file_state=FileStateCache(),
+        processes=ProcessManager(),
+        todos=TodoStore(),
+        thread_id="thread-1",
+        orchestration=OrchestrationService(thread_id="thread-1"),
+    )
+    plan_tool = PlanTool()
+    task_tool = TaskTool()
+
+    async def run() -> None:
+        made = await plan_tool.execute(PlanParams(steps=["a", "b"], finalize=True), ctx)
+        assert not made.is_error
+        plan_id = str(made.data["plan_id"])
+        synced = await task_tool.execute(TaskParams(action="sync", plan_id=plan_id), ctx)
+        assert not synced.is_error, synced.output
+        assert len(store.load_view().tasks) == 2
+        # 未定稿计划 sync → 工具报错回喂（不抛异常带走整轮）
+        draft = await plan_tool.execute(PlanParams(steps=["c"]), ctx)
+        refused = await task_tool.execute(
+            TaskParams(action="sync", plan_id=str(draft.data["plan_id"])), ctx
+        )
+        assert refused.is_error and "定稿" in refused.output
 
     asyncio.run(run())
 

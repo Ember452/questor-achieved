@@ -52,3 +52,11 @@ class OrchestrationPort(Protocol):
     def start_task(self, task_id: str) -> Task:
         """开始执行一个任务；未授权时抛 :class:`OrchestrationGateError`。"""
         ...
+
+    def sync_subtasks(self, *, plan_id: str) -> Sequence[Task]:
+        """按**已定稿**计划同步派生子任务（计划 D4）。
+
+        无落库计划抛 :class:`OrchestrationGateError`（`need_plan_first`）；
+        未定稿抛同方言（模型可读可重试），已同步的步骤不重复派生。
+        """
+        ...

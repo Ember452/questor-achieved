@@ -24,6 +24,7 @@ from questor.orchestration.gate import (
 )
 from questor.orchestration.goal import (
     create_goal,
+    fail_goal,
     get_goal,
     is_expired,
     record_round,
@@ -92,6 +93,7 @@ __all__ = [
     "create_goal",
     "create_task",
     "evaluate",
+    "fail_goal",
     "finalize_plan",
     "get_goal",
     "get_plan",

@@ -16,6 +16,7 @@ from questor.schemas.orchestration import Goal, GoalStatus
 
 __all__ = [
     "create_goal",
+    "fail_goal",
     "get_goal",
     "is_expired",
     "record_round",
@@ -84,23 +85,27 @@ def stop_goal(goal_id: str) -> Goal:
     return _move(get_goal(goal_id), GoalStatus.CANCELLED)
 
 
+def fail_goal(goal_id: str) -> Goal:
+    """到 deadline/起轮失败：RUNNING → FAILED（仍经白名单，不另开状态写入口）。"""
+    return _move(get_goal(goal_id), GoalStatus.FAILED)
+
+
 def record_round(goal_id: str) -> Goal:
-    """记一轮结束：`round_count` +1；到 `max_rounds` 即自动完成（长跑止损）。"""
+    """记一轮结束：`round_count` +1；到 `max_rounds` 即自动完成（长跑止损）。
+
+    只有 RUNNING 可记轮：轮次记账也是状态写路径，不得绕开 :func:`_move` 白名单
+    （否则已停/空闲的 Goal 会被旁门翻成 completed，与任务状态机同一纪律）。
+    """
     goal = get_goal(goal_id)
-    next_count = goal.round_count + 1
-    if goal.max_rounds is not None and next_count >= goal.max_rounds:
-        return store.update_goal(
-            goal.model_copy(
-                update={
-                    "round_count": next_count,
-                    "status": GoalStatus.COMPLETED,
-                    "updated_at": utc_timestamp_now(),
-                }
-            )
+    if goal.status is not GoalStatus.RUNNING:
+        raise store.OrchestrationStoreError(
+            f"只有进行中的 Goal 可记轮（当前：{goal.status.value}）"
         )
-    return store.update_goal(
-        goal.model_copy(update={"round_count": next_count, "updated_at": utc_timestamp_now()})
-    )
+    next_count = goal.round_count + 1
+    bumped = goal.model_copy(update={"round_count": next_count, "updated_at": utc_timestamp_now()})
+    if goal.max_rounds is not None and next_count >= goal.max_rounds:
+        return _move(bumped, GoalStatus.COMPLETED)
+    return store.update_goal(bumped)
 
 
 def is_expired(goal: Goal, now: str) -> bool:

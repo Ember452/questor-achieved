@@ -12,7 +12,12 @@ from collections.abc import Callable, Sequence
 from questor.orchestration import store, tasks
 from questor.orchestration.gate import evaluate
 from questor.orchestration.plan import finalize_plan, propose_plan, revise_plan
-from questor.schemas.orchestration import OrchestrationGateError, Plan, Task
+from questor.schemas.orchestration import (
+    OrchestrationGateError,
+    Plan,
+    PlanStatus,
+    Task,
+)
 
 __all__ = ["OrchestrationService"]
 
@@ -80,6 +85,26 @@ class OrchestrationService:
                 result.error_code or "invalid_params", result.message, result.hint
             )
         return tasks.start_task(task_id)
+
+    def sync_subtasks(self, *, plan_id: str) -> list[Task]:
+        """按已定稿计划同步派生子任务（计划 D4：task 工具的 sync 动作）。
+
+        未定稿在此就用模型可读的结构化方言拒绝，而不是漏存储层异常——
+        领域不变式另在 `tasks.sync_subtasks_from_plan` 机械执行，两层同调。
+        """
+        result = evaluate("create_subtask", has_plan=self._has_plan(plan_id))
+        if not result.allowed:
+            raise OrchestrationGateError(
+                result.error_code or "invalid_params", result.message, result.hint
+            )
+        current = next((p for p in store.load_view().plans if p.id == plan_id), None)
+        if current is None or current.status is not PlanStatus.FINALIZED:
+            raise OrchestrationGateError(
+                "need_plan_first",
+                f"计划 {plan_id} 未定稿，不能派生子任务",
+                "先定稿计划（plan 工具 finalize=true）再 sync",
+            )
+        return tasks.sync_subtasks_from_plan(plan_id)
 
     # ---- 内部 ----
 
