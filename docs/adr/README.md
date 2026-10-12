@@ -33,7 +33,7 @@
 | 0002 | 全量重写策略与 provenance 纪律 | planned（已由 `overview.md` §3 承载内容） |
 | 0003 | 仓库边界与依赖拓扑（不依赖参照项目代码） | planned |
 | 0004 | 语义唯一来源与 adapter 位置 | planned |
-| 0005 | 工作区修订号与 turn↔revision 绑定 | planned |
+| [0005](0005-workspace-revision.md) | 工作区修订号与 turn↔revision 绑定 | accepted（M3d 归档） |
 | [0006](0006-desktop-shell-and-browser-panel.md) | 桌面壳选型与浏览器面板边界（Tauri 优先，镜像而非同页） | accepted |
 | [0007](0007-windows-sandbox.md) | Windows 沙箱策略：诚实降级 + 进程树管理，强隔离走可选执行环境 | accepted |
 | [0008](0008-gate-scope-and-citation-checks.md) | 门禁范围与内容一致性、引用核查工具规范 | accepted |
@@ -50,3 +50,6 @@
 | [0019](0019-generated-artifacts-mechanical-check.md) | 生成链定义点归位与第三方声明生成（含对初稿错话的前提修正） | accepted |
 | [0020](0020-interface-surfaces-moved-earlier.md) | 接口面提前：UI 视图注册表骨架与 handler 上下文位（M3） | accepted |
 | [0021](0021-m2-exit-split-evals-deferred.md) | M2 出口拆分：evals 对照基线移出 M2.3 + 判据可执行性口径 | accepted |
+| [0022](0022-serve-ws-starlette-uvicorn.md) | serve 传输层引入 starlette + uvicorn（仅本地 127.0.0.1） | accepted |
+| [0023](0023-m3-transport-ws-only.md) | M3 传输层只落 WS，SSE 推到 M8 | accepted |
+| [0024](0024-desktop-shell-deferred-to-m4.md) | 桌面壳 `desktop/src-tauri/` 从 M3 摘出，落 M4/M5 交界 | accepted |
