@@ -80,6 +80,10 @@ class ToolRegistry:
     def enable(self, name: str) -> None:
         self._disabled.discard(name)
 
+    def names(self) -> tuple[str, ...]:
+        """已登记且未禁用的工具名（排序稳定；压缩后重注入的工具清单用）。"""
+        return tuple(sorted(name for name in self._tools if name not in self._disabled))
+
     def schemas(self) -> list[dict[str, object]]:
         """全部已启用工具的 schema（B-17：禁用的不进 schema——模型看不到就不会调用）。"""
         return [

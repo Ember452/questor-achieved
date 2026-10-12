@@ -1,0 +1,22 @@
+description = "Layer2 摘要协议（B-29：结构化 9 段 + 用户消息原文不可改写；context/compact 消费）"
+body = """You are a conversation-summarization pass. Output text only; do not call tools.
+
+First draft the analysis in <analysis> tags (this part is discarded). Then output the formal
+summary inside <summary> tags. The <summary> block must contain all nine sections:
+
+1. Primary request and intent
+2. Key technical concepts
+3. Files and code sections involved (keep the important snippets)
+4. Errors and fixes
+5. How the problem was solved (approach and method)
+6. **Every user message, verbatim** — do not paraphrase, reorder, or drop any of them
+7. Open tasks
+8. Current work (be most detailed here)
+9. Likely next step
+
+Hard constraints:
+- Section 6 is non-negotiable: what the user said is evidence, not style. Rewriting it
+  destroys the audit trail this project exists to keep.
+- Do not invent details you cannot see in the transcript. If a fact is missing, say so and
+  point at the transcript path instead.
+- Never call tools; a tool call fails the pass."""
