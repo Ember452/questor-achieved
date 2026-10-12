@@ -1,14 +1,33 @@
-"""edit 工具：精确替换（匹配缺失或有歧义时文件不动并返回候选位置——overview §3）。"""
+"""edit 工具：精确替换（匹配缺失或有歧义时文件不动并返回候选位置——overview §3）。
+
+IO 沉到同步 helper（AGENTS §五 异步纪律；护栏见 tests/architecture/
+test_tools_impl_no_blocking_io）。str.replace 不属于 Path.replace，shape 守卫不会误咬。
+"""
 
 from __future__ import annotations
 
+import asyncio
 import difflib
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from questor.tools.base import Tool, ToolContext, ToolResult, resolve_tool_path
 
 _MAX_CANDIDATES = 3
+
+
+def _read_or_none(target: Path) -> str | None:
+    """读文件内容（不存在时 None）。B-14 同族：解码失败以替换符呈现。"""
+    try:
+        return target.read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return None
+
+
+def _write_text(target: Path, text: str) -> None:
+    """写回文件（行尾 LF）。"""
+    target.write_text(text, encoding="utf-8", newline="\n")
 
 
 class EditParams(BaseModel):
@@ -36,9 +55,8 @@ class EditTool(Tool):
         reason = ctx.file_state.ensure_editable(str(target))
         if reason is not None:
             return ToolResult(output=reason, is_error=True)
-        try:
-            text = target.read_text(encoding="utf-8", errors="replace")
-        except FileNotFoundError:
+        text = await asyncio.to_thread(_read_or_none, target)
+        if text is None:
             return ToolResult(output=f"file not found: {params.path}", is_error=True)
 
         occurrences = _occurrence_lines(text, params.old_string)
@@ -64,7 +82,7 @@ class EditTool(Tool):
             )
 
         edited = text.replace(params.old_string, params.new_string, 1)
-        target.write_text(edited, encoding="utf-8", newline="\n")
+        await asyncio.to_thread(_write_text, target, edited)
         ctx.file_state.record_read(str(target))  # 编辑后状态同步，连续编辑无需重读
         return ToolResult(
             output=f"replaced 1 occurrence at line {occurrences[0]} in {params.path}",

@@ -1,6 +1,13 @@
-"""list 工具：目录列举（目录优先、跳过基建目录）。"""
+"""list 工具：目录列举（目录优先、跳过基建目录）。
+
+遍历整段沉到 :func:`_scan_entries` 同步 helper（AGENTS §五 异步纪律；护栏见
+tests/architecture/test_tools_impl_no_blocking_io）。
+"""
 
 from __future__ import annotations
+
+import asyncio
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -29,20 +36,28 @@ class ListTool(Tool):
     async def execute(self, params: BaseModel, ctx: ToolContext) -> ToolResult:
         assert isinstance(params, ListParams)
         target = resolve_tool_path(ctx, params.path)
-        if not target.is_dir():
+        lines = await asyncio.to_thread(_scan_entries, target, params.recursive)
+        if lines is None:
             return ToolResult(output=f"not a directory: {params.path}", is_error=True)
-        iterator = target.rglob("*") if params.recursive else target.iterdir()
-        lines: list[str] = []
-        for entry in iterator:
-            if entry.name in SKIP_DIRS or any(part in SKIP_DIRS for part in entry.parts):
-                continue
-            relative = entry.relative_to(target)
-            if entry.is_dir():
-                lines.append(f"d {relative.as_posix()}/")
-            else:
-                lines.append(f"f {relative.as_posix()} ({entry.stat().st_size}B)")
-            if len(lines) >= _MAX_ENTRIES:
-                lines.append(f"... (capped at {_MAX_ENTRIES} entries)")
-                break
         output = "\n".join(lines) if lines else "(empty directory)"
         return ToolResult(output=output)
+
+
+def _scan_entries(target: Path, recursive: bool) -> list[str] | None:
+    """target 不是目录时返回 None；否则返回渲染好的条目列表（受 _MAX_ENTRIES 截断）。"""
+    if not target.is_dir():
+        return None
+    iterator = target.rglob("*") if recursive else target.iterdir()
+    lines: list[str] = []
+    for entry in iterator:
+        if entry.name in SKIP_DIRS or any(part in SKIP_DIRS for part in entry.parts):
+            continue
+        relative = entry.relative_to(target)
+        if entry.is_dir():
+            lines.append(f"d {relative.as_posix()}/")
+        else:
+            lines.append(f"f {relative.as_posix()} ({entry.stat().st_size}B)")
+        if len(lines) >= _MAX_ENTRIES:
+            lines.append(f"... (capped at {_MAX_ENTRIES} entries)")
+            break
+    return lines
