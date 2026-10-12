@@ -163,14 +163,16 @@ R1 在**同一个 Python 包内**不由包边界保证，必须由检查器保�
 | --- | --- |
 | `limen` | 标准库、`schemas`（类型）——其余全部禁止 |
 | `state` `version` `capability` `config` `secrets` | 标准库、`schemas`、彼此单向（`config`→`state`，不得反向） |
-| `tools` | `limen` `state` `config` `schemas` `prompts` |
+| `tools` | `limen` `state` `config` `schemas` `prompts` `review` `workspaces`（M3a-2：写工具需 `review.compute_diff` 与 `workspaces.bump_revision`） |
 | `context` | `schemas` `gesta` `providers`（仅用量结构） |
 | `gesta` | `schemas` `state` `config` |
 | `engine` | `tools` `limen` `context` `gesta` `providers` `schemas` `prompts` `state` |
-| `review` `worktree` `workspaces` | `limen` `state` `schemas` |
+| `review` | `limen` `state` `schemas` `gesta`（M3a-2：turn_bindings 读 ThreadView 取 run/item 投影，TYPE_CHECKING 引用运行时不引） |
+| `worktree` `workspaces` | `limen` `state` `schemas` |
 | `habena` | `engine` `gesta` `schemas` |
 | `vigilia` | `engine` `gesta` `schemas` `state` |
 | `evidence` | `review` `tools` `gesta` `schemas` |
+| `sessiontrace` | `gesta` `schemas`（只读投影，不写盘不联系模型） |
 | `orchestration` | `engine` `vigilia` `gesta` `context` `schemas` `prompts` |
 | `providers` | `schemas` `state`（**不得 import 任何业务模块**；wire 词汇表取 `schemas.llm`，ADR-0016） |
 | `prompts` `schemas` | `schemas` 无依赖；`prompts` 只取 `schemas` 的类型（资产与装配，不取业务） |
@@ -326,7 +328,7 @@ integration,adversarial,unit}、scripts/ci、ui/ 骨架、evals/ 骨架）。
 | --- | --- |
 | M1 | `docs/specs/`（三资产）、`src/questor/schemas/`、`src/questor/testenv/`、`justfile`、`.editorconfig`、`.pre-commit-config.yaml`、`SECURITY.md`、`.github/`（workflows 3 个 + 模板 + dependabot）、`tests/{contract,fixtures}`、`scripts/{ci,gen}`、`evals/` 骨架、`ui/` 骨架（design token + schema 生成类型 + mock 协议服务；面板实体仍 M3） |
 | M2 | `cli` `serve(雏形)` `engine` `tools` `limen` `context` `gesta` `providers` `prompts` `config` `state` `secrets` `capability` `workspaces` `version`、`VERSION`、`third_party/`、`tests/e2e` 前置的 `evals/runner` |
-| M3 | `review` `worktree` `habena` `sessiontrace`、`ui/`、`desktop/src-tauri/`、`assets/`、`contracts.yml`/`desktop.yml` |
+| M3 | `review` `worktree` `habena` `sessiontrace`、`ui/` 面板与视图注册表、WS 传输与 `serve http` 子命令（`starlette` + `uvicorn`，ADR-0022）；`contracts.yml` 契约护栏升级到方法族匹配。**`desktop/src-tauri/` + `assets/` + `desktop.yml` 推 M4/M5**（ADR-0024）；SSE 推 M8（ADR-0023） |
 | M4 | `vigilia` `orchestration` `evidence` 最小版、`tests/e2e/`、`docs.yml` |
 | M5 | `evidence` 完整、`evals/` 三柱任务集扩充 |
 | M6 | `engine/adapters`（ACP / Claude / Codex） |
