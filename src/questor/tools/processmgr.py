@@ -96,7 +96,7 @@ class ProcessManager:
 
     def spawn(self, command: str, *, cwd: str | None = None) -> ManagedProcess:
         """派生命令并纳入进程树管理；立即返回（输出由读线程累积）。"""
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if _IS_WINDOWS else 0
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if _IS_WINDOWS else 0  # noqa: B009 —— typeshed 仅 Windows 暴露该属性
         job = _new_kill_on_close_job() if _IS_WINDOWS else None
         popen = subprocess.Popen(
             command,

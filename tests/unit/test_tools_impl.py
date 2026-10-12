@@ -111,8 +111,13 @@ async def test_todo_add_update_list(ctx: ToolContext) -> None:
 
 
 async def test_search_path_outside_root_denied(ctx: ToolContext) -> None:
-    """limen 集成：search 的路径参数越界即拒（executor → gate 链路）。"""
-    outcome = await _call("search", {"pattern": "x", "path": "C:/Windows"}, ctx)
+    """limen 集成：search 的路径参数越界即拒（executor → gate 链路）。
+
+    路径用 "/outside"——平台中立（Windows 上解析为当前盘符根下的
+    C:\\outside，Linux 上是字面根外路径）；盘符路径（C:/Windows）在
+    POSIX 上是相对路径、会落回工作区内（B-79 的教训）。
+    """
+    outcome = await _call("search", {"pattern": "x", "path": "/outside"}, ctx)
     assert outcome.denied is True
     assert outcome.result.is_error
 
