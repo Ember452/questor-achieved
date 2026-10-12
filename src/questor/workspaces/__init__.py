@@ -103,6 +103,36 @@ def get_workspace(workspace_id: str) -> Workspace | None:
     return _read_record(workspace_id)
 
 
+def current_revision(workspace_id: str) -> int:
+    """取当前修订号；未注册报 :class:`WorkspaceError`。
+
+    files/read 与 selection 定位都先拿它对照 `expected_revision`（B-92）；
+    不匹配一律拒，不给过期结果。
+    """
+    record = _read_record(workspace_id)
+    if record is None:
+        raise WorkspaceError(f"工作区 {workspace_id} 未注册")
+    return record.revision
+
+
+def bump_revision(workspace_id: str) -> int:
+    """修订号 +1 并落 workspace.json；返回新值（overview §7 单点递增）。
+
+    写工具（write/edit）与 run 终止路径都走本函数，不在其他模块散写 revision。
+    跨进程靠 store_lock 守一致性（与 register 同一把锁）；本函数同步实现，
+    async 调用方请走 ``await asyncio.to_thread(bump_revision, ws_id)``。
+    """
+    validate_entity_id(workspace_id)
+    with store_lock(workspaces_dir()):
+        record = _read_record(workspace_id)
+        if record is None:
+            raise WorkspaceError(f"工作区 {workspace_id} 未注册")
+        updated = record.model_copy(update={"revision": record.revision + 1})
+        directory = _state_dir(pathlib.Path(updated.root_paths[0]))
+        _write_record(updated, directory)
+        return updated.revision
+
+
 def list_workspaces() -> list[Workspace]:
     """列出全部已注册工作区（损坏记录跳过）。"""
     out: list[Workspace] = []
