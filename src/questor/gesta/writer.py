@@ -35,6 +35,7 @@ from questor.gesta.store import (
 )
 from questor.gesta.transitions import transition as _transition
 from questor.schemas.context import ContextBoundary, ContextReplacements
+from questor.schemas.habena import SteerMessage
 from questor.schemas.model import (
     Event,
     ForkOrigin,
@@ -182,6 +183,22 @@ class ThreadWriter:
         with store_lock(sessions_dir(), timeout=self._lock_timeout):
             self._append_context_locked(state, "context.boundary", payload)
         return payload
+
+    def add_held_work(self, msg: SteerMessage) -> SteerMessage:
+        """追加一条插话/排队消息到 held_work（M3a-3、B-65）。
+
+        与 context 记录同机制：单点写入，不在 habena 里另开文件；归属线程不一致
+        时爆炸（B-45 的延伸：gate 类消息先持久化定序）。本函数同步实现，
+        async 调用方走 `await asyncio.to_thread(writer.add_held_work, msg)`。
+        """
+        state = self._require_open()
+        if msg.thread_id != self._thread_id:
+            raise ThreadStoreError(
+                f"插话归属线程 {msg.thread_id!r} 与句柄线程 {self._thread_id!r} 不一致"
+            )
+        with store_lock(sessions_dir(), timeout=self._lock_timeout):
+            self._append_locked(state, "habena.held_work", msg.model_dump(mode="json"))
+        return msg
 
     def _append_context_locked(self, state: _FoldState, kind: str, payload: Any) -> None:
         """上下文记录的共用路径：先校归属，再走同一把锁与同一个追加器。"""

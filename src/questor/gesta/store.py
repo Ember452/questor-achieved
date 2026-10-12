@@ -30,6 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from questor.gesta.transitions import InvalidTransition, is_terminal, transition
 from questor.schemas.context import ContextBoundary, ContextReplacements
+from questor.schemas.habena import SteerMessage
 from questor.schemas.model import (
     Event,
     ForkOrigin,
@@ -95,6 +96,8 @@ class ThreadView(BaseModel):
     context_replacements: tuple[ContextReplacements, ...] = ()
     #: 压缩边界历史（ADR-0017）：resume 重建与"它当时看到什么"的对账入口
     context_boundaries: tuple[ContextBoundary, ...] = ()
+    #: 未消费的插话/排队消息（held_user_work 双 origin，B-65）；重启时从此重建 Inbox
+    held_work: tuple[SteerMessage, ...] = ()
     last_seq: int
 
 
@@ -140,6 +143,8 @@ _RECORD_KINDS = frozenset(
         # _FoldState.apply 分支与 ThreadView 字段（B-85 的护栏就断言这两条）
         "context.replacements",
         "context.boundary",
+        # 插话与排队消息与正文同流（M3a-3，B-65）；同样受 B-85 护栏管住
+        "habena.held_work",
     }
 )
 
@@ -184,6 +189,7 @@ class _FoldState:
         self.events: list[Event] = []
         self.context_replacements: list[ContextReplacements] = []
         self.context_boundaries: list[ContextBoundary] = []
+        self.held_work: list[SteerMessage] = []
         self.last_seq = 0
         self.last_recorded_at: str | None = None
 
@@ -234,6 +240,8 @@ class _FoldState:
             self.context_replacements.append(ContextReplacements.model_validate(payload))
         elif record.kind == "context.boundary":
             self.context_boundaries.append(ContextBoundary.model_validate(payload))
+        elif record.kind == "habena.held_work":
+            self.held_work.append(SteerMessage.model_validate(payload))
 
     def _require_thread(self) -> Thread:
         if self.thread is None:
@@ -253,6 +261,7 @@ class _FoldState:
             events=tuple(self.events),
             context_replacements=tuple(self.context_replacements),
             context_boundaries=tuple(self.context_boundaries),
+            held_work=tuple(self.held_work),
             last_seq=self.last_seq,
         )
 
