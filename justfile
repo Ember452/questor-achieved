@@ -32,13 +32,13 @@ types:
 types-check:
     npm --prefix ui run typecheck
 
-# schema → 前端类型（R4 生成链；真相源 src/questor/schemas）
+# schema → 前端类型（R4 生成链；真相源 src/questor/schemas，定义点在 scripts/gen/）
 gen:
-    npm --prefix ui run gen
+    node scripts/gen/types.mjs
 
 # 生成后 git diff --exit-code 必须为空（R4 的可检查形式）
 gen-check:
-    npm --prefix ui run gen:check
+    node scripts/gen/types.mjs --check
 
 # 依赖方向与三条硬断言（R1；import-linter + AST allow-list 双层）
 arch:

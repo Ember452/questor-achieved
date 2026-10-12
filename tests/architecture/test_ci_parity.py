@@ -36,8 +36,8 @@ GATE_RECIPES = (
 )
 # 环境准备类步骤：不属于门禁命令，允许只存在于 CI
 CI_ONLY_ALLOWED = frozenset({"uv sync", "npm ci --prefix ui"})
-# 判定"这是门禁命令"的前缀
-GATE_PREFIXES = ("uv run ", "npm --prefix ui run ", "uv build")
+# 判定"这是门禁命令"的前缀（ADR-0019 后生成链入口从 npm 搬到 node scripts/gen/，前缀同补）
+GATE_PREFIXES = ("uv run ", "npm --prefix ui run ", "node scripts/gen/", "uv build")
 
 
 def _justfile_commands() -> dict[str, list[str]]:

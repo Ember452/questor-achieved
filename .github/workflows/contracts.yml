@@ -35,5 +35,5 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
       - run: npm ci --prefix ui
-      # 与 justfile `gen-check` 同一批命令
-      - run: npm --prefix ui run gen:check
+      # 与 justfile `gen-check` 同一批命令（ADR-0019 后定义点在 scripts/gen/）
+      - run: node scripts/gen/types.mjs --check

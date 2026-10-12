@@ -26,7 +26,7 @@ repos:
       # 前置：ui 依赖已安装（`just setup` 或 `npm ci --prefix ui`）。
       - id: gen-check
         name: schema → ui/src/rpc/generated 是否同步
-        entry: npm --prefix ui run gen:check
+        entry: node scripts/gen/types.mjs --check
         language: system
         files: ^src/questor/schemas/.*\.json$
         pass_filenames: false

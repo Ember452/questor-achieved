@@ -47,7 +47,7 @@ jobs:
       - run: uv run pyright
       - run: uv run python scripts/ci/check_specs.py
       - run: uv run python scripts/ci/check_notes.py
-      - run: npm --prefix ui run gen:check
+      - run: node scripts/gen/types.mjs --check
       - run: npm --prefix ui run typecheck
       - run: uv build
       # 锁定钩子与 CI 同源：ruff rev 与 uv.lock 不一致、或钩子规则与门禁不一致，在这里响。
@@ -90,7 +90,7 @@ jobs:
       - run: uv run pytest -q -rfE --color=no
       # 生成物必须在两种 OS 上都可复现：banner 的路径分隔符差异（B-68）
       # 只有在 windows runner 上也跑 gen:check 才拦得住。
-      - run: npm --prefix ui run gen:check
+      - run: node scripts/gen/types.mjs --check
       - name: Show generated diff on drift
         if: failure()
         run: |
