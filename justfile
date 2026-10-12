@@ -1,4 +1,12 @@
 # Questor 门禁单一入口——CI 必须调用同一批命令（AGENTS.md §四；本地与 CI 不一致视为缺陷）
+
+# just 在 Windows 上默认用 sh 当 shell，而本机没有 sh（实测报
+# "could not find the shell `sh`: program not found"）。just 1.58.0 不支持
+# 在 set shell 里做条件：`if(...)` 函数式与顶层 `if` 块都报语法错（均实测）。
+# 所以这里写死 PowerShell。非 Windows 贡献者把本行改成 ["sh", "-cu"] 即可；
+# CI 不调用 just（保留六个独立 required check 的粒度），故不受影响。
+set shell := ["powershell.exe", "-NoProfile", "-Command"]
+
 default:
     @just --list
 
