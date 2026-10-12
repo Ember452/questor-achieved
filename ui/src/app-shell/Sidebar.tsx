@@ -1,73 +1,87 @@
-// 侧栏：品牌 + 会话分组列表（置顶/最近）+ 底部。数据来自 mock，真接后换 rpc/client。
+// Sidebar：从 client.call("thread/list") 拉真会话；点一条 = 设为 active。
+// M3 起 mock 已降级为测试替身；本文件不再 import mock（AGENTS §五 前端跟随）。
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { client } from "../rpc/client";
 import { useWorkbenchStore } from "../state/workbenchStore";
-import { fetchSessions } from "../rpc/mock";
 
 export function Sidebar() {
   const sessions = useWorkbenchStore((s) => s.sessions);
-  const activeSessionId = useWorkbenchStore((s) => s.activeSessionId);
+  const activeId = useWorkbenchStore((s) => s.activeSessionId);
   const setActive = useWorkbenchStore((s) => s.setActive);
+  const setSessions = useWorkbenchStore((s) => s.setSessions);
+  const [newTitle, setNewTitle] = useState("");
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    fetchSessions().then((list) => {
-      if (cancelled) return;
-      useWorkbenchStore.setState({ sessions: list });
-      if (list.length > 0) setActive(list[0].id);
-    });
+    client
+      .call("thread/list", {})
+      .then((r) => {
+        if (!cancelled) setSessions(r.threads);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setErr(e.message);
+      });
     return () => {
       cancelled = true;
     };
-  }, [setActive]);
+  }, [setSessions]);
 
-  const pinned = sessions.filter((s) => s.pinned);
-  const recent = sessions.filter((s) => !s.pinned);
+  async function createThread() {
+    const title = newTitle.trim();
+    if (!title) return;
+    setErr(null);
+    try {
+      const r = await client.call("thread/create", {
+        workspace_id: "ws-local",
+        title,
+      });
+      setNewTitle("");
+      const list = await client.call("thread/list", {});
+      setSessions(list.threads);
+      setActive(r.thread.id);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
 
   return (
-    <nav aria-label="sessions" className="flex w-64 shrink-0 flex-col border-r border-border bg-sidebar">
-      <div className="flex items-center gap-2 px-3 py-3">
-        <span className="text-ui-lg font-semibold">Questor</span>
-        <span className="text-ui-2xs text-foreground-subtlest">auditable agent workstation</span>
+    <aside
+      aria-label="sidebar"
+      className="flex w-64 shrink-0 flex-col border-r border-border bg-surface"
+    >
+      <header className="border-b border-border px-3 py-2 text-ui-sm">会话</header>
+      <div className="flex gap-2 border-b border-border p-2">
+        <input
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          placeholder="新会话标题"
+          className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-ui-xs"
+        />
+        <button
+          type="button"
+          onClick={createThread}
+          className="rounded bg-foreground px-2 py-1 text-ui-xs text-background"
+        >
+          新建
+        </button>
       </div>
-      <SessionGroup label="置顶" items={pinned} activeId={activeSessionId} onSelect={setActive} />
-      <SessionGroup label="最近" items={recent} activeId={activeSessionId} onSelect={setActive} />
-      <div className="mt-auto px-3 py-2 text-ui-2xs text-foreground-subtlest">pre-alpha · M1</div>
-    </nav>
-  );
-}
-
-function SessionGroup({
-  label,
-  items,
-  activeId,
-  onSelect,
-}: {
-  label: string;
-  items: ReturnType<typeof useWorkbenchStore.getState>["sessions"];
-  activeId: string | null;
-  onSelect: (id: string) => void;
-}) {
-  if (items.length === 0) return null;
-  return (
-    <section className="px-2 py-1">
-      <div className="px-1 py-1 text-ui-2xs tracking-wide text-foreground-subtlest uppercase">{label}</div>
-      <ul>
-        {items.map((s) => (
+      {err ? <p className="p-2 text-ui-2xs text-red-500">err: {err}</p> : null}
+      <ul className="flex-1 overflow-auto">
+        {sessions.map((s) => (
           <li key={s.id}>
             <button
               type="button"
-              onClick={() => onSelect(s.id)}
-              aria-current={s.id === activeId ? "true" : undefined}
-              className={`w-full rounded px-2 py-1.5 text-left text-ui-sm hover:bg-surface-hover ${
-                s.id === activeId ? "bg-surface-hover" : ""
-              }`}
+              onClick={() => setActive(s.id)}
+              className={`block w-full px-3 py-2 text-left text-ui-xs hover:bg-background ${activeId === s.id ? "bg-background font-semibold" : ""}`}
             >
-              {s.title}
+              {s.pinned ? "★ " : ""}
+              {s.title ?? s.id}
             </button>
           </li>
         ))}
       </ul>
-    </section>
+    </aside>
   );
 }
