@@ -78,8 +78,8 @@
 | `task/reject` / `task/retry` / `task/complete` | 验收打回（`reviewed → executing`）/ 重做 / 通过（`reviewed → completed`） |
 | `goal/create` / `goal/list` / `goal/show` | 后台自驱长跑目标 |
 | `goal/start` / `goal/stop` | 起跑/停止 Goal 长跑循环 |
-| `schedule/create` / `schedule/list` / `schedule/enable` / `schedule/disable` | 值守调度（`once`/`interval`/`cron`，vigilia）；M4 触发目标仅 `thread_id`+`prompt`（到点起一轮），task 目标随 M5 派发接线（`v1.1` 加性补登 `create`） |
-| `evidence/get` | 按 subject（run/task/turn）取证据核对结果（声称 vs 录得） |
+| `schedule/create` / `schedule/list` / `schedule/enable` / `schedule/disable` | 值守调度（`once`/`interval`/`cron`，vigilia）；目标二选一：`task_id`（到点派发任务执行，M5）或 `thread_id`+`prompt`（到点起一轮）。`create` 参数加性补登 `task_id`（`v1.1`/ADR-0028） |
+| `evidence/get` | 按 subject（run/task/turn）取证据核对结果（声称 vs 录得）；证据由模型经 `task` 工具 `report` 动作上报并核对后生产写入（M5，ADR-0029），非协议方法 |
 
 ### 能力与配置
 

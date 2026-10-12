@@ -1,7 +1,8 @@
 # Questor 核心数据契约（data-model）
 
-版本: v1.3 | 更新: 2026-10-12 | 状态: accepted（M1 定稿；v1.1 补 queued→cancelled，见 ADR-0014；
-v1.2 补上下文工程记录，见 ADR-0017；v1.3 补编排域 Task/Plan/Goal/Evidence 与 Run 的编排绑定，见 ADR-0025/0027）
+版本: v1.4 | 更新: 2026-10-12 | 状态: accepted（M1 定稿；v1.1 补 queued→cancelled，见 ADR-0014；
+v1.2 补上下文工程记录，见 ADR-0017；v1.3 补编排域 Task/Plan/Goal/Evidence 与 Run 的编排绑定，见 ADR-0025/0027；
+v1.4 收敛验收状态机 `AcceptanceStatus` 为强制枚举并接通 evidence 生产写入点，见 ADR-0029）
 关联: `overview.md` §7（草案出处）、`protocol.md`（跨进程边界）、`docs/specs/`（行为规格）、
 `src/questor/schemas/model/` 与 `src/questor/schemas/orchestration/`（本契约的 JSON Schema 物化）
 
@@ -133,7 +134,7 @@ Run 产出的最小可审计单元。
 | `status` | string | 状态机见 §3.3 |
 | `parent_task_id` | string? | 子任务树 |
 | `depends_on` | string[] | DAG 依赖边（前置任务 id） |
-| `acceptance` | object | `{status: 验收状态（§3.2）, requirement_revision, evidence_ids: []}` |
+| `acceptance` | object | `{status: 验收状态（§3.2，v1.4 起为 `AcceptanceStatus` 枚举）, requirement_revision, evidence_ids: []}` |
 | `run_id` | string? | 绑定的一次引擎执行 |
 | `created_at` / `updated_at` | string | |
 
@@ -186,10 +187,16 @@ queued → running → completed | failed | cancelled
 proposed → accepted_by_user → executing → reported → verified | regressed
 ```
 
-- 需求改版递增 `requirement_revision` 并**自动作废**既有验收（追加作废记录，不改写）；
-- `reported` 的结论必须能指向具体 Item/Event 证据（`evidence` 字段）；
-- **没有复跑也不轻信**：`verified` 的依据是"声称的检查与当时录得的真实输出并排核对"
-  （overview §12 M5）。
+- v1.4（ADR-0029）起 `TaskAcceptance.status` 为 `AcceptanceStatus` **枚举**，迁移**只允许
+  状态机驱动**（单点入口 `orchestration/acceptance.py`，形态同 §3.3），旁路写入视为契约破坏
+  （架构测试强制）；
+- `accepted_by_user` = 用户授予"开始执行"（编排门 `need_execution_authorization` 的通过态）；
+- `reported` 的结论必须能指向具体 Item/Event 证据（`evidence` 字段）——由模型经 `task` 工具
+  `report` 动作**显式提交声称并绑定 `tool_use_id`**，核对器只读消费当时录得的 tool_result；
+- **`verified` / `regressed` 由证据 verdict 驱动**：`reported` 时全部声称 `verified` 才进
+  `verified`，任一 `mismatch`/`unverified` 即进 `regressed`（"没有复跑也不轻信"）；
+- 需求改版递增 `requirement_revision` 并**自动作废**既有验收（`plan.revise_plan` 驱动
+  `invalidate_acceptances`，追加作废记录不改写），作废后验收态重置为 `proposed`。
 
 ### 3.3 编排任务状态机（v1.3，ADR-0025）
 
@@ -212,12 +219,15 @@ cancelled→ ∅（终态）
   先有用户"开始执行"授权（`need_execution_authorization`）；门返回结构化错误载荷而非异常（B-43）；
 - **状态迁移只允许状态机驱动**，旁路写入视为契约破坏（架构测试强制）。
 
-### 3.4 证据核对（v1.3，ADR-0027）
+### 3.4 证据核对（v1.3，ADR-0027；v1.4 接线生产写入点，ADR-0029）
 
 - `Evidence.verdict` 只取 `verified` / `mismatch` / `unverified`；**没有记录支持的结论一律 `unverified`**，
   不臆断打分（诚实呈现铁律）；
 - 结论必带 `recorded_output_ref`，能指向具体 Item/Event/spill；
-- 证据只**追加**，绝不改写被核对的原文（append-only）；复跑核验不在本轮（overview §2），留待 M5。
+- 证据只**追加**，绝不改写被核对的原文（append-only）；复跑核验不在本轮（overview §2），留待 M5；
+- v1.4：`evidence` 模块**只读消费 gesta** 落盘 tool_result 做核对（`collect_recorded(thread_id)` 为
+  唯一"录得源"入口，将来接复跑只替换其实现源、不改 export/验收态契约）；写入经
+  `orchestration.store.add_evidence` 唯一入口，依赖边 `orchestration → evidence` 有向无环。
 
 ## 4. 工作区修订号
 

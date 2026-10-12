@@ -173,7 +173,7 @@ R1 在**同一个 Python 包内**不由包边界保证，必须由检查器保�
 | `vigilia` | `engine` `gesta` `schemas` `state` |
 | `evidence` | `review` `tools` `gesta` `schemas` |
 | `sessiontrace` | `gesta` `schemas`（只读投影，不写盘不联系模型） |
-| `orchestration` | `engine` `vigilia` `gesta` `context` `schemas` `prompts` `state`（M4：编排实体住独立 append-only store，需 `state` 的原子写/锁/路径单点，ADR-0025） |
+| `orchestration` | `engine` `vigilia` `gesta` `context` `schemas` `prompts` `state` `evidence`（M4：编排实体住独立 append-only store，需 `state` 的原子写/锁/路径单点，ADR-0025；M5：验收 `report` 调 `evidence` 只读核对入口驱动 verdict，`orchestration → evidence` 有向边、evidence 不反向 import 编排域故无环，ADR-0029） |
 | `providers` | `schemas` `state`（**不得 import 任何业务模块**；wire 词汇表取 `schemas.llm`，ADR-0016） |
 | `prompts` `schemas` | `schemas` 无依赖；`prompts` 只取 `schemas` 的类型（资产与装配，不取业务） |
 | `skills` `mcp` `hooks` `extensions` | `schemas` + 已注册的公开扩展接口；**内核不得反向 import 它们** |
