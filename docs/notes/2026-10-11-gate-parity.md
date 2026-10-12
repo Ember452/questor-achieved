@@ -1,6 +1,7 @@
 # 门禁是怎么从"看着一致"变成"真的一致"的
 
 日期: 2026-10-11
+复核于: 2026-10-12
 锚点: justfile, .github/workflows/ci.yml, tests/architecture/test_ci_parity.py,
       scripts/ci/check_specs.py, .pre-commit-config.yaml
 
