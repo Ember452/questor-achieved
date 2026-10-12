@@ -23,16 +23,22 @@
 | **零依赖侵入** | 不进 `pyproject`、不装 Python 依赖、不污染 venv；`nox` 则会给仓库再加一层 Python 工具链与其依赖 |
 | **够用就停** | 我们没有"依赖图/增量构建"需求（任务都是全量快跑），所以不需要 make/just 之外的构建系统 |
 
-## 当前实况（诚实记录）
+## 当前实况（诚实记录，含 2026-10-12 更新）
 
-**这台机器上 `just` 仍不可用**：`winget install Casey.Just` 能找到包（1.58.0）但下载
-GitHub Release 被网络拦截（`InternetOpenUrl() failed. 0x80072f19`）；`cargo`/`choco`/`scoop`
-均未安装；PyPI 上名为 `just` 的包**无法核实是同一软件**（查询时 TLS 超时），因此**不装未知来源**。
+**已装上**：`winget install --id Casey.Just -e` 成功装到 1.58.0（位置
+`%LOCALAPPDATA%\Microsoft\WinGet\Packages\Casey.Just_...\just.exe`，PATH 由 winget 自己写）。
+之前记的"装不上"是当时网络拦截 GitHub Release（`0x80072f19`），不是方法错；同一原因也使
+`pre-commit` 拉钩子仓库失败，后续网络恢复后就都能跑了。
 
-后果与处置：`just check` 这条出口判据（"本地与 CI 同源"）目前只能由 **CI 侧**证明——
-`ci.yml` 的 `lint` job 已按同一批命令逐条执行，并额外跑 `pre-commit run --all-files`。
-本机恢复 `just` 的方法（任一）：浏览器下载 `just` 的 Windows zip 解压入 PATH，
-或给 `winget`/终端配置可达 GitHub 的代理后重试 `winget install --id Casey.Just -e`。
+**一个新发现的 Windows 坑**（已修在 `justfile` 里）：just 在 Windows 上**默认用 `sh` 当 shell**，
+本机没 `sh` → 每个配方都报 `could not find the shell sh: program not found`。
+并且 1.58.0 **不支持在 `set shell` 里做条件**：`if(...)` 函数式与顶层 `if os_family() == ... {}` 块
+都报语法错（两者均实测过）。所以只写了无条件的
+`set shell := ["powershell.exe", "-NoProfile", "-Command"]`，并在注释里给出非 Windows 的一行改法。
+
+**退路仍然有效**（给拿不到 just 的机器或贡献者）：按 `justfile` 里 `check` 配方的命令**逐条手动跑**；
+命令清单的唯一真相仍是 `justfile` 本身，不得另写一份 ps1/py 包装。
+注：CI 不调用 just（否则六个独立 required check 会塌成一个，红了看不出哪层断的）。
 
 ## 被否决的选项
 
