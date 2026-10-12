@@ -10,7 +10,9 @@ limen.gate 即违规——工具实现与循环代码都摸不到门，"权限�
 3. 构造 limen 判定输入（ToolCallInfo 由工具声明 + 参数合成）→ ``decide``；
 4. deny → 错误结果携带 error_kind + reason + model_next_action 方言；
    allow + redact_output → 结果经 :func:`limen.gate.redact_output` 脱敏（B-54）；
-5. 执行工具 → 异常转错误结果（行为 11）。
+5. 执行工具 → 异常转错误结果（行为 11）；但 **CancelledError 不在此列**（AGENTS §五
+   异步纪律）：串行路径因 `except Exception` 不接 BaseException 天然放行；并行路径
+   因 `gather(return_exceptions=True)` 会把它当普通异常收集，必须显式重传。
 
 并行批（B-15）：``gather(..., return_exceptions=True)``——单失败降级为错误结果，
 不拖垮整批；结果按原始调用顺序回填（B-16 的顺序语义）。
@@ -84,7 +86,12 @@ async def execute_calls(
 def _as_outcome(
     request: ToolCallRequest, outcome: ToolCallOutcome | BaseException
 ) -> ToolCallOutcome:
-    """并行批的单失败降级：异常转错误结果（B-15）。"""
+    """并行批的单失败降级：异常转错误结果（B-15）；但 CancelledError 必须放行（AGENTS §五）。"""
+    if isinstance(outcome, asyncio.CancelledError):
+        # `asyncio.gather(return_exceptions=True)` 会把子任务抛的 CancelledError 当
+        # 普通异常收集回 outcome——不特判就会被下面转成错误结果，外层 run 永远
+        # 收不到取消信号，engine 的 _cancel_cleanup 也不会触发（M2.2 复审标注）。
+        raise outcome
     if isinstance(outcome, BaseException):
         logger.warning("工具 %s 并行执行异常", request.tool_name, exc_info=outcome)
         return ToolCallOutcome(

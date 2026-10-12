@@ -1,6 +1,9 @@
-"""executor 与登记表单元行为：授权序列、禁用≠未知（B-17）、并行批分区（B-16 B-15）。"""
+"""executor 与登记表单元行为：授权序列、禁用≠未知（B-17）、并行批分区（B-16 B-15）、
+取消传播（AGENTS §五：CancelledError 必须放行不得转成 error 结果）。"""
 
 from __future__ import annotations
+
+import asyncio
 
 import pytest
 from pydantic import BaseModel
@@ -47,6 +50,15 @@ class _BoomTool(_EchoTool):
 
     async def execute(self, params: BaseModel, ctx: ToolContext) -> ToolResult:
         raise RuntimeError("boom")
+
+
+class _CancellingTool(_EchoTool):
+    """内层取消：工具自己抛 CancelledError（模拟外部 task.cancel 抵达 tool.execute 的时刻）。"""
+
+    name = "cancel"
+
+    async def execute(self, params: BaseModel, ctx: ToolContext) -> ToolResult:
+        raise asyncio.CancelledError
 
 
 class _DenyTool(_EchoTool):
@@ -174,6 +186,46 @@ async def test_parallel_batch_survives_single_failure(tmp_path) -> None:
     assert outcomes[0].result.output == "echo:a"
     assert outcomes[1].result.is_error
     assert outcomes[2].result.output == "echo:b"
+
+
+@pytest.mark.asyncio
+async def test_parallel_batch_cancellation_propagates(tmp_path) -> None:
+    """AGENTS §五 异步纪律：并行批里工具抛 CancelledError，executor 必须放行而非降级成 error 结果。
+
+    修前现场：`asyncio.gather(return_exceptions=True)` 会把 CancelledError 作为 outcome 返回给
+    `_as_outcome`；`isinstance(outcome, BaseException)` 命中——若不加特判就会被转成 error 结果，
+    外层 run 收不到取消信号，清理不完整。M2.2 复审标注，M3 修。
+    """
+    registry = _registry_with(_CancellingTool(), _EchoTool())
+    with pytest.raises(asyncio.CancelledError):
+        await execute_calls(
+            [
+                ToolCallRequest("id1", "echo", {"text": "a"}),
+                ToolCallRequest("id2", "cancel", {}),
+            ],
+            registry,
+            _ctx(tmp_path),
+            PM.STANDARD,
+            ROOTS,
+        )
+
+
+@pytest.mark.asyncio
+async def test_serial_tool_cancellation_propagates(tmp_path) -> None:
+    """串行路径同样放行：单元素安全批退化为串行后，_execute_one 的
+    `except Exception` 不接 CancelledError。
+
+    当前实现即满足；本用例是回归钉，防未来把 except 放宽到 BaseException 时误吞。
+    """
+    registry = _registry_with(_CancellingTool())
+    with pytest.raises(asyncio.CancelledError):
+        await execute_calls(
+            [ToolCallRequest("id1", "cancel", {})],
+            registry,
+            _ctx(tmp_path),
+            PM.STANDARD,
+            ROOTS,
+        )
 
 
 def test_partition_consecutive_safe_merge() -> None:
