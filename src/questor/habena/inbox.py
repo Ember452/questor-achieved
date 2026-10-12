@@ -52,14 +52,8 @@ class HabenaInbox:
                 break
         return out
 
-    def pending(self) -> tuple[SteerMessage, ...]:
-        """当前队列中的消息（不移除）；供 turn/dequeue 撤回未决消息时查询。"""
-        # asyncio.Queue 没有暴露内部 deque 的公共 API；这里保守返回 ()。
-        # M4 若加 dequeue 交互再扩，本期 turn/dequeue 只做 client_id 幂等表回滚。
-        return ()
-
     def forget(self, client_id: str) -> None:
-        """从幂等表移除一个 client_id（供 turn/dequeue 撤回未消费消息）。"""
+        """从幂等表移除一个 client_id（供 turn/dequeue 允许该消息重新提交）。"""
         self._seen.discard(client_id)
 
     def __len__(self) -> int:
