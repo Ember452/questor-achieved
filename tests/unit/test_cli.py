@@ -201,6 +201,34 @@ def test_exec_closes_model_even_when_the_run_fails(
     assert model.closed is True
 
 
+def test_task_list_json(capsys: pytest.CaptureFixture[str]) -> None:
+    """M4：task 薄命令经 serve 输出一行 JSON。"""
+    with fake_home():
+        assert main(["task", "list"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["tasks"] == []
+
+
+def test_task_create_without_plan_exits_two(capsys: pytest.CaptureFixture[str]) -> None:
+    """编排门拒绝 → CLI 以非零码 + stderr 提示回报（不吐半句到 stdout）。"""
+    with fake_home():
+        code = main(["task", "create", "do the thing"])
+    assert code == 2
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert "错误" in out.err
+
+
+def test_goal_create_and_list(capsys: pytest.CaptureFixture[str]) -> None:
+    with fake_home():
+        assert main(["goal", "create", "thread-1", "ship it", "--max-rounds", "3"]) == 0
+        created = json.loads(capsys.readouterr().out)
+        assert created["goal"]["objective"] == "ship it"
+        assert main(["goal", "list"]) == 0
+        listed = json.loads(capsys.readouterr().out)
+        assert len(listed["goals"]) == 1
+
+
 def test_cli_does_not_recompute_workspace_id() -> None:
     """workspace_id 归一化单点在 workspaces.register（sha256[:16]）。
 

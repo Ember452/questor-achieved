@@ -110,6 +110,24 @@ def _parser() -> argparse.ArgumentParser:
     http_run.add_argument("--port", type=int, default=8765)
     http_run.add_argument("--cwd", default=".", help="工作目录（新建会话的默认根）")
     http_run.add_argument("--ui-dist", default=None, help="前端构建产物目录（缺省自动探 ui/dist）")
+
+    # M4 编排：薄命令，一切经 serve（AGENTS 纪律：CLI 不得有第二套装配路径）
+    task = sub.add_parser("task", help="任务看板（经 serve）")
+    task_sub = task.add_subparsers(dest="task_command", required=True)
+    task_sub.add_parser("list", help="列出任务（一行 JSON）")
+    task_show = task_sub.add_parser("show", help="查看单个任务")
+    task_show.add_argument("task_id")
+    task_create = task_sub.add_parser("create", help="新建任务（无落库计划会被编排门拒）")
+    task_create.add_argument("title")
+    task_create.add_argument("--plan", dest="plan_id", default=None, help="绑定计划 id")
+
+    goal = sub.add_parser("goal", help="长跑目标（经 serve）")
+    goal_sub = goal.add_subparsers(dest="goal_command", required=True)
+    goal_sub.add_parser("list", help="列出目标（一行 JSON）")
+    goal_create = goal_sub.add_parser("create", help="新建长跑目标")
+    goal_create.add_argument("thread_id")
+    goal_create.add_argument("objective")
+    goal_create.add_argument("--max-rounds", type=int, default=None)
     return parser
 
 
@@ -122,6 +140,10 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_cmd_session_list())
         if args.command == "serve":
             return _cmd_serve_http(args)
+        if args.command == "task":
+            return asyncio.run(_cmd_task(args))
+        if args.command == "goal":
+            return asyncio.run(_cmd_goal(args))
         return asyncio.run(_cmd_exec(args))
     except (ValueError, KeyError) as exc:
         _log(f"错误：{exc}")
@@ -143,6 +165,37 @@ def _cmd_version(args: argparse.Namespace) -> int:
 async def _cmd_session_list() -> int:
     server = AppServer(create_engine=_no_engine)
     result = await server.thread_list({}, _CLI_CTX)
+    print(encode_line(result))
+    return 0
+
+
+async def _cmd_task(args: argparse.Namespace) -> int:
+    """任务看板薄命令（经 serve；编排门拒绝由 main 的 ValueError 分支回报）。"""
+    server = AppServer(create_engine=_no_engine)
+    if args.task_command == "show":
+        result = await server.task_show({"task_id": args.task_id}, _CLI_CTX)
+    elif args.task_command == "create":
+        result = await server.task_create({"title": args.title, "plan_id": args.plan_id}, _CLI_CTX)
+    else:
+        result = await server.task_list({}, _CLI_CTX)
+    print(encode_line(result))
+    return 0
+
+
+async def _cmd_goal(args: argparse.Namespace) -> int:
+    """长跑目标薄命令（经 serve）。"""
+    server = AppServer(create_engine=_no_engine)
+    if args.goal_command == "create":
+        result = await server.goal_create(
+            {
+                "thread_id": args.thread_id,
+                "objective": args.objective,
+                "max_rounds": args.max_rounds,
+            },
+            _CLI_CTX,
+        )
+    else:
+        result = await server.goal_list({}, _CLI_CTX)
     print(encode_line(result))
     return 0
 
@@ -176,6 +229,7 @@ async def _cmd_exec(args: argparse.Namespace) -> int:
             model=model,
             cwd=args.cwd,
             mode=PermissionMode(args.mode),
+            thread_id=thread_id,
         )
         async for event in exec_turn(
             engine, thread_id=thread_id, user_text=args.user_text, resume=args.resume
@@ -217,7 +271,7 @@ def _cmd_serve_http(args: argparse.Namespace) -> int:
     cwd = str(Path(args.cwd).expanduser().resolve())
 
     def _factory(thread_id: str, mode: PermissionMode):  # noqa: ANN001 - Engine 类型已知但循环依赖
-        return build_engine(model=model, cwd=cwd, mode=mode)
+        return build_engine(model=model, cwd=cwd, mode=mode, thread_id=thread_id)
 
     ui_dist = Path(args.ui_dist) if args.ui_dist else Path("ui/dist")
     # 本地 host 代表一个工作区：起服务时就把 --cwd 登记为默认（路径单点解析在
