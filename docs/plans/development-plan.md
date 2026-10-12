@@ -268,12 +268,12 @@ M4d evidence 最小版 / M4e 接口面 + UI + e2e + docs.yml），**总出口达
 
 **M4 实际结果（2026-10-12）**：契约先行——ADR-0025（编排域实体/状态机/独立 store）、0026
 （vigilia 调度与清扫）、0027（evidence 最小版与 export 接口）、0028（协议加性演进）；
-data-model v1.3、protocol v1.1、schema（`schemas/orchestration/` + app_server 19 方法族
+data-model v1.3、protocol v1.1、schema（`schemas/orchestration/` + app_server 21 方法族
 5 通知族 + `Run.task_id`/`goal_id`）。代码：`vigilia`（声明式触发器 + tick/per-task 锁复判
 + 游标清扫 + 双 reconcile + 检查点 + `process` wake）；`orchestration`（单点状态机 + 独立
 append-only store + 编排门 + Plan/Goal/Task/board + `OrchestrationService`）；`evidence`
 （核对器 + export 接口 + 投影）；`tools`（`OrchestrationPort` 注入 + `plan`/`task` 工具）；
-`serve`（19 编排方法 + 5 通知族）；`cli`（task/goal 薄命令）；`ui`（Board 分栏看板 + 确认/打回）；
+`serve`（21 编排方法 + 5 通知族 + `LongRunDriver` 长跑驱动挂 http 宿主）；`cli`（task/goal 薄命令）；`ui`（Board 分栏看板 + 确认/打回）；
 `tests/e2e/`（转后台→任务总结→打回→重做→diff 可回看）；`docs.yml` + `check_docs.py`。护栏：
 `test_orchestration_transition_single_entry`、`test_orchestration_fold_kinds_are_projected`、
 `test_vigilia_*`（含对抗）、`test_orchestration_gate/store/service`、`test_evidence_*`、
@@ -283,6 +283,19 @@ B-96 的拒绝分支临时禁用即红（已复原）；B-94 由并发用例当�
 **M4 收尾四件事**：① 本计划状态勾销 + 此实际结果；② `overview.md` §12 M4 行标记已完成；
 ③ 四条 ADR 已落（索引同步）；④ 坑目录 B-40/41/42/43/44/49 转 covered、新增 B-94/95/96、
 B-38/39 裁 moot。
+
+**M4 收口审查（2026-10-12，全部 TDD 先红后绿）**：全面审查抓到 5 项确凿缺陷与 1 项接线缺口，已收口——
+① tick/sweep 检查点双写回退竞态（B-97：持锁字段级读-改-写 `record_tick`/`set_sweep_cursor`）；
+② `task/review` 产品入口缺失（B-98：看板待验收列与确认/打回真实可达；e2e/集成链改经 serve，不再直调 store）；
+③ Goal `record_round` 绕开域内白名单（B-99：仅 RUNNING 可记轮，完成/失败均经 `_move`）；
+④ 编排 store fold 裸异常（B-100：B-76 异常类型化口径补齐，脏记录统一报存储错）；
+⑤ `sync_subtasks_from_plan` 无消费者 + “定稿才派生”未机械执行 + 崩溃重复派生（`task` 工具补 `sync` 动作、
+`OrchestrationPort` 扩 `sync_subtasks`、逐步回填 step.task_id 幂等重放）；
+⑥ 长跑驱动未接线（计划 M4e.2 启动 hook）：新增 `serve/longrun.py::LongRunDriver` 挂 http 宿主生命周期——
+tick 循环到点 `turn/start`、启动+周期双 reconcile（B-44，活体不误杀、僵尸必收）、Goal 轮自驱
+（`goal/start` 即时唤醒 + 重启拾取）；`schedule/create` 方法补登（总 21，M4 目标形态仅 thread_id+prompt）。
+遗留边界（诚实标注）：stdio 宿主不挂驱动（`goal/start` 在那只登记状态）；task 派发目标随 M5；
+`task/start` 的 authorized 仍为本地信任自报（随 M8 鉴权收紧）；evidence 生产写入点随 M5 验收卡接线。
 
 **M4 偏离留痕**：① 看板 **DAG 图推 E1**（D7；M4 落注册表驱动的分栏看板，满足前端跟随即止）；
 ② 桌面壳 `desktop/src-tauri/` + `assets/` + `desktop.yml` **推 M5**（ADR-0024 M4 收口）；

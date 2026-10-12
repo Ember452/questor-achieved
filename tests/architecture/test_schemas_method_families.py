@@ -4,7 +4,7 @@
 这是 R4 "跨进程边界只有一个真相源" 落到方法级的机械保证：
 - 上游：`AppServer._methods()` 与 `PROTOCOL_NOTIFICATIONS` 是"实现面"，加/删必须同步 schema；
 - 下游：`ui/src/rpc/generated/app_server-v0-1.d.ts` 由生成器展开 `$defs` 产出严格类型；
-  若某项 `$defs` 缺失、或生成器把它降级为 `[k: string]: unknown`（B-98），本文件与
+  若某项 `$defs` 缺失、或生成器把它降级为 `[k: string]: unknown`（B-92），本文件与
   `scripts/gen/types.mjs` 都会红。
 
 负向验证（写此测试时实测）：临时把 `ThreadCreateParams` 从 `$defs` 抽掉 →

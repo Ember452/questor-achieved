@@ -62,7 +62,7 @@
 见上方 `[未发布]`。M3 出口判据 1–4 全部经测试钉住；判据 5（evals N=12 首跑）
 诚实标注"未跑"（本机无凭据），见 `evals/README.md` §M3d。
 
-## [M4 骨架] - 2026-10-12（长跑与编排；ADR-0025/0026/0027/0028）
+## [M4] - 2026-10-12（长跑与编排；ADR-0025/0026/0027/0028；含收口审查修复）
 
 ### Added
 - `src/questor/vigilia/` — 值守长跑：声明式触发器（`once`/`interval`/`cron`）+ tick
@@ -76,18 +76,29 @@
 - `src/questor/schemas/orchestration.py` + `schemas/orchestration/v1.json`（编排实体契约，
   data-model v1.3）；`schemas/vigilia.py`（调度形状）。
 - `tools/ports.py` `OrchestrationPort` + `ToolContext.orchestration`/`thread_id`（R1 端口注入）；
-  模型侧 `plan`/`task` 工具经该端口生效（tools 不 import orchestration）。
+  模型侧 `plan`/`task` 工具经该端口生效（tools 不 import orchestration）；收口扩
+  `sync_subtasks`：按已定稿计划逐步派生子任务（未定稿机械拒绝，崩溃重跑不重复）。
 - 提示词资产 `plan_protocol.toml` / `task_protocol.toml` / `goal_loop.toml`（禁止内联提示词）。
-- `serve` 方法族 `task/*` `goal/*` `schedule/*` `evidence/get`（19 项）+ 通知族
+- `serve` 方法族 `task/*` `goal/*` `schedule/*` `evidence/get`（21 项，含收口审查补登的
+  `task/review` 与 `schedule/create`）+ 通知族
   `task/status` `plan/updated` `goal/status` `evidence/reported` `notice/schedule`；
   `initialize.notification_families` 改为从注册表取（单一真相）。
+- `serve/longrun.py` `LongRunDriver`（收口：计划 M4e.2 启动 hook）——挂 http 宿主生命周期：
+  tick 循环到点 `turn/start`、启动+周期双 reconcile（B-44，活体不误杀、僵尸必收）、
+  Goal 轮自驱（`goal/start` 即时唤醒 + 重启拾取）；stdio 宿主不挂，`goal/start` 在那只登记状态（诚实标注）。
 - `cli` 薄命令 `questor task {list,show,create}` / `questor goal {list,create}`（能力全经 serve）。
 - `ui/src/panels/board.tsx` + 注册表登记：任务分栏看板 + 任务总结卡确认/打回（DAG 图推 E1，D7）。
 - `tests/e2e/` — M4 出口主钉：转后台 → 任务总结 → 打回 → 重做 → diff 可回看。
 - `.github/workflows/docs.yml` + `scripts/ci/check_docs.py`（文档相对链接存在性）。
 - 坑目录新增 B-94/B-95/B-96；B-40/41/42/43/44/49 由 open 转 covered；B-38/B-39 裁定 moot。
+  收口审查再新增 B-97（检查点双写回退竞态）/B-98（白名单迁移缺产品入口）/
+  B-99（域内记账绕白名单）/B-100（新 store fold 异常类型化回归），均 covered + 测试先红后绿。
 
 ### Changed
+- 收口审查修复（TDD 先红后绿）：vigilia 检查点改持锁字段级读-改-写（`record_tick`/
+  `set_sweep_cursor`，防游标回退）；`record_round` 仅 RUNNING 可记、完成/失败经 `_move`；
+  编排 store `_apply_invalidation` 脏记录统一报存储错；e2e/集成链“进入待审”改经
+  `task/review`，看板补“提交待审”按钮。
 - `docs/architecture/data-model.md` → v1.3（编排实体 + `Run.task_id`/`goal_id`）；
   `protocol.md` → v1.1（编排方法族/通知族 + 协议加性演进规则 ADR-0028）；
   `overview.md` §7/§12/§14、`structure.md` §5/§6/§11、`development-plan.md` M4 同步。
