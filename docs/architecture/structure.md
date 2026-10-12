@@ -172,11 +172,11 @@ R1 在**同一个 Python 包内**不由包边界保证，必须由检查器保�
 | `vigilia` | `engine` `gesta` `schemas` `state` |
 | `evidence` | `review` `tools` `gesta` `schemas` |
 | `orchestration` | `engine` `vigilia` `gesta` `context` `schemas` `prompts` |
-| `providers` | `schemas` `state`（**不得 import 任何业务模块**） |
-| `prompts` `schemas` | 无 / 标准库（纯资产与纯类型） |
+| `providers` | `schemas` `state`（**不得 import 任何业务模块**；wire 词汇表取 `schemas.llm`，ADR-0016） |
+| `prompts` `schemas` | `schemas` 无依赖；`prompts` 只取 `schemas` 的类型（资产与装配，不取业务） |
 | `skills` `mcp` `hooks` `extensions` | `schemas` + 已注册的公开扩展接口；**内核不得反向 import 它们** |
 | `serve` | 除 `cli` 外全部（最上层组装点；**不得 import `cli`**，否则与下行构成环） |
-| `cli` | `serve` `engine` `providers` `config` `schemas` |
+| `cli` | `serve` `engine` `providers` `config` `schemas` `version`（`version` 是叶模块，只读取版本单点） |
 | `testenv` | 任何模块（只被测试 import，生产代码禁止） |
 
 ---

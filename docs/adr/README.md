@@ -44,3 +44,9 @@
 | [0013](0013-m2-foundation-dependencies.md) | M2.1 地基依赖引入（pydantic v2 / keyring / import-linter） | accepted |
 | [0014](0014-run-status-queued-cancelled.md) | 运行状态机补充 queued → cancelled 迁移（data-model v1.1） | accepted |
 | [0015](0015-pywin32-job-object.md) | Windows 进程树管理引入 pywin32（平台标记依赖） | accepted |
+| [0016](0016-providers-wire-layer.md) | providers 传输层：自建 wire 层 over httpx，不接厂商 SDK | accepted |
+| [0017](0017-context-records-in-transcript.md) | 上下文工程事实作为 append-only 记录进会话正文（data-model v1.2） | accepted |
+| [0018](0018-prompt-blocks-and-cache-prefix.md) | 提示词类型化分块与缓存前缀（稳定在前） | accepted |
+| [0019](0019-generated-artifacts-mechanical-check.md) | 生成链定义点归位与第三方声明生成（含对初稿错话的前提修正） | accepted |
+| [0020](0020-interface-surfaces-moved-earlier.md) | 接口面提前：UI 视图注册表骨架与 handler 上下文位（M3） | accepted |
+| [0021](0021-m2-exit-split-evals-deferred.md) | M2 出口拆分：evals 对照基线移出 M2.3 + 判据可执行性口径 | accepted |

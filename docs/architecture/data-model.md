@@ -1,6 +1,7 @@
 # Questor 核心数据契约（data-model）
 
-版本: v1.1 | 更新: 2026-10-11 | 状态: accepted（M1 定稿；v1.1 补 queued→cancelled，见 ADR-0014）
+版本: v1.2 | 更新: 2026-10-12 | 状态: accepted（M1 定稿；v1.1 补 queued→cancelled，见 ADR-0014；
+v1.2 补上下文工程记录，见 ADR-0017）
 关联: `overview.md` §7（草案出处）、`protocol.md`（跨进程边界）、`docs/specs/`（行为规格）、
 `src/questor/schemas/model/`（本契约的 JSON Schema 物化）
 
@@ -143,6 +144,7 @@ proposed → accepted_by_user → executing → reported → verified | regresse
 | 搜索索引 | `~/.questor/index/`（SQLite） | **可丢弃可重建**，损坏即重建不修复 |
 | 工作文件（粘贴长文本/图片） | `~/.questor/files/` | 带过期，清理与历史快照分离 |
 | 工具结果落盘 | 会话目录内 `<tool_use_id>.txt` | O_EXCL 幂等写（B-24），预览 2KB 回链 |
+| 上下文工程记录 | 会话正文 JSONL 内的 `context.boundary` / `context.replacements` 记录 | **与正文同流、append-only**（ADR-0017）：压缩边界与替换决策均只追加不改写；它们是内核的上下文事实，**不是 ItemKind**，对外可见性走 `notice/compact` 事件族（protocol §4） |
 | 配置 | `~/.questor/config.toml` + 项目 `config.example.toml` | 分层 strip 用户专属安全字段（B-58） |
 
 - 索引分词预留 CJK bigram 兼容（B-48）；不引入消息队列、不依赖云；
