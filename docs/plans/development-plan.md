@@ -340,7 +340,29 @@ tick 循环到点 `turn/start`、启动+周期双 reconcile（B-44，活体不�
 
 ## Phase M5 — 验收证据完整版（evidence）
 
-**状态**：`- [ ]` 未开始
+**状态**：`- [x]` **已完成 2026-10-12**（M5a 契约与 ADR / M5b 验收状态机强制 / M5c evidence
+生产写入点 + 声称采集 / M5d schedule task 派发 / M5e 前端证据卡 / M5f evals 三柱扩充），总出口达成
+
+**M5 实际结果（2026-10-12）**：契约先行——ADR-0029（验收状态机强制 + evidence 生产写入点 +
+声称显式绑定 + `orchestration → evidence` 有向边）；data-model v1.4、structure §5 矩阵、
+`schemas/orchestration` `TaskAcceptance.status` 收敛为 `AcceptanceStatus` 枚举（schema 重生成）。
+代码：`orchestration/acceptance.py` 验收态单点入口（+ `store.transition_acceptance`/记录 kind
+`acceptance.status`/fold 过白名单/`update_task` 拒改验收态 B-102）；`evidence/source.py`
+只读录得源 `collect_recorded`/`verify_claims`；`OrchestrationService.report_task` 接通生产写入
+（落证据→驱动 `executing→reported→verified|regressed`→`reviewed`）+ 真实 publish
+`evidence/reported`（经 `Engine.attach_orchestration_publisher` hop 回事件循环）；模型侧 `task`
+工具 `report` 动作 + `OrchestrationPort.report_task`；`schedule/create`+`longrun._fire` 补 task
+派发；`board.tsx` 验收证据卡（点击 `recorded_output_ref`→`sessiontrace/get`）；`evals/runner/grading.py`
+把 `replay_audit`/`recorded_output` 接真实函数，tasks.json 12→17。坑目录新增 B-101/B-102（均
+covered + 负向验证）。出口判据逐项：`test_report_verified_when_recorded_ok` 钉“结论指向记录
+条目”；`test_report_regressed_on_mismatch_and_missing_record`/`test_recorded_output_negative_detects_unverified`
+钉“无记录不轻信”；`test_update_task_cannot_change_acceptance_status` 钉验收态单点入口。
+
+**M5 偏离留痕**：① **桌面壳 `desktop/src-tauri` + `assets` + `desktop.yml` 不在本期**（ADR-0024
+推到 M5 边界的独立 Rust 大块，与“可验证柱”正交、变化理由不同，单列后续任务更优）；② **复跑核验
+不做**（overview §2），只把“录得核对输入”收成单一可替换只读入口（`collect_recorded`）；③ **前端
+真机走查与 evals 基线同样因本机无凭据 pending**（证据卡代码路径已接 + tsc 绿；live 走查需
+`serve http` + 真实跑，标 pending 不凑）。
 
 **做什么**（= structure §11 M5 行）：`evidence` 完整版 + `evals/` 三柱任务集扩充。
 

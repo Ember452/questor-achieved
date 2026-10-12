@@ -106,3 +106,36 @@
 
 ### Removed
 - 无。
+
+## [M5] - 2026-10-12（验收闭环：可验证柱生产化；ADR-0029）
+
+### Added
+- `src/questor/orchestration/acceptance.py` — 验收状态机单点入口（§3.2 白名单
+  `proposed → accepted_by_user → executing → reported → verified | regressed`），形态同 `transitions.py`。
+- `src/questor/evidence/source.py` — 只读“录得源”核对入口 `collect_recorded(thread_id)` /
+  `verify_claims(...)`（只读消费 gesta 落盘 tool_result，不复跑；将来接复跑只换实现源）。
+- `evidence` 生产写入点：`OrchestrationService.report_task` 落 `Evidence`（经唯一入口
+  `store.add_evidence`）+ 驱动验收态 + `executing → reviewed`；`evidence/reported` 通知自此真实 publish。
+- 模型侧 `task` 工具新增 `report` 动作（`ClaimedCheck` 声称 + 绑定 `tool_use_id`）；
+  `tools/ports.py` `OrchestrationPort` 扩 `report_task`（`serve/longrun.py` 接宿主事件循环发布器）。
+- `schedule/create` 支持 task 目标（到点派发任务执行）；`serve/longrun.py::_fire` 按
+  `task_id`/`thread_id` 分派。
+- `ui/src/panels/board.tsx` — 验收证据卡：逐条 verdict 色 + `recorded_output_ref` 点击经
+  `sessiontrace/get` 回链到具体记录条目（注册表驱动，外壳不改）。
+- `evals/runner/grading.py` — 把 `replay_audit`/`recorded_output` 两类 grading 接到真实
+  `evidence`/编排 store 只读函数；`evals/tasks/tasks.json` 三柱扩充 12→17。
+- 护栏：`tests/unit/test_orchestration_acceptance.py`、`tests/integration/test_evidence_report.py`、
+  `tests/integration/test_evals_grading.py`、schedule task 目标与 driver 派发。
+
+### Changed
+- `docs/architecture/data-model.md` → v1.4（验收态枚举强制 + evidence 生产写入点 + claim→Evidence 可追溯）；
+  `structure.md` §5 依赖矩阵 `orchestration` 增 `evidence`（有向无环）；`protocol.md` schedule/evidence 行回写。
+- `schemas/orchestration` `TaskAcceptance.status` 由裸 `str` 收敛为 `AcceptanceStatus` 枚举（schema 同步重生成）；
+  `store.update_task` 新增拒改嵌套 `acceptance.status`（旁路守卫）。
+
+### Fixed
+- 需求改版作废驱动接真：`plan.revise_plan` 递增 `requirement_revision` 时调 `invalidate_acceptances`
+  （此前该函数无真实调用方）。B-101/B-102 covered + 负向验证。
+
+### Removed
+- 无。
