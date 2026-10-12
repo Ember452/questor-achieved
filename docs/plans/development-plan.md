@@ -212,7 +212,32 @@ M2.2 出口判据逐项：**单轮跑通**（`tests/integration/test_single_turn
 
 ## Phase M3 — 工作台数据面（前后端首次真接）
 
-**状态**：`- [ ]` 未开始
+**状态**：`- [x]` **已完成 2026-10-12**（M3a-1 schema 方法族 + 生成链归位 / M3a-2 review 与写时 diff / M3a-3 habena + Fanout + Engine 消费点 / M3b-1 thread 四操作 + sessiontrace / M3b-2 worktree / M3b-3 WS + serve http / M3c UI 真接 + 视图注册表 / M3d evals 适配层 + 归档），**总出口** 1–4 达成、出口 5 因本机无凭据记 pending（诚实标注不凑基线）
+
+**M3 实际结果（2026-10-12）**：契约先行——ADR-0022（serve 传输层引 starlette+uvicorn）、0023（M3 只
+落 WS、SSE 推 M8）、0024（桌面壳从 M3 摘出推 M4/M5）、0005（工作区修订号与 turn↔revision 绑定，
+M3d 归档 accepted）。代码：`review`（unified diff + hunks + fingerprint + 写时算 + turn↔revision 聚合）/
+`habena`（Inbox 幂等 + held_work record kind 入正文 + CAS 接管栅栏）/ `sessiontrace`（fold 投影）/
+`worktree`（git CLI 子进程薄包装）；serve 方法表从 5 扩到 20，`Fanout` 多宿主扇出（B-96）+
+反向请求 pending 路由（B-59）；`Engine` iteration 起点前 `_consume_inbox_iteration` 消费点（B-67/94）；
+`ws` + `http` 传输（assert_localhost_only 硬拒 0.0.0.0）；CLI `serve http` 子命令。前端：`Transport`
+抽象 + `WebSocketTransport` + 强类型 `client.ts`；`panels/registry.ts` 视图注册表骨架 + `PanelHost`
+单分发 + `Review` / `Files` 两块真接面板 + `MessageStream` 通知分派 + Composer 解禁。护栏：
+`test_schemas_method_families`（方法族形状）+ `test_tools_impl_no_blocking_io`（file 工具 IO 沉 thread）+
+`test_no_hardcoded_panel_case`（外壳无面板名硬编码）+ `test_serve_http_ws`（WS 与 stdio 方法表一致）+
+`test_review_turn_diff` + `test_habena_steer` + `test_habena_control` + `test_serve_fanout` +
+`test_habena_steer_adversarial`（幂等 + expected_turn_id）。生成物 `app_server-v0-1.d.ts` 从 9 行空
+interface 展开到 463 行严格类型，兑现 R4。
+
+**M3 偏离留痕**：① **evals N=12 基线首跑未跑**——本机 `QUESTOR_MODEL_API_KEY` 未配，出口判据 5
+记 pending；诚实标注优于用假端点凑基线（evals/README 纪律 1 与 overview §11）。② **桌面壳
+`desktop/src-tauri/` 推 M4/M5 交界**（ADR-0024），M3 用 `serve http` + 浏览器 localhost 已能验
+双宿主同契约；structure §11 与 overview §12 已同步。③ **SSE 推 M8**（ADR-0023），三问判据第 3 问：
+M3 无第二订阅者，WS 已覆盖浏览器宿主；overview §8 与 structure §7 里"WS/SSE"已回写为"WS（M3）+
+SSE（M8）"。④ **Terminal 面板 / Browser 面板 / `thread/search` / `selection/annotate` / `engine/list` /
+`config/*`** 六项按 plan "明确不做" 推后；不塞进 M3 出口判据，避免为了面板好看牺牲三柱（AGENTS 铁律 3）。
+⑤ **Fanout 慢订阅者不阻 publisher**：本期 queue 无上限、`put_nowait` 不阻；M4 长跑引入背压时
+另开 ADR-0025（overview §14 “队列满即阻 publisher”属默认）。
 
 **做什么**（= structure §11 M3 行）：`review`（修订号 + turn↔revision）、`habena`（插话/接管/取消）、`sessiontrace`（轨迹回放，不重跑工具不联系模型）、`worktree`；`ui/` 与 `desktop/src-tauri/`、`assets/`；`contracts.yml`/`desktop.yml` 两个 workflow。
 **本期额外两个接口面（ADR-0020：它们属接口，不得后置）**：① `ui/` 视图注册表**骨架**（`PanelDescriptor` + 单一渲染分发点 + 护栏：新面板只能登记不得改外壳）——M3 是第一个真接面板，此时建最便宜；② `principal` 传递位已随 M2.3 的 `serve` `HandlerCtx` 落定（本期不写任何鉴权判定）。

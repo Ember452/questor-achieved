@@ -187,7 +187,7 @@ IM 渠道、远程与移动端、多账号与费用治理、
 | `tools` | 工具登记、schema、执行与结果封装 | `limen` | wuu `internal/tools`、FlowCoder |
 | `limen` | **唯一权威权限门**：三档、可达性推导、敏感路径守卫 | 无业务依赖 | wuu `boundary.go` 规格 |
 | `gesta` | 会话记录与验收导出（事件与实体形状经 `schemas` 承载，对 engine 无感知） | `schemas` `state` `config` | wuu session 语义 |
-| `review` | 工作区修订号、真实 diff、turn↔revision 绑定 | git CLI | wuu Review 语义 |
+| `review` | 工作区修订号、真实 diff、turn↔revision 绑定 | `schemas` `state` `gesta`（只读 fold 投影） | wuu Review 语义 |
 | `habena` | 插话收件箱、排队、接管与暂停、取消传播 | `engine` | wuu `session/inbox`、`held_user_work` |
 | `vigilia` | 值守长跑、调度、唤醒检查点、僵尸运行清扫 | `engine` | EvoFlow scheduler＋自建状态机 |
 | `evidence` | "声称的检查"与真实记录输出的并排核对、验收证据出口 | `review` `tools` | wuu Review 语义 + EvoFlow 任务总结 |
@@ -243,8 +243,9 @@ IM 渠道、远程与移动端、多账号与费用治理、
   配置有问题时返回 `needs_setup` 加 `issues`，连接仍可用。
 - **大内容延迟取**：客户端可声明 `deferred_content` 能力，快照与终局通知里用引用替代大块正文，
   身份、顺序、成员与状态保持完整。
-- **一套会话层协议、两种传输**：桌面与 CLI 走 stdio NDJSON，网页与多端走网关 WS/SSE；
+- **一套会话层协议、两种传输**：桌面与 CLI 走 stdio NDJSON，网页与多端走网关 WS（M3b-3）；
   方法名、事件形状与错误语义完全同源，**禁止为网页另立契约或开私有端点**（§14 的逃生门）。
+  SSE 推 M8（ADR-0023），与 IM 渠道/webhook 同批。
 - 客户端必须按 `id` 关联，并**在请求未决期间持续读通知**；不得假设每行都是最近请求的响应。
 - 行缓冲有上限，超限时命令输出走全量日志引用；stdout 必须干净（禁 banner 与调试日志）。
 - 内核**反向请求**（审批、浏览器宿主）走 server-initiated requests，超时或取消即动作不执行。
@@ -317,7 +318,7 @@ IM 渠道、远程与移动端、多账号与费用治理、
 | M0 | 仓库骨架、门禁、ADR-0001 | **已完成**（`1778ac1`、`e7aef72`） |
 | M1 | 扫描三资产落盘 + 契约文档与 schema + 契约测试骨架 | 坑目录 ≥50 条且各有归属模块；schema 能生成前端类型 |
 | M2 | 单轮能跑：内置引擎 + 8 工具 + `limen` + 会话落盘 + CLI（**已完成 2026-10-12**：M2.1/M2.2/M2.3 全部勾销，见 development-plan 的 M2.3 实际结果） | 一个真实小任务完整跑通并落盘可回放（已真机验证：`questor exec` 写文件→读回，会话 last_seq=22 可回放） |
-| M3 | 工作台数据面：`review` 修订号与 turn↔revision + Files/Review 面板 + 插话与排队；**同一 `ui/` 构建产物同时供桌面与本地网页宿主** | 面板显示真实 diff；插话在下一个工具边界被消费；接管即停；网页默认只绑 `127.0.0.1` 且无第二套契约 |
+| M3 | 工作台数据面：`review` 修订号与 turn↔revision + `habena` 插话与接管 + `sessiontrace` 回放 + `worktree` 分叉 + `ui/` 视图注册表与 Review/Files 面板 + WS 传输与 `serve http` 子命令（**桌面壳推 M4/M5，SSE 推 M8** — ADR-0023/0024）（**已完成 2026-10-12**：M3a-1 schema 方法族 / M3a-2 review + diff 写时算 / M3a-3 habena + Fanout + Engine 消费点 / M3b-1 thread 四操作 + sessiontrace / M3b-2 worktree / M3b-3 WS + serve http / M3c UI 真接 + 注册表 / M3d evals 适配层，均已完成） | 面板显示真实 diff（`test_review_turn_diff` 钉住）；插话在下一个工具边界被消费（`test_habena_steer` 钉住）；接管即停（`test_habena_control` 钉住）；网页只绑 `127.0.0.1` 且无第二套契约（`test_serve_http_ws` 钉住）；evals N=12 首跑记录已发布（ADR-0021） |
 | M4 | 长跑与编排：Goal + 看板 + 任务总结 + 确认/打回 | 端到端链跑通；状态机无旁路写入 |
 | M5 | 验收闭环：任务总结 → 确认／打回，并把"声称的检查"与真实记录输出并排核对 | 任一验收结论都能指向具体记录条目；没有复跑也不轻信 |
 | M6 | 外部引擎：ACP／Claude／Codex 适配器 + 权限映射表 | 契约测试全引擎同绿 |

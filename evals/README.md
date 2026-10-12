@@ -61,3 +61,4 @@ Questor agent 与 FlowCoder agent 各写一个满足 `Solver` 协议的 adapter�
 
 - 2026-10-11：骨架建立；N=12 钉死；任务主题定稿（tasks/tasks.json）。
 - 2026-10-12：新增"可比性口径"（ADR-0021）；对照基线首跑移出 M2.3 出口。
+- 2026-10-12（M3d）：`adapters/mode_map.md` 落档位映射表；M3d 首跑因本机无凭据**未跑**，出口判据 5 记为 pending（诚实标注优先，不凑基线）。
