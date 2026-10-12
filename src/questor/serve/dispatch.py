@@ -21,6 +21,7 @@ from typing import Any
 from questor.schemas.model import PermissionMode
 from questor.serve.envelope import (
     Notification,
+    ProtocolError,
     ProtocolFrameError,
     Request,
     error_line,
@@ -28,6 +29,8 @@ from questor.serve.envelope import (
     notification_line,
     parse_line,
     response_line,
+    reverse_request_line,
+    try_parse_reverse_response,
 )
 
 __all__ = ["Dispatcher", "Handler", "HandlerCtx", "Writers"]
@@ -75,6 +78,8 @@ class Dispatcher:
         self._sink = sink
         self._tasks: set[asyncio.Task[None]] = set()
         self.writers = Writers()
+        #: 反向请求的 pending 路由表（B-59）：correlation_id → Future
+        self._pending: dict[str, asyncio.Future[Any]] = {}
 
     # ---- 输出 ----
 
@@ -107,7 +112,15 @@ class Dispatcher:
     # ---- 分发 ----
 
     async def handle_line(self, line: str) -> str | None:
-        """处理一帧请求，返回要写回的响应行（长任务返回 None，稍后异步补响应）。"""
+        """处理一帧。先判反向响应路由（B-59），否则当客户端上行 Request 处理。
+
+        反向请求的响应帧形式与 Request 同带 id，但无 method——若先走 parse_line 会
+        报“必须含 method”，将响应吞成无效帧；因此先给 pending 表机会。
+        """
+        reverse = try_parse_reverse_response(line)
+        if reverse is not None:
+            self._resolve_pending(*reverse)
+            return None
         try:
             request = parse_line(line)
         except ProtocolFrameError as exc:
@@ -130,6 +143,47 @@ class Dispatcher:
         task.add_done_callback(self._task_done)
         return None
 
+    # ---- 反向请求（server-initiated） ----
+
+    async def request_client(
+        self, method: str, params: dict[str, Any], *, timeout: float = 300.0
+    ) -> Any:
+        """向客户端发起反向请求（B-59）。返回 result 或抛 ProtocolError。
+
+        FlowCoder 300s 超时同族（B-04）：客户端失联时不能挂死循环；timeout 到期即
+        报错并清理 pending 项。本期无具体审批弹窗消费方，通道先就位。
+        """
+        if self._sink is None:
+            raise RuntimeError("Dispatcher 未 attach sink，无法发起反向请求")
+        correlation_id = f"srv-{uuid.uuid4().hex[:12]}"
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[Any] = loop.create_future()
+        self._pending[correlation_id] = future
+        try:
+            self.push(reverse_request_line(correlation_id, method, params))
+            return await asyncio.wait_for(future, timeout=timeout)
+        except TimeoutError as exc:
+            raise ProtocolError(
+                "internal_error",
+                f"反向请求 {method!r} 超时（客户端失联或拒绝回答）",
+                model_next_action="check the host connection and retry",
+            ) from exc
+        finally:
+            self._pending.pop(correlation_id, None)
+
+    def _resolve_pending(
+        self, correlation_id: str, result: dict[str, Any] | None, error: dict[str, Any] | None
+    ) -> None:
+        future = self._pending.get(correlation_id)
+        if future is None or future.done():
+            return
+        if error is not None:
+            code = str(error.get("code", "internal_error"))
+            message = str(error.get("message", "客户端拒绝"))
+            future.set_exception(ProtocolError(code, message))
+        else:
+            future.set_result(result or {})
+
     def _task_done(self, task: asyncio.Task[None]) -> None:
         self._tasks.discard(task)
         if task.cancelled():
@@ -146,6 +200,16 @@ class Dispatcher:
     async def _run(self, handler: Handler, request: Request, context: HandlerCtx) -> None:
         try:
             result = await handler(request.params, context)
+        except ProtocolError as exc:
+            # 业务错先接：使用其自带 code（stale_revision / boundary_denied 等）；
+            # ValueError 仍归 invalid_params，两者不能逆序否则 ProtocolError 会被后接吞。
+            self.push(
+                error_line(
+                    request.id,
+                    error_payload(exc.code, str(exc), model_next_action=exc.model_next_action),
+                )
+            )
+            return
         except ValueError as exc:
             self.push(error_line(request.id, error_payload("invalid_params", str(exc))))
             return
