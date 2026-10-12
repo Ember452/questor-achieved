@@ -24,6 +24,16 @@ import type {
   SessiontraceGetResult,
   SessionControlParams,
   SessionControlResult,
+  TaskListParams,
+  TaskListResult,
+  TaskShowParams,
+  TaskShowResult,
+  TaskStartParams,
+  TaskStartResult,
+  TaskRejectParams,
+  TaskRejectResult,
+  TaskCompleteParams,
+  TaskCompleteResult,
   Notification,
   DeltaNotification,
   ItemStartedNotification,
@@ -32,6 +42,11 @@ import type {
   TurnSteeredNotification,
   RunStatusNotification,
   NoticeCompactNotification,
+  TaskStatusNotification,
+  PlanUpdatedNotification,
+  GoalStatusNotification,
+  EvidenceReportedNotification,
+  NoticeScheduleNotification,
 } from "./generated/app_server-v0-1";
 import type { JsonObject, Transport } from "./transport";
 import { WebSocketTransport } from "./websocket-transport";
@@ -44,7 +59,12 @@ export type AnyNotification =
   | TurnUsageNotification
   | TurnSteeredNotification
   | RunStatusNotification
-  | NoticeCompactNotification;
+  | NoticeCompactNotification
+  | TaskStatusNotification
+  | PlanUpdatedNotification
+  | GoalStatusNotification
+  | EvidenceReportedNotification
+  | NoticeScheduleNotification;
 
 /** 强类型 method → 参/返 形状的映射（新增方法在此登记一行）。 */
 export interface Api {
@@ -59,6 +79,11 @@ export interface Api {
   "files/list": { params: FilesListParams; result: FilesListResult };
   "sessiontrace/get": { params: SessiontraceGetParams; result: SessiontraceGetResult };
   "session/control": { params: SessionControlParams; result: SessionControlResult };
+  "task/list": { params: TaskListParams; result: TaskListResult };
+  "task/show": { params: TaskShowParams; result: TaskShowResult };
+  "task/start": { params: TaskStartParams; result: TaskStartResult };
+  "task/reject": { params: TaskRejectParams; result: TaskRejectResult };
+  "task/complete": { params: TaskCompleteParams; result: TaskCompleteResult };
 }
 
 type MethodName = keyof Api;

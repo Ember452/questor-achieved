@@ -9,6 +9,7 @@
 
 import type { ComponentType } from "react";
 import type { Notification } from "../rpc/generated/app_server-v0-1";
+import { BoardPanel } from "./board";
 import { FilesPanel } from "./files";
 import { ReviewPanel } from "./review";
 
@@ -38,6 +39,12 @@ export const PANELS: readonly PanelDescriptor[] = [
     title: "Files",
     requiredNotifications: ["item/completed"],
     component: FilesPanel,
+  },
+  {
+    id: "board",
+    title: "Board",
+    requiredNotifications: ["task/status", "plan/updated"],
+    component: BoardPanel,
   },
 ];
 
