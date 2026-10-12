@@ -126,6 +126,9 @@
   `evidence`/编排 store 只读函数；`evals/tasks/tasks.json` 三柱扩充 12→17。
 - 护栏：`tests/unit/test_orchestration_acceptance.py`、`tests/integration/test_evidence_report.py`、
   `tests/integration/test_evals_grading.py`、schedule task 目标与 driver 派发。
+- **桌面壳 Python 侧地基**（ADR-0006/0024，M5-desktop 前置）：`serve/stdio.py::serve_stdio`
+  完整 sidecar 宿主（入站走 dispatcher、run 通知经 Fanout 泵到同一 stdout、与 WS 同一方法表）+
+  `questor serve stdio` 启动器（管道连 stdin/stdout、日志走 stderr）；Rust/Tauri 原生壳待续。
 
 ### Changed
 - `docs/architecture/data-model.md` → v1.4（验收态枚举强制 + evidence 生产写入点 + claim→Evidence 可追溯）；

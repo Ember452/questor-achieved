@@ -28,6 +28,7 @@ from questor.serve.dispatch import HandlerCtx
 from questor.serve.envelope import encode_line
 from questor.serve.http import assert_localhost_only, create_app, run_server
 from questor.serve.notifications import notification_of
+from questor.serve.stdio import serve_stdio, write_line
 from questor.version import build_commit, questor_version
 
 __all__ = ["main", "model_spec_from_config"]
@@ -110,6 +111,10 @@ def _parser() -> argparse.ArgumentParser:
     http_run.add_argument("--port", type=int, default=8765)
     http_run.add_argument("--cwd", default=".", help="工作目录（新建会话的默认根）")
     http_run.add_argument("--ui-dist", default=None, help="前端构建产物目录（缺省自动探 ui/dist）")
+    stdio_run = serve_sub.add_parser(
+        "stdio", help="本机 stdio NDJSON sidecar 宿主（桌面壳拉起，与 WS 同一方法表）"
+    )
+    stdio_run.add_argument("--cwd", default=".", help="工作目录（新建会话的默认根）")
 
     # M4 编排：薄命令，一切经 serve（AGENTS 纪律：CLI 不得有第二套装配路径）
     task = sub.add_parser("task", help="任务看板（经 serve）")
@@ -139,6 +144,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "session":
             return asyncio.run(_cmd_session_list())
         if args.command == "serve":
+            if getattr(args, "serve_command", None) == "stdio":
+                return _cmd_serve_stdio(args)
             return _cmd_serve_http(args)
         if args.command == "task":
             return asyncio.run(_cmd_task(args))
@@ -286,4 +293,37 @@ def _cmd_serve_http(args: argparse.Namespace) -> int:
         run_server(app, host=args.host, port=args.port)
     finally:
         asyncio.run(model.aclose())  # B-83：服务退出时收口 HTTP 客户端
+    return 0
+
+
+def _cmd_serve_stdio(args: argparse.Namespace) -> int:
+    """启动本机 stdio NDJSON sidecar 宿主（桌面壳拉起，ADR-0006/0024）。
+
+    sidecar 以管道方式连本进程的 stdin/stdout：stdin 接 `connect_read_pipe`，stdout 只写
+    协议帧（日志走 stderr，B-87）。方法表与 `serve http` 同源（都经 AppServer.build_dispatcher），
+    不为桌面开私有端点。需一个可用 `[model]` 配置（与 exec/http 同入口）才能跑 run。
+    """
+    snapshot = load_config(project_root=Path(args.cwd).expanduser().resolve())
+    spec = model_spec_from_config(snapshot.data)
+    model = create_model(spec)
+    cwd = str(Path(args.cwd).expanduser().resolve())
+
+    def _factory(thread_id: str, mode: PermissionMode):  # noqa: ANN001 - Engine 类型已知但循环依赖
+        return build_engine(model=model, cwd=cwd, mode=mode, thread_id=thread_id)
+
+    server = AppServer(
+        create_engine=_factory, default_workspace_id=ensure_workspace_for_root(Path(cwd))
+    )
+
+    async def _drive() -> None:
+        reader = asyncio.StreamReader()
+        protocol = asyncio.StreamReaderProtocol(reader)
+        # sidecar 以管道连 stdin；控制台直连不支持（非本机拉起场景）。
+        await asyncio.get_running_loop().connect_read_pipe(lambda: protocol, sys.stdin.buffer)
+        await serve_stdio(server, reader=reader, write=write_line(sys.stdout))
+
+    try:
+        asyncio.run(_drive())
+    finally:
+        asyncio.run(model.aclose())  # B-83：退出时收口 HTTP 客户端
     return 0

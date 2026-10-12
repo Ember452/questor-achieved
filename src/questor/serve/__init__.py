@@ -23,7 +23,7 @@ from questor.serve.envelope import (
     response_line,
 )
 from questor.serve.notifications import PROTOCOL_NOTIFICATIONS, notification_of
-from questor.serve.stdio import run_stdio, write_line
+from questor.serve.stdio import run_stdio, serve_stdio, write_line
 
 __all__ = [
     "MAX_LINE_BYTES",
@@ -42,5 +42,6 @@ __all__ = [
     "parse_line",
     "response_line",
     "run_stdio",
+    "serve_stdio",
     "write_line",
 ]
