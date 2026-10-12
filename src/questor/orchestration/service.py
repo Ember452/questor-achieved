@@ -7,16 +7,24 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable, Sequence
 
+from questor.evidence import evidence_card, verdict_counts, verify_claims
 from questor.orchestration import store, tasks
 from questor.orchestration.gate import evaluate
 from questor.orchestration.plan import finalize_plan, propose_plan, revise_plan
+from questor.orchestration.transitions import InvalidTaskTransition
+from questor.schemas.model import AcceptanceStatus
 from questor.schemas.orchestration import (
+    ClaimedCheck,
+    EvidenceSubjectType,
+    EvidenceVerdict,
     OrchestrationGateError,
     Plan,
     PlanStatus,
     Task,
+    TaskStatus,
 )
 
 __all__ = ["OrchestrationService"]
@@ -33,6 +41,16 @@ class OrchestrationService:
     ) -> None:
         self._authorizer: Callable[[str], bool] = authorizer or (lambda _task_id: False)
         self._thread_id = thread_id
+        #: 宿主事件循环发布器（serve 在起轮前经 `bind_publisher` 注入）；未接则不广报
+        #: （诚实：stdio/CLI 无 fanout 时 report 仍落盘与驱动验收态，只是不实时推送）。
+        self._publisher: Callable[[str, dict], None] | None = None
+
+    def bind_publisher(self, publisher: Callable[[str, dict], None]) -> None:
+        """宿主接上通知出口（形态同 `Engine.attach_inbox`，不改 `create_engine` 契约）。
+
+        publisher 在 report 的工作线程里被调；**跳回事件循环的线程安全由 publisher 负责**。
+        """
+        self._publisher = publisher
 
     # ---- OrchestrationPort ----
 
@@ -105,6 +123,59 @@ class OrchestrationService:
                 "先定稿计划（plan 工具 finalize=true）再 sync",
             )
         return tasks.sync_subtasks_from_plan(plan_id)
+
+    def report_task(self, task_id: str, checks: Sequence[ClaimedCheck]) -> Task:
+        """上报声称并核对（M5，ADR-0029）：落 `Evidence` + 驱动验收态 + 进待审。
+
+        只读消费该任务线程的录得结果逐条核对；无记录/绑错 `tool_use_id` 一律
+        `unverified`。全 `verified` 才进 `verified`，否则 `regressed`（"没有复跑也不轻信"）。
+        任务不在执行中（验收态未到 `executing`）以模型可读的结构化方言拒绝。
+        """
+        try:
+            task = tasks.get_task(task_id)
+        except store.TaskNotFound as exc:
+            raise OrchestrationGateError(
+                "invalid_params", f"任务 {task_id} 不存在", "先建任务再上报"
+            ) from exc
+        if task.acceptance.status is not AcceptanceStatus.EXECUTING:
+            raise OrchestrationGateError(
+                "invalid_acceptance_state",
+                f"任务 {task_id} 验收态为 {task.acceptance.status.value}，report 需在执行中",
+                "先经用户授权开始执行（task/start authorized=true），再上报声称",
+            )
+        items = verify_claims(
+            task.thread_id or "",
+            checks,
+            subject_type=EvidenceSubjectType.TASK,
+            subject_id=task_id,
+        )
+        ev_ids: list[str] = []
+        for ev in items:
+            store.add_evidence(ev)
+            ev_ids.append(ev.id)
+        store.transition_acceptance(task_id, AcceptanceStatus.REPORTED, evidence_ids=tuple(ev_ids))
+        all_ok = bool(items) and all(ev.verdict is EvidenceVerdict.VERIFIED for ev in items)
+        final = AcceptanceStatus.VERIFIED if all_ok else AcceptanceStatus.REGRESSED
+        moved = store.transition_acceptance(task_id, final)
+        # 任务态：executing → reviewed（进看板待验收列）；已不在 executing 则幂等跳过
+        with contextlib.suppress(InvalidTaskTransition):
+            moved = store.transition_task(task_id, TaskStatus.REVIEWED)
+        if self._publisher is not None:
+            cards = [evidence_card(ev).model_dump(mode="json") for ev in items]
+            self._publisher(
+                "evidence/reported",
+                {
+                    "task_id": task_id,
+                    "acceptance_status": moved.acceptance.status.value,
+                    "verdicts": verdict_counts(items),
+                    "evidence": cards,
+                },
+            )
+            self._publisher(
+                "task/status",
+                {"task_id": moved.id, "status": moved.status.value, "title": moved.title},
+            )
+        return moved
 
     # ---- 内部 ----
 

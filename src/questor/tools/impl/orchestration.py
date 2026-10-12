@@ -13,7 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from questor.prompts import raw as prompt_raw
-from questor.schemas.orchestration import OrchestrationGateError
+from questor.schemas.orchestration import ClaimedCheck, OrchestrationGateError
 from questor.tools.base import Tool, ToolContext, ToolResult
 from questor.tools.ports import OrchestrationPort
 
@@ -75,13 +75,14 @@ class PlanTool(Tool):
 
 
 class TaskParams(BaseModel):
-    """建任务、同步子任务或开始执行（其余状态由用户经 serve 推进）。"""
+    """建任务、同步子任务、开始执行或上报声称（其余状态由用户经 serve 推进）。"""
 
-    action: Literal["create", "sync", "start"] = "create"
+    action: Literal["create", "sync", "start", "report"] = "create"
     title: str | None = None
     task_id: str | None = None
     depends_on: list[str] = Field(default_factory=list)
     plan_id: str | None = None
+    checks: list[ClaimedCheck] = Field(default_factory=list)
 
 
 class TaskTool(Tool):
@@ -116,6 +117,25 @@ class TaskTool(Tool):
                         + "\n".join(f"  - {t.id} [{t.status.value}] {t.title}" for t in derived)
                     ),
                     data={"task_ids": [t.id for t in derived]},
+                )
+            if params.action == "report":
+                if not params.task_id:
+                    return ToolResult(output="task report 需要 task_id", is_error=True)
+                if not params.checks:
+                    return ToolResult(
+                        output="task report 需要至少一条声称（claimed + 证明它的 tool_use_id）",
+                        is_error=True,
+                    )
+                reported = await asyncio.to_thread(port.report_task, params.task_id, params.checks)
+                return ToolResult(
+                    output=(
+                        f"task {reported.id} 验收态：{reported.acceptance.status.value}"
+                        "（全部声称与当时录得输出已核对；unverified/mismatch 即 regressed）"
+                    ),
+                    data={
+                        "task_id": reported.id,
+                        "acceptance_status": reported.acceptance.status.value,
+                    },
                 )
             if params.action == "create":
                 if not params.title:

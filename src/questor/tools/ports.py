@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
-from questor.schemas.orchestration import Plan, Task
+from questor.schemas.orchestration import ClaimedCheck, Plan, Task
 
 __all__ = ["OrchestrationPort"]
 
@@ -58,5 +58,14 @@ class OrchestrationPort(Protocol):
 
         无落库计划抛 :class:`OrchestrationGateError`（`need_plan_first`）；
         未定稿抛同方言（模型可读可重试），已同步的步骤不重复派生。
+        """
+        ...
+
+    def report_task(self, task_id: str, checks: Sequence[ClaimedCheck]) -> Task:
+        """上报声称并核对（M5，ADR-0029）。
+
+        逐条把 `checks`（声称 + `tool_use_id`）与当时录得的工具输出并排核对，落
+        `Evidence` 并驱动验收态 `executing → reported → verified | regressed`。任务不在执行
+        中（验收态未到 `executing`）时抛 :class:`OrchestrationGateError`（模型可读）。
         """
         ...
