@@ -21,6 +21,7 @@ from pydantic import BaseModel
 if TYPE_CHECKING:
     from questor.tools.filestate import FileStateCache
     from questor.tools.impl.todo import TodoStore
+    from questor.tools.ports import OrchestrationPort
     from questor.tools.processmgr import ProcessManager
 
 ToolKind = Literal["file", "shell", "process", "meta"]
@@ -60,6 +61,10 @@ class ToolContext:
     processes: ProcessManager
     todos: TodoStore
     workspace_id: str | None = None
+    #: 会话 id（编排工具把计划/任务挂到当前线程；cli 无会话时为 None）
+    thread_id: str | None = None
+    #: 编排端口（R1：port 定义在 tools、实现在 orchestration、由装配点注入；None = 不可用）
+    orchestration: OrchestrationPort | None = None
 
 
 class Tool(ABC):
