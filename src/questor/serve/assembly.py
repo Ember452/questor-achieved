@@ -16,12 +16,14 @@ from questor.engine import Engine
 from questor.engine.events import AgentEvent
 from questor.engine.loop import TurnRequest
 from questor.engine.model import ModelPort
+from questor.orchestration import OrchestrationService
 from questor.prompts import system_assembly
 from questor.schemas.model import PermissionMode
 from questor.tools.base import ToolContext
 from questor.tools.filestate import FileStateCache
 from questor.tools.impl.registry_default import build_default_registry
 from questor.tools.impl.todo import TodoStore
+from questor.tools.ports import OrchestrationPort
 from questor.tools.processmgr import ProcessManager
 from questor.workspaces import register as register_workspace
 
@@ -57,15 +59,21 @@ def build_engine(
     environment: str | None = None,
     replacements: ReplacementState | None = None,
     workspace_id: str | None = None,
+    thread_id: str | None = None,
+    orchestration: OrchestrationPort | None = None,
 ) -> Engine:
     """一个线程一个 Engine：工具环境、system 装配与替换状态都在这里一次接好。
 
     `workspace_id` 缺省时会调 `ensure_workspace_for_root`（单点归一化），写工具的
     bump_revision 就有地方可落（B-92）；测试与无工作区场景可以传 None，
     工具会只落 diff 不 bump。
+
+    编排端口（D4）：缺省建一个 `OrchestrationService` 注入 ToolContext，使 `plan`/`task`
+    工具可用；`thread_id` 供编排工具把计划/任务挂到当前会话。
     """
     workdir = Path(cwd).expanduser().resolve()
     ws_id = workspace_id if workspace_id is not None else register_workspace(workdir).id
+    orch = orchestration if orchestration is not None else OrchestrationService(thread_id=thread_id)
     return Engine(
         model=model,
         registry=build_default_registry(),
@@ -75,6 +83,8 @@ def build_engine(
             file_state=FileStateCache(),
             processes=ProcessManager(),
             todos=TodoStore(),
+            thread_id=thread_id,
+            orchestration=orch,
         ),
         mode=mode,
         roots=[str(root) for root in (roots or [str(workdir)])],

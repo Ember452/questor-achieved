@@ -23,6 +23,7 @@ from typing import Any
 from questor.capability import FeatureFlags
 from questor.engine import Engine
 from questor.engine.loop import TurnRequest
+from questor.evidence import for_subject as evidence_for_subject
 from questor.gesta import (
     ThreadNotFound,
     ThreadStoreError,
@@ -35,16 +36,43 @@ from questor.gesta import (
 )
 from questor.gesta.writer import ThreadWriter
 from questor.habena import ControlError, HabenaInbox, SessionControl
+from questor.orchestration import (
+    board as orch_board,
+)
+from questor.orchestration import (
+    gate as orch_gate,
+)
+from questor.orchestration import (
+    goal as orch_goal,
+)
+from questor.orchestration import (
+    plan as orch_plan,
+)
+from questor.orchestration import (
+    store as orch_store,
+)
+from questor.orchestration import (
+    tasks as orch_tasks,
+)
+from questor.orchestration.transitions import InvalidTaskTransition
 from questor.review import aggregate_turn_diff
 from questor.schemas.habena import SteerMessage
 from questor.schemas.model import PermissionMode, Thread, utc_timestamp_now
+from questor.schemas.orchestration import (
+    EvidenceSubjectType,
+    Goal,
+    Task,
+    TaskStatus,
+)
+from questor.schemas.vigilia import ScheduleTrigger
 from questor.serve.dispatch import Dispatcher, Handler, HandlerCtx
 from questor.serve.envelope import Notification, ProtocolError
 from questor.serve.fanout import Fanout
-from questor.serve.notifications import notification_of
+from questor.serve.notifications import PROTOCOL_NOTIFICATIONS, notification_of
 from questor.sessiontrace import project_thread, project_turn
 from questor.state.paths import thread_path
 from questor.version import build_commit, questor_version
+from questor.vigilia import store as vigilia_store
 from questor.workspaces import (
     WorkspaceError,
     current_revision,
@@ -70,6 +98,11 @@ def _local_principal() -> str:
     """本机归属的默认表示。拿不到主机名时写 `local-user`，**不拿用户名当凭据**：
     本期它只是传递与回显用的标识，不是鉴权根据（ADR-0020）。"""
     return platform.node() or "local-user"
+
+
+def _opt_str(value: Any) -> str | None:
+    """可选字符串参数：非空字符串取其值，否则 None（不猜、不把空串当有效 id）。"""
+    return str(value) if isinstance(value, str) and value else None
 
 
 @dataclass
@@ -136,6 +169,26 @@ class AppServer:
             "workspace/status",
             "workspace/revision",
             "sessiontrace/get",
+            # M4 编排与长跑（ADR-0025/0026/0027）
+            "task/create",
+            "task/list",
+            "task/show",
+            "task/plan",
+            "task/start",
+            "task/pause",
+            "task/resume",
+            "task/reject",
+            "task/retry",
+            "task/complete",
+            "goal/create",
+            "goal/list",
+            "goal/show",
+            "goal/start",
+            "goal/stop",
+            "schedule/list",
+            "schedule/enable",
+            "schedule/disable",
+            "evidence/get",
         )
 
     def _handler(self, method: str) -> Handler:
@@ -161,6 +214,25 @@ class AppServer:
             "workspace/status": self.workspace_status,
             "workspace/revision": self.workspace_revision,
             "sessiontrace/get": self.sessiontrace_get,
+            "task/create": self.task_create,
+            "task/list": self.task_list,
+            "task/show": self.task_show,
+            "task/plan": self.task_plan,
+            "task/start": self.task_start,
+            "task/pause": self.task_pause,
+            "task/resume": self.task_resume,
+            "task/reject": self.task_reject,
+            "task/retry": self.task_retry,
+            "task/complete": self.task_complete,
+            "goal/create": self.goal_create,
+            "goal/list": self.goal_list,
+            "goal/show": self.goal_show,
+            "goal/start": self.goal_start,
+            "goal/stop": self.goal_stop,
+            "schedule/list": self.schedule_list,
+            "schedule/enable": self.schedule_enable,
+            "schedule/disable": self.schedule_disable,
+            "evidence/get": self.evidence_get,
         }
         return handlers[method]
 
@@ -185,14 +257,8 @@ class AppServer:
             "feature_flags": list(self.feature_flags.enabled_names()),
             "max_concurrency": self.max_concurrency,
             "methods": list(self._methods()),
-            "notification_families": [
-                "delta",
-                "item/started",
-                "item/completed",
-                "turn/usage",
-                "run/status",
-                "notice/compact",
-            ],
+            # 通知族从注册表取（单一真相）：硬编码副本会与 schema/协议漂移
+            "notification_families": sorted(PROTOCOL_NOTIFICATIONS),
             "client_capabilities": capabilities if isinstance(capabilities, dict) else {},
         }
 
@@ -613,6 +679,320 @@ class AppServer:
                 raise ProtocolError("invalid_params", f"未知 turn: {turn_id}")
             return {"trace": trace.model_dump(mode="json")}
         return {"turns": [t.model_dump(mode="json") for t in project_thread(view)]}
+
+    # ---- 编排与长跑（M4；ADR-0025/0026/0027）----
+    #
+    # 方法族是编排域数据的跨进程出口：只做参数校验、编排门裁决与通知扇出，
+    # 存储与状态机一律经 orchestration 的单点（store.transition_task 等），
+    # 阻塞式存储调用一律 asyncio.to_thread（AGENTS §四 事件循环禁止阻塞）。
+
+    def _gate_or_deny(self, action: str, *, has_plan: bool, authorized: bool = False) -> None:
+        """编排门裁决；拒绝即以结构化方言抛 ProtocolError（B-43）。"""
+        result = orch_gate.evaluate(action, has_plan=has_plan, authorized=authorized)
+        if not result.allowed:
+            raise ProtocolError(
+                result.error_code or "invalid_params",
+                result.message,
+                model_next_action=result.hint,
+            )
+
+    def _publish_task(self, task: Task) -> None:
+        self._publish(
+            Notification(
+                "task/status",
+                {
+                    "task_id": task.id,
+                    "status": task.status.value,
+                    "title": task.title,
+                },
+            )
+        )
+
+    async def task_create(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        title = str(params.get("title", ""))
+        if not title:
+            raise ValueError("task/create 需要 title")
+        plan_id = _opt_str(params.get("plan_id"))
+        has_plan = await asyncio.to_thread(_has_plan, plan_id)
+        self._gate_or_deny("create_task", has_plan=has_plan)
+        revision = await asyncio.to_thread(_requirement_revision, plan_id)
+        try:
+            task = await asyncio.to_thread(
+                orch_tasks.create_task,
+                title=title,
+                thread_id=_opt_str(params.get("thread_id")),
+                goal_id=_opt_str(params.get("goal_id")),
+                plan_id=plan_id,
+                parent_task_id=_opt_str(params.get("parent_task_id")),
+                depends_on=[str(d) for d in params.get("depends_on") or []],
+                requirement_revision=revision,
+            )
+        except orch_store.OrchestrationStoreError as exc:
+            raise ProtocolError("invalid_params", str(exc)) from exc
+        self._publish_task(task)
+        return {"task": task.model_dump(mode="json")}
+
+    async def task_list(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        view = await asyncio.to_thread(orch_store.load_view)
+        tasks = view.tasks
+        thread_id = _opt_str(params.get("thread_id"))
+        goal_id = _opt_str(params.get("goal_id"))
+        if thread_id is not None:
+            tasks = tuple(t for t in tasks if t.thread_id == thread_id)
+        if goal_id is not None:
+            tasks = tuple(t for t in tasks if t.goal_id == goal_id)
+        board = orch_board.build_board(tasks)
+        return {"tasks": [t.model_dump(mode="json") for t in board.tasks]}
+
+    async def task_show(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        task_id = str(params.get("task_id", ""))
+        if not task_id:
+            raise ValueError("task/show 需要 task_id")
+        try:
+            task = await asyncio.to_thread(orch_tasks.get_task, task_id)
+        except orch_store.TaskNotFound as exc:
+            raise ProtocolError("invalid_params", str(exc)) from exc
+        view = await asyncio.to_thread(orch_store.load_view)
+        plan = next((p for p in view.plans if p.id == task.plan_id), None)
+        evidence = evidence_for_subject(view.evidence, subject_type="task", subject_id=task.id)
+        return {
+            "task": task.model_dump(mode="json"),
+            "plan": plan.model_dump(mode="json") if plan is not None else None,
+            "evidence": [e.model_dump(mode="json") for e in evidence],
+        }
+
+    async def task_plan(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        raw_steps = params.get("steps")
+        if not isinstance(raw_steps, list) or not raw_steps:
+            raise ValueError("task/plan 需要非空的 steps")
+        steps = [str(s.get("title") if isinstance(s, dict) else s) for s in raw_steps]
+        plan_id = _opt_str(params.get("plan_id"))
+        finalize = bool(params.get("finalize", False))
+        try:
+            if plan_id is not None:
+                plan = await asyncio.to_thread(orch_plan.revise_plan, plan_id, steps=steps)
+            else:
+                plan = await asyncio.to_thread(
+                    orch_plan.propose_plan,
+                    steps=steps,
+                    thread_id=_opt_str(params.get("thread_id")),
+                    goal_id=_opt_str(params.get("goal_id")),
+                )
+            if finalize:
+                plan = await asyncio.to_thread(orch_plan.finalize_plan, plan.id)
+        except orch_store.OrchestrationStoreError as exc:
+            raise ProtocolError("invalid_params", str(exc)) from exc
+        self._publish(
+            Notification(
+                "plan/updated",
+                {
+                    "plan_id": plan.id,
+                    "requirement_revision": plan.requirement_revision,
+                    "status": plan.status.value,
+                },
+            )
+        )
+        return {"plan": plan.model_dump(mode="json")}
+
+    async def _task_transition(
+        self, params: dict[str, Any], target: TaskStatus, method: str
+    ) -> dict[str, Any]:
+        task_id = str(params.get("task_id", ""))
+        if not task_id:
+            raise ValueError(f"{method} 需要 task_id")
+        try:
+            task = await asyncio.to_thread(orch_store.transition_task, task_id, target)
+        except (orch_store.TaskNotFound, InvalidTaskTransition) as exc:
+            raise ProtocolError("invalid_params", str(exc)) from exc
+        self._publish_task(task)
+        return {"task": task.model_dump(mode="json")}
+
+    async def task_start(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        self._gate_or_deny(
+            "start_execution", has_plan=True, authorized=bool(params.get("authorized", False))
+        )
+        return await self._task_transition(params, TaskStatus.EXECUTING, "task/start")
+
+    async def task_pause(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        return await self._task_transition(params, TaskStatus.PAUSED, "task/pause")
+
+    async def task_resume(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        return await self._task_transition(params, TaskStatus.EXECUTING, "task/resume")
+
+    async def task_reject(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        """打回重做（reviewed → executing）——M4 出口链一环。"""
+        del ctx
+        return await self._task_transition(params, TaskStatus.EXECUTING, "task/reject")
+
+    async def task_retry(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        return await self._task_transition(params, TaskStatus.EXECUTING, "task/retry")
+
+    async def task_complete(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        return await self._task_transition(params, TaskStatus.COMPLETED, "task/complete")
+
+    def _publish_goal(self, goal: Goal) -> None:
+        self._publish(
+            Notification(
+                "goal/status",
+                {
+                    "goal_id": goal.id,
+                    "status": goal.status.value,
+                    "round_count": goal.round_count,
+                },
+            )
+        )
+
+    async def goal_create(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        thread_id = str(params.get("thread_id", ""))
+        objective = str(params.get("objective", ""))
+        if not thread_id or not objective:
+            raise ValueError("goal/create 需要 thread_id 与 objective")
+        raw_max = params.get("max_rounds")
+        goal = await asyncio.to_thread(
+            orch_goal.create_goal,
+            thread_id=thread_id,
+            objective=objective,
+            max_rounds=int(raw_max) if raw_max is not None else None,
+            deadline=_opt_str(params.get("deadline")),
+        )
+        return {"goal": goal.model_dump(mode="json")}
+
+    async def goal_list(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        view = await asyncio.to_thread(orch_store.load_view)
+        goals = view.goals
+        thread_id = _opt_str(params.get("thread_id"))
+        if thread_id is not None:
+            goals = tuple(g for g in goals if g.thread_id == thread_id)
+        return {"goals": [g.model_dump(mode="json") for g in goals]}
+
+    async def goal_show(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        goal_id = str(params.get("goal_id", ""))
+        if not goal_id:
+            raise ValueError("goal/show 需要 goal_id")
+        try:
+            goal = await asyncio.to_thread(orch_goal.get_goal, goal_id)
+        except orch_store.OrchestrationStoreError as exc:
+            raise ProtocolError("invalid_params", str(exc)) from exc
+        view = await asyncio.to_thread(orch_store.load_view)
+        tasks = tuple(t for t in view.tasks if t.goal_id == goal_id)
+        return {
+            "goal": goal.model_dump(mode="json"),
+            "tasks": [t.model_dump(mode="json") for t in tasks],
+        }
+
+    async def goal_start(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        return await self._goal_transition(params, "start", "goal/start")
+
+    async def goal_stop(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        return await self._goal_transition(params, "stop", "goal/stop")
+
+    async def _goal_transition(
+        self, params: dict[str, Any], action: str, method: str
+    ) -> dict[str, Any]:
+        goal_id = str(params.get("goal_id", ""))
+        if not goal_id:
+            raise ValueError(f"{method} 需要 goal_id")
+        move = orch_goal.start_goal if action == "start" else orch_goal.stop_goal
+        try:
+            goal = await asyncio.to_thread(move, goal_id)
+        except orch_store.OrchestrationStoreError as exc:
+            raise ProtocolError("invalid_params", str(exc)) from exc
+        self._publish_goal(goal)
+        return {"goal": goal.model_dump(mode="json")}
+
+    async def schedule_list(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del params, ctx
+        view = await asyncio.to_thread(vigilia_store.load_view)
+        return {"schedules": [_schedule_dump(t) for t in view.triggers]}
+
+    async def schedule_enable(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        return await self._set_schedule_enabled(params, True, "schedule/enable")
+
+    async def schedule_disable(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        return await self._set_schedule_enabled(params, False, "schedule/disable")
+
+    async def _set_schedule_enabled(
+        self, params: dict[str, Any], enabled: bool, method: str
+    ) -> dict[str, Any]:
+        schedule_id = str(params.get("schedule_id", ""))
+        if not schedule_id:
+            raise ValueError(f"{method} 需要 schedule_id")
+        try:
+            trigger = await asyncio.to_thread(vigilia_store.get_trigger, schedule_id)
+            updated = await asyncio.to_thread(
+                vigilia_store.update_trigger,
+                trigger.model_copy(update={"enabled": enabled}),
+            )
+        except vigilia_store.VigiliaStoreError as exc:
+            raise ProtocolError("invalid_params", str(exc)) from exc
+        self._publish(
+            Notification(
+                "notice/schedule",
+                {
+                    "schedule_id": updated.id,
+                    "kind": updated.trigger_kind.value,
+                    "outcome": "disabled" if not enabled else "skipped",
+                },
+            )
+        )
+        return {"schedule": _schedule_dump(updated)}
+
+    async def evidence_get(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
+        del ctx
+        subject_type = str(params.get("subject_type", ""))
+        subject_id = str(params.get("subject_id", ""))
+        if subject_type not in {t.value for t in EvidenceSubjectType} or not subject_id:
+            raise ValueError("evidence/get 需要 subject_type ∈ {run,task,turn} 与 subject_id")
+        view = await asyncio.to_thread(orch_store.load_view)
+        items = evidence_for_subject(
+            view.evidence, subject_type=subject_type, subject_id=subject_id
+        )
+        return {"evidence": [e.model_dump(mode="json") for e in items]}
+
+
+def _has_plan(plan_id: str | None) -> bool:
+    """是否已有落库计划（编排门的输入）：给了 plan_id 就查它，否则"有任意计划即可"。"""
+    view = orch_store.load_view()
+    if plan_id is not None:
+        return any(p.id == plan_id for p in view.plans)
+    return bool(view.plans)
+
+
+def _requirement_revision(plan_id: str | None) -> int:
+    if plan_id is None:
+        return 1
+    view = orch_store.load_view()
+    return next((p.requirement_revision for p in view.plans if p.id == plan_id), 1)
+
+
+def _schedule_dump(trigger: ScheduleTrigger) -> dict[str, Any]:
+    """触发器 → ScheduleDTO 形状（与 app_server schema 的 ScheduleDTO 对齐）。"""
+    return {
+        "id": trigger.id,
+        "trigger_kind": trigger.trigger_kind.value,
+        "enabled": trigger.enabled,
+        "once_fired": trigger.once_fired,
+        "interval_seconds": trigger.interval_seconds,
+        "cron": trigger.cron,
+        "next_fire_at": trigger.next_fire_at,
+        "created_at": trigger.created_at,
+    }
 
 
 def build_dispatcher(
