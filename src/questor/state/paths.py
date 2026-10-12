@@ -46,6 +46,26 @@ def index_dir() -> pathlib.Path:
     return questor_home() / "index"
 
 
+def orchestration_dir() -> pathlib.Path:
+    """编排域存储目录（独立 append-only store，data-model §5 / ADR-0025）。"""
+    return questor_home() / "orchestration"
+
+
+def orchestration_log_path() -> pathlib.Path:
+    """编排实体 append-only JSONL 唯一真相源（Task/Plan/Goal/Evidence 记录）。"""
+    return orchestration_dir() / "tasks.jsonl"
+
+
+def vigilia_dir() -> pathlib.Path:
+    """值守调度存储目录（vigilia，ADR-0026）。"""
+    return questor_home() / "vigilia"
+
+
+def vigilia_log_path() -> pathlib.Path:
+    """值守触发器与检查点的 append-only JSONL（vigilia，ADR-0026）。"""
+    return vigilia_dir() / "schedules.jsonl"
+
+
 def files_dir() -> pathlib.Path:
     """工作文件目录（粘贴长文本/图片），带过期，清理与历史快照分离（data-model §5）。"""
     return questor_home() / "files"

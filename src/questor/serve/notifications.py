@@ -31,6 +31,13 @@ PROTOCOL_NOTIFICATIONS = frozenset(
         "turn/steered",
         "run/status",
         "notice/compact",
+        # M4 编排与长跑（ADR-0025/0026/0027）：由 serve handler 直接 publish，
+        # 不经引擎事件映射（编排水位在 serve/orchestration，不在 engine 事件流）。
+        "task/status",
+        "plan/updated",
+        "goal/status",
+        "evidence/reported",
+        "notice/schedule",
     }
 )
 

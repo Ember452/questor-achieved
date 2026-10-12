@@ -27,13 +27,47 @@ export type PermissionMode = "read_only" | "standard" | "unconfined";
  */
 export type RunStatus = "queued" | "running" | "steered" | "waiting" | "completed" | "failed" | "cancelled";
 /**
+ * 与 model/v1.json#/$defs/AcceptanceStatus 保持一致（data-model §3.2）
+ *
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "AcceptanceStatus".
+ */
+export type AcceptanceStatus = "proposed" | "accepted_by_user" | "executing" | "reported" | "verified" | "regressed";
+/**
  * This interface was referenced by `QuestorAppServer`'s JSON-Schema
  * via the `definition` "ProtocolVersion".
  */
 export type ProtocolVersion = "qst-app-server/v0.1";
+/**
+ * 编排任务状态机（data-model §3.3，ADR-0025）
+ *
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskStatus".
+ */
+export type TaskStatus =
+  | "inbox"
+  | "pending"
+  | "planning"
+  | "planned"
+  | "executing"
+  | "paused"
+  | "reviewed"
+  | "completed"
+  | "failed"
+  | "cancelled";
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "GoalStatus".
+ */
+export type GoalStatus = "idle" | "running" | "paused" | "completed" | "failed" | "cancelled";
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "EvidenceVerdict".
+ */
+export type EvidenceVerdict = "verified" | "mismatch" | "unverified";
 
 /**
- * qst-app-server/v0.1 跨进程信封与方法契约（真相源：docs/architecture/protocol.md v1.0）。错误码是字符串；能力 opt-in。$defs 里每个方法/通知族都有 Params/Result/Notification 形状，护栏 test_schemas_method_families 逐项对账；跨进程 DTO 与 model/v1.json 字段一致。
+ * qst-app-server/v0.1 跨进程信封与方法契约（真相源：docs/architecture/protocol.md v1.1）。错误码是字符串；能力 opt-in；版本号只标记破坏性变化（ADR-0028）。$defs 里每个方法/通知族都有 Params/Result/Notification 形状，护栏 test_schemas_method_families 逐项对账；跨进程 DTO 与 model/v1.json 字段一致。
  */
 export interface QuestorAppServer {
   [k: string]: unknown;
@@ -655,5 +689,457 @@ export interface NoticeCompactNotification {
     before_tokens?: number | null;
     after_tokens?: number | null;
     reason?: string | null;
+  };
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "PlanStepDTO".
+ */
+export interface PlanStepDTO {
+  id: Id;
+  title: string;
+  status: "pending" | "in_progress" | "done";
+  task_id?: string | null;
+}
+/**
+ * 可修订计划（data-model v1.3 Plan，ADR-0025）
+ *
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "PlanDTO".
+ */
+export interface PlanDTO {
+  id: Id;
+  thread_id?: string | null;
+  goal_id?: string | null;
+  requirement_revision: number;
+  status: "drafting" | "proposed" | "finalized" | "superseded";
+  steps: PlanStepDTO[];
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskAcceptanceDTO".
+ */
+export interface TaskAcceptanceDTO {
+  status: AcceptanceStatus;
+  requirement_revision: number;
+  evidence_ids: Id[];
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskDTO".
+ */
+export interface TaskDTO {
+  id: Id;
+  thread_id?: string | null;
+  goal_id?: string | null;
+  plan_id?: string | null;
+  title: string;
+  status: TaskStatus;
+  parent_task_id?: string | null;
+  depends_on: Id[];
+  acceptance: TaskAcceptanceDTO;
+  run_id?: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "GoalDTO".
+ */
+export interface GoalDTO {
+  id: Id;
+  thread_id: Id;
+  objective: string;
+  status: GoalStatus;
+  max_rounds?: number | null;
+  round_count: number;
+  deadline?: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+/**
+ * 声称的检查 vs 当时录得的真实输出（ADR-0027）
+ *
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "EvidenceDTO".
+ */
+export interface EvidenceDTO {
+  id: Id;
+  subject_type: "run" | "task" | "turn";
+  subject_id: Id;
+  claimed: string;
+  recorded_output_ref: string;
+  verdict: EvidenceVerdict;
+  created_at: Timestamp;
+}
+/**
+ * 值守触发器（vigilia，ADR-0026）：声明式数据
+ *
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "ScheduleDTO".
+ */
+export interface ScheduleDTO {
+  id: Id;
+  trigger_kind: "once" | "interval" | "cron";
+  enabled: boolean;
+  once_fired: boolean;
+  interval_seconds?: number | null;
+  cron?: string | null;
+  next_fire_at?: string | null;
+  created_at: Timestamp;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskCreateParams".
+ */
+export interface TaskCreateParams {
+  title: string;
+  thread_id?: Id;
+  goal_id?: Id;
+  plan_id?: Id;
+  parent_task_id?: Id;
+  depends_on?: Id[];
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskCreateResult".
+ */
+export interface TaskCreateResult {
+  task: TaskDTO;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskListParams".
+ */
+export interface TaskListParams {
+  thread_id?: Id;
+  goal_id?: Id;
+  workspace_id?: Id;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskListResult".
+ */
+export interface TaskListResult {
+  tasks: TaskDTO[];
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskShowParams".
+ */
+export interface TaskShowParams {
+  task_id: Id;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskShowResult".
+ */
+export interface TaskShowResult {
+  task: TaskDTO;
+  plan?: PlanDTO | null;
+  evidence?: EvidenceDTO[];
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskPlanParams".
+ */
+export interface TaskPlanParams {
+  plan_id?: Id;
+  thread_id?: Id;
+  goal_id?: Id;
+  steps: {
+    id?: Id;
+    title: string;
+  }[];
+  finalize?: boolean;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskPlanResult".
+ */
+export interface TaskPlanResult {
+  plan: PlanDTO;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskStartParams".
+ */
+export interface TaskStartParams {
+  task_id: Id;
+  /**
+   * 用户「开始执行」授权；缺省 false → 编排门拒绝
+   */
+  authorized?: boolean;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskStartResult".
+ */
+export interface TaskStartResult {
+  task: TaskDTO;
+  run_id?: string | null;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskPauseParams".
+ */
+export interface TaskPauseParams {
+  task_id: Id;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskPauseResult".
+ */
+export interface TaskPauseResult {
+  task: TaskDTO;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskResumeParams".
+ */
+export interface TaskResumeParams {
+  task_id: Id;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskResumeResult".
+ */
+export interface TaskResumeResult {
+  task: TaskDTO;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskRejectParams".
+ */
+export interface TaskRejectParams {
+  task_id: Id;
+  reason?: string | null;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskRejectResult".
+ */
+export interface TaskRejectResult {
+  task: TaskDTO;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskRetryParams".
+ */
+export interface TaskRetryParams {
+  task_id: Id;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskRetryResult".
+ */
+export interface TaskRetryResult {
+  task: TaskDTO;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskCompleteParams".
+ */
+export interface TaskCompleteParams {
+  task_id: Id;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskCompleteResult".
+ */
+export interface TaskCompleteResult {
+  task: TaskDTO;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "GoalCreateParams".
+ */
+export interface GoalCreateParams {
+  thread_id: Id;
+  objective: string;
+  max_rounds?: number | null;
+  deadline?: string | null;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "GoalCreateResult".
+ */
+export interface GoalCreateResult {
+  goal: GoalDTO;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "GoalListParams".
+ */
+export interface GoalListParams {
+  thread_id?: Id;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "GoalListResult".
+ */
+export interface GoalListResult {
+  goals: GoalDTO[];
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "GoalShowParams".
+ */
+export interface GoalShowParams {
+  goal_id: Id;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "GoalShowResult".
+ */
+export interface GoalShowResult {
+  goal: GoalDTO;
+  tasks?: TaskDTO[];
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "GoalStartParams".
+ */
+export interface GoalStartParams {
+  goal_id: Id;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "GoalStartResult".
+ */
+export interface GoalStartResult {
+  goal: GoalDTO;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "GoalStopParams".
+ */
+export interface GoalStopParams {
+  goal_id: Id;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "GoalStopResult".
+ */
+export interface GoalStopResult {
+  goal: GoalDTO;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "ScheduleListParams".
+ */
+export interface ScheduleListParams {}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "ScheduleListResult".
+ */
+export interface ScheduleListResult {
+  schedules: ScheduleDTO[];
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "ScheduleEnableParams".
+ */
+export interface ScheduleEnableParams {
+  schedule_id: Id;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "ScheduleEnableResult".
+ */
+export interface ScheduleEnableResult {
+  schedule: ScheduleDTO;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "ScheduleDisableParams".
+ */
+export interface ScheduleDisableParams {
+  schedule_id: Id;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "ScheduleDisableResult".
+ */
+export interface ScheduleDisableResult {
+  schedule: ScheduleDTO;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "EvidenceGetParams".
+ */
+export interface EvidenceGetParams {
+  subject_type: "run" | "task" | "turn";
+  subject_id: Id;
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "EvidenceGetResult".
+ */
+export interface EvidenceGetResult {
+  evidence: EvidenceDTO[];
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "TaskStatusNotification".
+ */
+export interface TaskStatusNotification {
+  method: "task/status";
+  params: {
+    task_id: Id;
+    status: TaskStatus;
+    title?: string | null;
+  };
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "PlanUpdatedNotification".
+ */
+export interface PlanUpdatedNotification {
+  method: "plan/updated";
+  params: {
+    plan_id: Id;
+    requirement_revision: number;
+    status: "drafting" | "proposed" | "finalized" | "superseded";
+  };
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "GoalStatusNotification".
+ */
+export interface GoalStatusNotification {
+  method: "goal/status";
+  params: {
+    goal_id: Id;
+    status: GoalStatus;
+    round_count: number;
+  };
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "EvidenceReportedNotification".
+ */
+export interface EvidenceReportedNotification {
+  method: "evidence/reported";
+  params: {
+    evidence_id: Id;
+    subject_type: "run" | "task" | "turn";
+    subject_id: Id;
+    verdict: EvidenceVerdict;
+    recorded_output_ref: string;
+  };
+}
+/**
+ * This interface was referenced by `QuestorAppServer`'s JSON-Schema
+ * via the `definition` "NoticeScheduleNotification".
+ */
+export interface NoticeScheduleNotification {
+  method: "notice/schedule";
+  params: {
+    schedule_id: Id;
+    kind: "once" | "interval" | "cron";
+    outcome: "fired" | "skipped" | "disabled";
   };
 }

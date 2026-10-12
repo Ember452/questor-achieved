@@ -41,7 +41,7 @@ export type ItemKind = "message" | "tool_call" | "tool_result" | "citation" | "a
 export type Origin = "user" | "steer";
 
 /**
- * 核心数据契约实体（真相源：docs/architecture/data-model.md v1.1）。纯 JSON Schema，Python pydantic 只做绑定。
+ * 核心数据契约实体（真相源：docs/architecture/data-model.md v1.3）。纯 JSON Schema，Python pydantic 只做绑定。
  */
 export interface QuestorModel {
   [k: string]: unknown;
@@ -114,6 +114,14 @@ export interface Run {
     output_tokens?: number;
     cost_usd?: number | null;
   } | null;
+  /**
+   * 编排绑定（v1.3，ADR-0025）：所属 Task；独立会话直接发起的 run 为空
+   */
+  task_id?: string;
+  /**
+   * 编排绑定（v1.3，ADR-0025）：所属 Goal；独立会话直接发起的 run 为空
+   */
+  goal_id?: string;
   created_at: Timestamp;
 }
 /**

@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "questor/orchestration/v1.json",
+  "title": "QuestorOrchestration",
+  "description": "编排域实体（真相源：docs/architecture/data-model.md v1.3，ADR-0025/0027）。纯 JSON Schema，Python pydantic 只做绑定。",
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "description": "UTC ISO-8601",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "TaskStatus": {
+      "type": "string",
+      "description": "编排任务状态机（data-model §3.3，ADR-0025）",
+      "enum": [
+        "inbox", "pending", "planning", "planned", "executing",
+        "paused", "reviewed", "completed", "failed", "cancelled"
+      ]
+    },
+    "PlanStatus": {
+      "type": "string",
+      "enum": ["drafting", "proposed", "finalized", "superseded"]
+    },
+    "PlanStepStatus": {
+      "type": "string",
+      "enum": ["pending", "in_progress", "done"]
+    },
+    "GoalStatus": {
+      "type": "string",
+      "enum": ["idle", "running", "paused", "completed", "failed", "cancelled"]
+    },
+    "EvidenceSubjectType": {
+      "type": "string",
+      "enum": ["run", "task", "turn"]
+    },
+    "EvidenceVerdict": {
+      "type": "string",
+      "enum": ["verified", "mismatch", "unverified"]
+    },
+    "PlanStep": {
+      "type": "object",
+      "required": ["id", "title", "status"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "title": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/$defs/PlanStepStatus" },
+        "task_id": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "Plan": {
+      "type": "object",
+      "required": ["id", "requirement_revision", "status", "steps", "created_at", "updated_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "thread_id": { "type": ["string", "null"] },
+        "goal_id": { "type": ["string", "null"] },
+        "requirement_revision": { "type": "integer", "minimum": 1 },
+        "status": { "$ref": "#/$defs/PlanStatus" },
+        "steps": { "type": "array", "items": { "$ref": "#/$defs/PlanStep" } },
+        "created_at": { "$ref": "#/$defs/Timestamp" },
+        "updated_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "TaskAcceptance": {
+      "type": "object",
+      "required": ["status", "requirement_revision", "evidence_ids"],
+      "properties": {
+        "status": { "type": "string" },
+        "requirement_revision": { "type": "integer", "minimum": 1 },
+        "evidence_ids": { "type": "array", "items": { "$ref": "#/$defs/Id" } }
+      },
+      "additionalProperties": false
+    },
+    "Task": {
+      "type": "object",
+      "required": ["id", "title", "status", "depends_on", "acceptance", "created_at", "updated_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "thread_id": { "type": ["string", "null"] },
+        "goal_id": { "type": ["string", "null"] },
+        "plan_id": { "type": ["string", "null"] },
+        "title": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/$defs/TaskStatus" },
+        "parent_task_id": { "type": ["string", "null"] },
+        "depends_on": { "type": "array", "items": { "$ref": "#/$defs/Id" } },
+        "acceptance": { "$ref": "#/$defs/TaskAcceptance" },
+        "run_id": { "type": ["string", "null"] },
+        "created_at": { "$ref": "#/$defs/Timestamp" },
+        "updated_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "Goal": {
+      "type": "object",
+      "required": ["id", "thread_id", "objective", "status", "round_count", "created_at", "updated_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "objective": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/$defs/GoalStatus" },
+        "max_rounds": { "type": ["integer", "null"], "minimum": 1 },
+        "round_count": { "type": "integer", "minimum": 0 },
+        "deadline": { "type": ["string", "null"] },
+        "created_at": { "$ref": "#/$defs/Timestamp" },
+        "updated_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "Evidence": {
+      "type": "object",
+      "required": ["id", "subject_type", "subject_id", "claimed", "recorded_output_ref", "verdict", "created_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "subject_type": { "$ref": "#/$defs/EvidenceSubjectType" },
+        "subject_id": { "$ref": "#/$defs/Id" },
+        "claimed": { "type": "string" },
+        "recorded_output_ref": { "type": "string" },
+        "verdict": { "$ref": "#/$defs/EvidenceVerdict" },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

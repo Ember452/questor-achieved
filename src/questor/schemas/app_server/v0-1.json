@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "questor/app_server/v0-1.json",
   "title": "QuestorAppServer",
-  "description": "qst-app-server/v0.1 跨进程信封与方法契约（真相源：docs/architecture/protocol.md v1.0）。错误码是字符串；能力 opt-in。$defs 里每个方法/通知族都有 Params/Result/Notification 形状，护栏 test_schemas_method_families 逐项对账；跨进程 DTO 与 model/v1.json 字段一致。",
+  "description": "qst-app-server/v0.1 跨进程信封与方法契约（真相源：docs/architecture/protocol.md v1.1）。错误码是字符串；能力 opt-in；版本号只标记破坏性变化（ADR-0028）。$defs 里每个方法/通知族都有 Params/Result/Notification 形状，护栏 test_schemas_method_families 逐项对账；跨进程 DTO 与 model/v1.json 字段一致。",
   "$defs": {
     "Id": {
       "type": "string",
@@ -22,6 +22,11 @@
       "type": "string",
       "description": "与 model/v1.json#/$defs/RunStatus 保持一致；steered/waiting 是 running 的旁态",
       "enum": ["queued", "running", "steered", "waiting", "completed", "failed", "cancelled"]
+    },
+    "AcceptanceStatus": {
+      "type": "string",
+      "description": "与 model/v1.json#/$defs/AcceptanceStatus 保持一致（data-model §3.2）",
+      "enum": ["proposed", "accepted_by_user", "executing", "reported", "verified", "regressed"]
     },
     "ProtocolVersion": {
       "type": "string",
@@ -748,6 +753,500 @@
             "before_tokens": { "type": ["integer", "null"], "minimum": 0 },
             "after_tokens": { "type": ["integer", "null"], "minimum": 0 },
             "reason": { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "PlanStepDTO": {
+      "type": "object",
+      "required": ["id", "title", "status"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "title": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "in_progress", "done"] },
+        "task_id": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "PlanDTO": {
+      "type": "object",
+      "description": "可修订计划（data-model v1.3 Plan，ADR-0025）",
+      "required": ["id", "requirement_revision", "status", "steps", "created_at", "updated_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "thread_id": { "type": ["string", "null"] },
+        "goal_id": { "type": ["string", "null"] },
+        "requirement_revision": { "type": "integer", "minimum": 1 },
+        "status": { "type": "string", "enum": ["drafting", "proposed", "finalized", "superseded"] },
+        "steps": { "type": "array", "items": { "$ref": "#/$defs/PlanStepDTO" } },
+        "created_at": { "$ref": "#/$defs/Timestamp" },
+        "updated_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "TaskAcceptanceDTO": {
+      "type": "object",
+      "required": ["status", "requirement_revision", "evidence_ids"],
+      "properties": {
+        "status": { "$ref": "#/$defs/AcceptanceStatus" },
+        "requirement_revision": { "type": "integer", "minimum": 1 },
+        "evidence_ids": { "type": "array", "items": { "$ref": "#/$defs/Id" } }
+      },
+      "additionalProperties": false
+    },
+    "TaskStatus": {
+      "type": "string",
+      "description": "编排任务状态机（data-model §3.3，ADR-0025）",
+      "enum": [
+        "inbox", "pending", "planning", "planned", "executing",
+        "paused", "reviewed", "completed", "failed", "cancelled"
+      ]
+    },
+    "TaskDTO": {
+      "type": "object",
+      "required": ["id", "title", "status", "depends_on", "acceptance", "created_at", "updated_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "thread_id": { "type": ["string", "null"] },
+        "goal_id": { "type": ["string", "null"] },
+        "plan_id": { "type": ["string", "null"] },
+        "title": { "type": "string" },
+        "status": { "$ref": "#/$defs/TaskStatus" },
+        "parent_task_id": { "type": ["string", "null"] },
+        "depends_on": { "type": "array", "items": { "$ref": "#/$defs/Id" } },
+        "acceptance": { "$ref": "#/$defs/TaskAcceptanceDTO" },
+        "run_id": { "type": ["string", "null"] },
+        "created_at": { "$ref": "#/$defs/Timestamp" },
+        "updated_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "GoalStatus": {
+      "type": "string",
+      "enum": ["idle", "running", "paused", "completed", "failed", "cancelled"]
+    },
+    "GoalDTO": {
+      "type": "object",
+      "required": ["id", "thread_id", "objective", "status", "round_count", "created_at", "updated_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "objective": { "type": "string" },
+        "status": { "$ref": "#/$defs/GoalStatus" },
+        "max_rounds": { "type": ["integer", "null"], "minimum": 1 },
+        "round_count": { "type": "integer", "minimum": 0 },
+        "deadline": { "type": ["string", "null"] },
+        "created_at": { "$ref": "#/$defs/Timestamp" },
+        "updated_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "EvidenceVerdict": {
+      "type": "string",
+      "enum": ["verified", "mismatch", "unverified"]
+    },
+    "EvidenceDTO": {
+      "type": "object",
+      "description": "声称的检查 vs 当时录得的真实输出（ADR-0027）",
+      "required": ["id", "subject_type", "subject_id", "claimed", "recorded_output_ref", "verdict", "created_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "subject_type": { "type": "string", "enum": ["run", "task", "turn"] },
+        "subject_id": { "$ref": "#/$defs/Id" },
+        "claimed": { "type": "string" },
+        "recorded_output_ref": { "type": "string" },
+        "verdict": { "$ref": "#/$defs/EvidenceVerdict" },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "ScheduleDTO": {
+      "type": "object",
+      "description": "值守触发器（vigilia，ADR-0026）：声明式数据",
+      "required": ["id", "trigger_kind", "enabled", "once_fired", "created_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "trigger_kind": { "type": "string", "enum": ["once", "interval", "cron"] },
+        "enabled": { "type": "boolean" },
+        "once_fired": { "type": "boolean" },
+        "interval_seconds": { "type": ["integer", "null"], "minimum": 1 },
+        "cron": { "type": ["string", "null"] },
+        "next_fire_at": { "type": ["string", "null"] },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      },
+      "additionalProperties": false
+    },
+
+    "TaskCreateParams": {
+      "type": "object",
+      "required": ["title"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "goal_id": { "$ref": "#/$defs/Id" },
+        "plan_id": { "$ref": "#/$defs/Id" },
+        "parent_task_id": { "$ref": "#/$defs/Id" },
+        "depends_on": { "type": "array", "items": { "$ref": "#/$defs/Id" } }
+      },
+      "additionalProperties": false
+    },
+    "TaskCreateResult": {
+      "type": "object",
+      "required": ["task"],
+      "properties": { "task": { "$ref": "#/$defs/TaskDTO" } },
+      "additionalProperties": false
+    },
+    "TaskListParams": {
+      "type": "object",
+      "required": [],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "goal_id": { "$ref": "#/$defs/Id" },
+        "workspace_id": { "$ref": "#/$defs/Id" }
+      },
+      "additionalProperties": false
+    },
+    "TaskListResult": {
+      "type": "object",
+      "required": ["tasks"],
+      "properties": { "tasks": { "type": "array", "items": { "$ref": "#/$defs/TaskDTO" } } },
+      "additionalProperties": false
+    },
+    "TaskShowParams": {
+      "type": "object",
+      "required": ["task_id"],
+      "properties": { "task_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "TaskShowResult": {
+      "type": "object",
+      "required": ["task"],
+      "properties": {
+        "task": { "$ref": "#/$defs/TaskDTO" },
+        "plan": { "oneOf": [{ "$ref": "#/$defs/PlanDTO" }, { "type": "null" }] },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/EvidenceDTO" } }
+      },
+      "additionalProperties": false
+    },
+    "TaskPlanParams": {
+      "type": "object",
+      "required": ["steps"],
+      "properties": {
+        "plan_id": { "$ref": "#/$defs/Id" },
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "goal_id": { "$ref": "#/$defs/Id" },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["title"],
+            "properties": {
+              "id": { "$ref": "#/$defs/Id" },
+              "title": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "finalize": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "TaskPlanResult": {
+      "type": "object",
+      "required": ["plan"],
+      "properties": { "plan": { "$ref": "#/$defs/PlanDTO" } },
+      "additionalProperties": false
+    },
+    "TaskStartParams": {
+      "type": "object",
+      "required": ["task_id"],
+      "properties": {
+        "task_id": { "$ref": "#/$defs/Id" },
+        "authorized": { "type": "boolean", "description": "用户「开始执行」授权；缺省 false → 编排门拒绝" }
+      },
+      "additionalProperties": false
+    },
+    "TaskStartResult": {
+      "type": "object",
+      "required": ["task"],
+      "properties": {
+        "task": { "$ref": "#/$defs/TaskDTO" },
+        "run_id": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "TaskPauseParams": {
+      "type": "object",
+      "required": ["task_id"],
+      "properties": { "task_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "TaskPauseResult": {
+      "type": "object",
+      "required": ["task"],
+      "properties": { "task": { "$ref": "#/$defs/TaskDTO" } },
+      "additionalProperties": false
+    },
+    "TaskResumeParams": {
+      "type": "object",
+      "required": ["task_id"],
+      "properties": { "task_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "TaskResumeResult": {
+      "type": "object",
+      "required": ["task"],
+      "properties": { "task": { "$ref": "#/$defs/TaskDTO" } },
+      "additionalProperties": false
+    },
+    "TaskRejectParams": {
+      "type": "object",
+      "required": ["task_id"],
+      "properties": {
+        "task_id": { "$ref": "#/$defs/Id" },
+        "reason": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "TaskRejectResult": {
+      "type": "object",
+      "required": ["task"],
+      "properties": { "task": { "$ref": "#/$defs/TaskDTO" } },
+      "additionalProperties": false
+    },
+    "TaskRetryParams": {
+      "type": "object",
+      "required": ["task_id"],
+      "properties": { "task_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "TaskRetryResult": {
+      "type": "object",
+      "required": ["task"],
+      "properties": { "task": { "$ref": "#/$defs/TaskDTO" } },
+      "additionalProperties": false
+    },
+    "TaskCompleteParams": {
+      "type": "object",
+      "required": ["task_id"],
+      "properties": { "task_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "TaskCompleteResult": {
+      "type": "object",
+      "required": ["task"],
+      "properties": { "task": { "$ref": "#/$defs/TaskDTO" } },
+      "additionalProperties": false
+    },
+    "GoalCreateParams": {
+      "type": "object",
+      "required": ["thread_id", "objective"],
+      "properties": {
+        "thread_id": { "$ref": "#/$defs/Id" },
+        "objective": { "type": "string", "minLength": 1 },
+        "max_rounds": { "type": ["integer", "null"], "minimum": 1 },
+        "deadline": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "GoalCreateResult": {
+      "type": "object",
+      "required": ["goal"],
+      "properties": { "goal": { "$ref": "#/$defs/GoalDTO" } },
+      "additionalProperties": false
+    },
+    "GoalListParams": {
+      "type": "object",
+      "required": [],
+      "properties": { "thread_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "GoalListResult": {
+      "type": "object",
+      "required": ["goals"],
+      "properties": { "goals": { "type": "array", "items": { "$ref": "#/$defs/GoalDTO" } } },
+      "additionalProperties": false
+    },
+    "GoalShowParams": {
+      "type": "object",
+      "required": ["goal_id"],
+      "properties": { "goal_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "GoalShowResult": {
+      "type": "object",
+      "required": ["goal"],
+      "properties": {
+        "goal": { "$ref": "#/$defs/GoalDTO" },
+        "tasks": { "type": "array", "items": { "$ref": "#/$defs/TaskDTO" } }
+      },
+      "additionalProperties": false
+    },
+    "GoalStartParams": {
+      "type": "object",
+      "required": ["goal_id"],
+      "properties": { "goal_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "GoalStartResult": {
+      "type": "object",
+      "required": ["goal"],
+      "properties": { "goal": { "$ref": "#/$defs/GoalDTO" } },
+      "additionalProperties": false
+    },
+    "GoalStopParams": {
+      "type": "object",
+      "required": ["goal_id"],
+      "properties": { "goal_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "GoalStopResult": {
+      "type": "object",
+      "required": ["goal"],
+      "properties": { "goal": { "$ref": "#/$defs/GoalDTO" } },
+      "additionalProperties": false
+    },
+    "ScheduleListParams": {
+      "type": "object",
+      "required": [],
+      "properties": {},
+      "additionalProperties": false
+    },
+    "ScheduleListResult": {
+      "type": "object",
+      "required": ["schedules"],
+      "properties": { "schedules": { "type": "array", "items": { "$ref": "#/$defs/ScheduleDTO" } } },
+      "additionalProperties": false
+    },
+    "ScheduleEnableParams": {
+      "type": "object",
+      "required": ["schedule_id"],
+      "properties": { "schedule_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "ScheduleEnableResult": {
+      "type": "object",
+      "required": ["schedule"],
+      "properties": { "schedule": { "$ref": "#/$defs/ScheduleDTO" } },
+      "additionalProperties": false
+    },
+    "ScheduleDisableParams": {
+      "type": "object",
+      "required": ["schedule_id"],
+      "properties": { "schedule_id": { "$ref": "#/$defs/Id" } },
+      "additionalProperties": false
+    },
+    "ScheduleDisableResult": {
+      "type": "object",
+      "required": ["schedule"],
+      "properties": { "schedule": { "$ref": "#/$defs/ScheduleDTO" } },
+      "additionalProperties": false
+    },
+    "EvidenceGetParams": {
+      "type": "object",
+      "required": ["subject_type", "subject_id"],
+      "properties": {
+        "subject_type": { "type": "string", "enum": ["run", "task", "turn"] },
+        "subject_id": { "$ref": "#/$defs/Id" }
+      },
+      "additionalProperties": false
+    },
+    "EvidenceGetResult": {
+      "type": "object",
+      "required": ["evidence"],
+      "properties": { "evidence": { "type": "array", "items": { "$ref": "#/$defs/EvidenceDTO" } } },
+      "additionalProperties": false
+    },
+
+    "TaskStatusNotification": {
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "task/status" },
+        "params": {
+          "type": "object",
+          "required": ["task_id", "status"],
+          "properties": {
+            "task_id": { "$ref": "#/$defs/Id" },
+            "status": { "$ref": "#/$defs/TaskStatus" },
+            "title": { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "PlanUpdatedNotification": {
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "plan/updated" },
+        "params": {
+          "type": "object",
+          "required": ["plan_id", "requirement_revision", "status"],
+          "properties": {
+            "plan_id": { "$ref": "#/$defs/Id" },
+            "requirement_revision": { "type": "integer", "minimum": 1 },
+            "status": { "type": "string", "enum": ["drafting", "proposed", "finalized", "superseded"] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "GoalStatusNotification": {
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "goal/status" },
+        "params": {
+          "type": "object",
+          "required": ["goal_id", "status", "round_count"],
+          "properties": {
+            "goal_id": { "$ref": "#/$defs/Id" },
+            "status": { "$ref": "#/$defs/GoalStatus" },
+            "round_count": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "EvidenceReportedNotification": {
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "evidence/reported" },
+        "params": {
+          "type": "object",
+          "required": ["evidence_id", "subject_type", "subject_id", "verdict", "recorded_output_ref"],
+          "properties": {
+            "evidence_id": { "$ref": "#/$defs/Id" },
+            "subject_type": { "type": "string", "enum": ["run", "task", "turn"] },
+            "subject_id": { "$ref": "#/$defs/Id" },
+            "verdict": { "$ref": "#/$defs/EvidenceVerdict" },
+            "recorded_output_ref": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "NoticeScheduleNotification": {
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "notice/schedule" },
+        "params": {
+          "type": "object",
+          "required": ["schedule_id", "kind", "outcome"],
+          "properties": {
+            "schedule_id": { "$ref": "#/$defs/Id" },
+            "kind": { "type": "string", "enum": ["once", "interval", "cron"] },
+            "outcome": { "type": "string", "enum": ["fired", "skipped", "disabled"] }
           },
           "additionalProperties": false
         }

@@ -129,6 +129,9 @@ class Run(_Entity):
     workspace_revision_end: Annotated[int | None, Field(ge=0)] = None
     status: RunStatus
     usage: RunUsage | None = None
+    #: 编排绑定（data-model v1.3 / ADR-0025）：所属 Task/Goal；独立会话直接发起的 run 两者皆空
+    task_id: Id | None = None
+    goal_id: Id | None = None
     created_at: Timestamp
 
 
