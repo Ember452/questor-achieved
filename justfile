@@ -52,10 +52,11 @@ test:
 coverage:
     uv run pytest --cov=src/questor --cov-report=term-missing -q
 
-# 坑目录与笔记核查（scripts/ci 的工具）：条目数、编号连续性、锚点存在性
+# 坑目录与笔记核查（scripts/ci 的工具）：条目数、编号连续性、锚点存在性、文档链接
 specs:
     uv run python scripts/ci/check_specs.py
     uv run python scripts/ci/check_notes.py
+    uv run python scripts/ci/check_docs.py
 
 # 依赖审计（security.yml 同一条；不放进 check 是因为它要联网、不适合每次提交跑）
 audit:

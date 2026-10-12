@@ -61,9 +61,9 @@ def _justfile_commands() -> dict[str, list[str]]:
 
 
 def _workflow_commands() -> list[str]:
-    """收集两个 workflow 里所有 `run:` 的首行命令（本仓库的 run 均为单行门禁命令）。"""
+    """收集门禁 workflow 里所有 `run:` 的首行命令（本仓库的 run 均为单行门禁命令）。"""
     out: list[str] = []
-    for name in ("ci.yml", "contracts.yml", "security.yml"):
+    for name in ("ci.yml", "contracts.yml", "security.yml", "docs.yml"):
         path = REPO / ".github" / "workflows" / name
         if not path.is_file():
             continue
