@@ -56,14 +56,22 @@ def build_engine(
     project_rules: str | None = None,
     environment: str | None = None,
     replacements: ReplacementState | None = None,
+    workspace_id: str | None = None,
 ) -> Engine:
-    """一个线程一个 Engine：工具环境、system 装配与替换状态都在这里一次接好。"""
+    """一个线程一个 Engine：工具环境、system 装配与替换状态都在这里一次接好。
+
+    `workspace_id` 缺省时会调 `ensure_workspace_for_root`（单点归一化），写工具的
+    bump_revision 就有地方可落（B-92）；测试与无工作区场景可以传 None，
+    工具会只落 diff 不 bump。
+    """
     workdir = Path(cwd).expanduser().resolve()
+    ws_id = workspace_id if workspace_id is not None else register_workspace(workdir).id
     return Engine(
         model=model,
         registry=build_default_registry(),
         ctx=ToolContext(
             cwd=str(workdir),
+            workspace_id=ws_id,
             file_state=FileStateCache(),
             processes=ProcessManager(),
             todos=TodoStore(),

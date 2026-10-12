@@ -49,12 +49,17 @@ class ToolResult:
 
 @dataclass(frozen=True)
 class ToolContext:
-    """一次 run 的工具执行环境（engine 组装，无全局单例）。"""
+    """一次 run 的工具执行环境（engine 组装，无全局单例）。
+
+    `workspace_id` 对写工具为必填（写入时需 bump revision）；None 属测试与无工作区场景，
+    写时仅落 diff 不 bump（B-92 的诚实边界）。
+    """
 
     cwd: str
     file_state: FileStateCache
     processes: ProcessManager
     todos: TodoStore
+    workspace_id: str | None = None
 
 
 class Tool(ABC):

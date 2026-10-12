@@ -2,6 +2,9 @@
 
 IO 沉到同步 helper（AGENTS §五 异步纪律；护栏见 tests/architecture/
 test_tools_impl_no_blocking_io）。str.replace 不属于 Path.replace，shape 守卫不会误咬。
+
+写成功后与 write 工具同机制：调 `review.compute_diff(old_text, new_text)` 生成结构化 diff
+塞 `ToolResult.data`（B-66/B-93），若 `ctx.workspace_id` 存在则 bump revision（B-92）。
 """
 
 from __future__ import annotations
@@ -12,7 +15,9 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from questor.review import compute_diff
 from questor.tools.base import Tool, ToolContext, ToolResult, resolve_tool_path
+from questor.workspaces import bump_revision
 
 _MAX_CANDIDATES = 3
 
@@ -84,9 +89,17 @@ class EditTool(Tool):
         edited = text.replace(params.old_string, params.new_string, 1)
         await asyncio.to_thread(_write_text, target, edited)
         ctx.file_state.record_read(str(target))  # 编辑后状态同步，连续编辑无需重读
+        diff = compute_diff(params.path, text, edited)
+        data: dict[str, object] = {
+            "path": params.path,
+            "line": occurrences[0],
+            "diff": dict(diff),
+        }
+        if ctx.workspace_id is not None:
+            data["revision"] = await asyncio.to_thread(bump_revision, ctx.workspace_id)
         return ToolResult(
             output=f"replaced 1 occurrence at line {occurrences[0]} in {params.path}",
-            data={"path": params.path, "line": occurrences[0]},
+            data=data,
         )
 
 
