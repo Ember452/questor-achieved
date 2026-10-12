@@ -23,8 +23,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from questor.orchestration.acceptance import transition as _transition_acceptance
 from questor.orchestration.transitions import is_terminal, transition
-from questor.schemas.model import utc_timestamp_now
+from questor.schemas.model import AcceptanceStatus, utc_timestamp_now
 from questor.schemas.orchestration import (
     Evidence,
     Goal,
@@ -49,6 +50,7 @@ __all__ = [
     "list_tasks",
     "load_view",
     "rebuild_index",
+    "transition_acceptance",
     "transition_task",
     "update_goal",
     "update_plan",
@@ -87,6 +89,7 @@ _RECORD_KINDS = frozenset(
         "goal.updated",
         "evidence.appended",
         "acceptance.invalidated",
+        "acceptance.status",
     }
 )
 
@@ -179,6 +182,8 @@ class _FoldState:
             self.goals = [g for g in self.goals if g.id != goal.id] + [goal]
         elif record.kind == "evidence.appended":
             self.evidence.append(Evidence.model_validate(payload))
+        elif record.kind == "acceptance.status":
+            self._apply_acceptance(payload)
         elif record.kind == "acceptance.invalidated":
             self._apply_invalidation(payload)
 
@@ -193,6 +198,26 @@ class _FoldState:
             raise OrchestrationStoreError(f"task.status 含未知状态 {to_raw!r}") from exc
         moved = transition(task.status, target)  # 回放同样过白名单：篡改历史在此爆炸
         self._replace_task(task.model_copy(update={"status": moved}))
+
+    def _apply_acceptance(self, payload: dict[str, Any]) -> None:
+        """回放验收态迁移：脏字段报存储错；非法序列漏 InvalidAcceptanceTransition
+        （篡改历史属契约破坏，同 `_apply_status` 不降级为存储错）。"""
+        task = self._require_task(str(payload.get("task_id", "")))
+        to_raw = payload.get("to")
+        if not isinstance(to_raw, str):
+            raise OrchestrationStoreError("acceptance.status 记录缺少 to 字段")
+        try:
+            target = AcceptanceStatus(to_raw)
+        except ValueError as exc:
+            raise OrchestrationStoreError(f"acceptance.status 含未知验收态 {to_raw!r}") from exc
+        raw_ids = payload.get("evidence_ids", [])
+        if not isinstance(raw_ids, list):
+            raise OrchestrationStoreError(f"acceptance.status 的 evidence_ids 非列表：{raw_ids!r}")
+        moved = _transition_acceptance(task.acceptance.status, target)  # 回放同过白名单
+        new_acc = task.acceptance.model_copy(
+            update={"status": moved, "evidence_ids": tuple(str(x) for x in raw_ids)}
+        )
+        self._replace_task(task.model_copy(update={"acceptance": new_acc}))
 
     def _apply_invalidation(self, payload: dict[str, Any]) -> None:
         # 脏记录统一报存储错（B-76 口径：不得漏裸 KeyError/TypeError 给回放调用方）
@@ -215,7 +240,7 @@ class _FoldState:
             if task is None:
                 continue
             reset = TaskAcceptance(
-                status="proposed",
+                status=AcceptanceStatus.PROPOSED,
                 requirement_revision=requirement_revision,
                 evidence_ids=(),
             )
@@ -365,6 +390,11 @@ def update_task(task: Task) -> Task:
                 f"update_task 不得改状态（{current.status.value}→{task.status.value}）；"
                 "用 transition_task"
             )
+        if task.acceptance.status != current.acceptance.status:
+            raise OrchestrationStoreError(
+                f"update_task 不得改验收态（{current.acceptance.status.value}→"
+                f"{task.acceptance.status.value}）；用 transition_acceptance"
+            )
         _append_locked("task.updated", task.model_dump(mode="json"), view.last_seq)
         _upsert_index_locked(task)
         return task
@@ -382,6 +412,38 @@ def transition_task(task_id: str, target: TaskStatus) -> Task:
         _append_locked(
             "task.status",
             {"task_id": task_id, "from": task.status.value, "to": moved.value},
+            view.last_seq,
+        )
+        _upsert_index_locked(updated)
+        return updated
+
+
+def transition_acceptance(
+    task_id: str, target: AcceptanceStatus, *, evidence_ids: tuple[str, ...] | None = None
+) -> Task:
+    """推进验收态：唯一入口（acceptance 白名单裁决）；可选原子链入 ``evidence_ids``。
+
+    ``evidence_ids`` 缺省保留现值；report 步在驱动 `executing → reported → verified|regressed`
+    时同批写入证据 id（append-only：迁移与链证据在同一条 `acceptance.status` 记录里）。
+    白名单外抛 :class:`InvalidAcceptanceTransition`，不落盘。
+    """
+    with store_lock(orchestration_dir()):
+        view = load_view()
+        task = next((t for t in view.tasks if t.id == task_id), None)
+        if task is None:
+            raise TaskNotFound(task_id)
+        moved = _transition_acceptance(task.acceptance.status, target)
+        next_ids = task.acceptance.evidence_ids if evidence_ids is None else tuple(evidence_ids)
+        new_acc = task.acceptance.model_copy(update={"status": moved, "evidence_ids": next_ids})
+        updated = task.model_copy(update={"acceptance": new_acc, "updated_at": utc_timestamp_now()})
+        _append_locked(
+            "acceptance.status",
+            {
+                "task_id": task_id,
+                "from": task.acceptance.status.value,
+                "to": moved.value,
+                "evidence_ids": list(next_ids),
+            },
             view.last_seq,
         )
         _upsert_index_locked(updated)

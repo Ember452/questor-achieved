@@ -54,9 +54,16 @@ export type EvidenceSubjectType = "run" | "task" | "turn";
  * via the `definition` "EvidenceVerdict".
  */
 export type EvidenceVerdict = "verified" | "mismatch" | "unverified";
+/**
+ * 验收状态机（data-model §3.2，ADR-0029）；枚举值与 model/v1.json 逐字一致
+ *
+ * This interface was referenced by `QuestorOrchestration`'s JSON-Schema
+ * via the `definition` "AcceptanceStatus".
+ */
+export type AcceptanceStatus = "proposed" | "accepted_by_user" | "executing" | "reported" | "verified" | "regressed";
 
 /**
- * 编排域实体（真相源：docs/architecture/data-model.md v1.3，ADR-0025/0027）。纯 JSON Schema，Python pydantic 只做绑定。
+ * 编排域实体（真相源：docs/architecture/data-model.md v1.4，ADR-0025/0027/0029）。纯 JSON Schema，Python pydantic 只做绑定。
  */
 export interface QuestorOrchestration {
   [k: string]: unknown;
@@ -90,7 +97,7 @@ export interface Plan {
  * via the `definition` "TaskAcceptance".
  */
 export interface TaskAcceptance {
-  status: string;
+  status: AcceptanceStatus;
   requirement_revision: number;
   evidence_ids: Id[];
 }

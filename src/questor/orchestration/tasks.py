@@ -10,7 +10,7 @@ import uuid
 
 from questor.orchestration import store
 from questor.orchestration.plan import get_plan
-from questor.schemas.model import utc_timestamp_now
+from questor.schemas.model import AcceptanceStatus, utc_timestamp_now
 from questor.schemas.orchestration import (
     Plan,
     PlanStatus,
@@ -62,7 +62,9 @@ def create_task(
         status=status,
         parent_task_id=parent_task_id,
         depends_on=tuple(depends_on or ()),
-        acceptance=TaskAcceptance(status="proposed", requirement_revision=requirement_revision),
+        acceptance=TaskAcceptance(
+            status=AcceptanceStatus.PROPOSED, requirement_revision=requirement_revision
+        ),
         created_at=stamp,
         updated_at=stamp,
     )
@@ -113,8 +115,19 @@ def sync_subtasks_from_plan(plan_id: str) -> list[Task]:
 
 
 def start_task(task_id: str, *, run_id: str | None = None) -> Task:
-    """开始执行（pending/planned → executing）；绑定 run_id（若有）。"""
+    """开始执行（pending/planned → executing）；绑定 run_id（若有）。
+
+    验收态同步推进（data-model §3.2，ADR-0029）：能开始执行即已过"开始执行"授权门，
+    故 `proposed → accepted_by_user → executing`；已在 `accepted_by_user`/`executing` 则幂等。
+    授权是验收链的起点——它在此单点记录，不散到 serve 与工具两条路。
+    """
     moved = store.transition_task(task_id, TaskStatus.EXECUTING)
+    acc = moved.acceptance.status
+    if acc is AcceptanceStatus.PROPOSED:
+        store.transition_acceptance(task_id, AcceptanceStatus.ACCEPTED_BY_USER)
+        moved = store.transition_acceptance(task_id, AcceptanceStatus.EXECUTING)
+    elif acc is AcceptanceStatus.ACCEPTED_BY_USER:
+        moved = store.transition_acceptance(task_id, AcceptanceStatus.EXECUTING)
     if run_id is not None:
         moved = store.update_task(moved.model_copy(update={"run_id": run_id}))
     return moved
@@ -134,8 +147,15 @@ def review_task(task_id: str) -> Task:
 
 
 def reject_task(task_id: str) -> Task:
-    """打回重做（reviewed → executing）——M4 出口链的一环。"""
-    return store.transition_task(task_id, TaskStatus.EXECUTING)
+    """打回重做（reviewed → executing）——M4 出口链的一环。
+
+    验收态同步：上一轮判为 `regressed` 的任务回到 `executing`，为下一轮 `report` 重开
+    （ADR-0029）；`verified` 是终态，不在此回退（人不轻于证据改结论）。
+    """
+    moved = store.transition_task(task_id, TaskStatus.EXECUTING)
+    if moved.acceptance.status is AcceptanceStatus.REGRESSED:
+        moved = store.transition_acceptance(task_id, AcceptanceStatus.EXECUTING)
+    return moved
 
 
 def retry_task(task_id: str) -> Task:

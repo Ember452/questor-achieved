@@ -14,6 +14,9 @@ append-only store（ADR-0025），状态机单点入口（`transitions.py`），
 
 from __future__ import annotations
 
+from questor.orchestration.acceptance import (
+    InvalidAcceptanceTransition,
+)
 from questor.orchestration.board import BoardEdge, BoardView, build_board, has_cycle, open_tasks
 from questor.orchestration.gate import (
     EXEC_AUTHORIZATION_ACTIONS,
@@ -50,6 +53,7 @@ from questor.orchestration.store import (
     list_tasks,
     load_view,
     rebuild_index,
+    transition_acceptance,
     transition_task,
     update_task,
 )
@@ -80,6 +84,7 @@ __all__ = [
     "BoardEdge",
     "BoardView",
     "GateResult",
+    "InvalidAcceptanceTransition",
     "InvalidTaskTransition",
     "OrchestrationStoreError",
     "OrchestrationService",
@@ -122,6 +127,7 @@ __all__ = [
     "stop_goal",
     "sync_subtasks_from_plan",
     "transition",
+    "transition_acceptance",
     "transition_task",
     "update_task",
 ]

@@ -20,11 +20,13 @@ _TRANSITIONS_QUALNAMES = frozenset(
     {
         "questor.orchestration.transitions",
         "orchestration.transitions",
+        "questor.orchestration.acceptance",
+        "orchestration.acceptance",
     }
 )
 
 #: orchestration 之外允许 import 的名字：异常类型（错误处理要接住它）；迁移函数仍单消费者
-_ALLOWED_NAMES_OUTSIDE = frozenset({"InvalidTaskTransition"})
+_ALLOWED_NAMES_OUTSIDE = frozenset({"InvalidTaskTransition", "InvalidAcceptanceTransition"})
 
 
 def _violating_imports(tree: ast.AST) -> list[str]:
@@ -59,12 +61,13 @@ def test_transitions_module_is_importable_only_from_orchestration() -> None:
 
 
 def test_guard_has_teeth() -> None:
-    """确认守卫有可检对象（orchestration.transitions 确实被 orchestration 内部 import）。"""
-    importer_found = False
-    for py in sorted((SRC / "orchestration").rglob("*.py")):
-        if py.name == "transitions.py":
-            continue
-        if "orchestration.transitions" in py.read_text(encoding="utf-8"):
-            importer_found = True
-            break
-    assert importer_found, "orchestration 内没有 import transitions 的模块——护栏空转，先确认重构"
+    """确认守卫有可检对象：任务态与验收态白名单都确实被 orchestration 内部 import。"""
+    for needle in ("orchestration.transitions", "orchestration.acceptance"):
+        importer_found = False
+        for py in sorted((SRC / "orchestration").rglob("*.py")):
+            if py.name in ("transitions.py", "acceptance.py"):
+                continue
+            if needle in py.read_text(encoding="utf-8"):
+                importer_found = True
+                break
+        assert importer_found, f"orchestration 内没有 import {needle} 的模块——护栏空转，先确认重构"

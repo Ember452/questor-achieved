@@ -20,6 +20,7 @@ from questor.orchestration import (
     tasks,
 )
 from questor.orchestration.transitions import InvalidTaskTransition
+from questor.schemas.model import AcceptanceStatus
 from questor.schemas.orchestration import OrchestrationGateError, TaskStatus
 from questor.state.paths import orchestration_log_path
 from questor.testenv.fake_home import fake_home
@@ -132,23 +133,24 @@ def test_requirement_revision_invalidates_acceptance() -> None:
     p = plan.finalize_plan(p.id)
     created = tasks.sync_subtasks_from_plan(p.id)
     assert len(created) == 2
-    # 先给一个任务带上验收证据
+    # 先按验收状态机驱动一个任务到 verified（update_task 不得旁路改验收态）
     task = created[0]
-    accepted = store.update_task(
-        task.model_copy(
-            update={
-                "acceptance": task.acceptance.model_copy(
-                    update={"status": "verified", "evidence_ids": ("ev-1",)}
-                )
-            }
-        )
+    for target in (
+        AcceptanceStatus.ACCEPTED_BY_USER,
+        AcceptanceStatus.EXECUTING,
+        AcceptanceStatus.REPORTED,
+    ):
+        store.transition_acceptance(task.id, target)
+    accepted = store.transition_acceptance(
+        task.id, AcceptanceStatus.VERIFIED, evidence_ids=("ev-1",)
     )
-    assert accepted.acceptance.status == "verified"
+    assert accepted.acceptance.status is AcceptanceStatus.VERIFIED
+    assert accepted.acceptance.evidence_ids == ("ev-1",)
     # 改版 → 作废
     plan.revise_plan(p.id, steps=["a", "b", "c"])
     refreshed = store.load_view()
     after = next(t for t in refreshed.tasks if t.id == task.id)
-    assert after.acceptance.status == "proposed"
+    assert after.acceptance.status is AcceptanceStatus.PROPOSED
     assert after.acceptance.evidence_ids == ()
     assert after.acceptance.requirement_revision == 2
 

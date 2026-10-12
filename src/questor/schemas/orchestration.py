@@ -1,4 +1,4 @@
-"""编排域的记录形状（`data-model.md` §2 v1.3，ADR-0025）。
+"""编排域的记录形状（`data-model.md` §2 v1.4，ADR-0025/0029）。
 
 住 `schemas` 的理由与 `habena.py`/`context.py` 同源：写方是 `orchestration`、落盘与回放
 是编排 store、跨进程呈现是 `serve`——三方必须看同一份定义，而不是各自复刻字段。
@@ -6,7 +6,8 @@
 校验必须在入口处爆炸（AGENTS §四"跨边界数据一律 pydantic v2"）。
 
 全部 frozen + `extra="forbid"`：append-only 纪律在模型层的第一道表达（改历史 = 建新记录）。
-本模块**不 import 任何业务模块**（schemas 无依赖，见 structure §5）。
+本模块不 import 业务模块；`AcceptanceStatus` 取自同属 schemas 的 `model`（§3.2 验收状态机
+是核心数据契约的一部分，单一枚举源避免两处漂移）。
 """
 
 from __future__ import annotations
@@ -15,7 +16,10 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from questor.schemas.model import AcceptanceStatus
+
 __all__ = [
+    "ClaimedCheck",
     "Evidence",
     "EvidenceSubjectType",
     "EvidenceVerdict",
@@ -106,6 +110,19 @@ class EvidenceVerdict(StrEnum):
     UNVERIFIED = "unverified"
 
 
+class ClaimedCheck(_Frozen):
+    """模型显式声称做过的一次检查（ADR-0029）。
+
+    住 `schemas` 是因为它是跨层契约：`tools`（模型提交）→ `orchestration`（核对）
+    都要认识它，而 `tools` 不能 import `evidence`（矩阵）。`tool_use_id` 绑向证明它的
+    那次工具调用；核对器据此在录得 tool_result 里查真实输出，查不到即 `unverified`。
+    不落盘（不是存储实体）：它只作为 `report` 动作的入参。
+    """
+
+    claimed: str = Field(min_length=1)
+    tool_use_id: str | None = None
+
+
 class PlanStep(_Frozen):
     """计划的一步；定稿后可同步派生 Task（`task_id` 回链）。"""
 
@@ -133,9 +150,13 @@ class Plan(_Frozen):
 
 
 class TaskAcceptance(_Frozen):
-    """任务验收绑定（data-model §3.2 验收状态机在编排侧的对应物）。"""
+    """任务验收绑定（data-model §3.2 验收状态机，v1.4 起为强制枚举，ADR-0029）。
 
-    status: str = "proposed"
+    ``status`` 的迁移只能经 ``orchestration.acceptance`` 单点入口驱动；本模型只定形状，
+    不在构造时校验迁移合法性（历史回放与旁路写入的裁决归状态机）。
+    """
+
+    status: AcceptanceStatus = AcceptanceStatus.PROPOSED
     requirement_revision: int = Field(ge=1)
     evidence_ids: tuple[str, ...] = ()
 
