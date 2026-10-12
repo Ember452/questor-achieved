@@ -163,7 +163,7 @@ R1 在**同一个 Python 包内**不由包边界保证，必须由检查器保�
 | --- | --- |
 | `limen` | 标准库、`schemas`（类型）——其余全部禁止 |
 | `state` `version` `capability` `config` `secrets` | 标准库、`schemas`、彼此单向（`config`→`state`，不得反向） |
-| `tools` | `limen` `state` `config` `schemas` `prompts` `review` `workspaces`（M3a-2：写工具需 `review.compute_diff` 与 `workspaces.bump_revision`） |
+| `tools` | `limen` `state` `config` `schemas` `prompts` `review` `workspaces`（M3a-2：写工具需 `review.compute_diff` 与 `workspaces.bump_revision`；M4：编排工具经 `OrchestrationPort` 注入——port 定义在 tools、实现在 orchestration、装配在 serve，**tools 不 import orchestration**，ADR-0025 D4） |
 | `context` | `schemas` `gesta` `providers`（仅用量结构） |
 | `gesta` | `schemas` `state` `config` |
 | `engine` | `tools` `limen` `context` `gesta` `providers` `schemas` `prompts` `state` |
@@ -173,7 +173,7 @@ R1 在**同一个 Python 包内**不由包边界保证，必须由检查器保�
 | `vigilia` | `engine` `gesta` `schemas` `state` |
 | `evidence` | `review` `tools` `gesta` `schemas` |
 | `sessiontrace` | `gesta` `schemas`（只读投影，不写盘不联系模型） |
-| `orchestration` | `engine` `vigilia` `gesta` `context` `schemas` `prompts` |
+| `orchestration` | `engine` `vigilia` `gesta` `context` `schemas` `prompts` `state`（M4：编排实体住独立 append-only store，需 `state` 的原子写/锁/路径单点，ADR-0025） |
 | `providers` | `schemas` `state`（**不得 import 任何业务模块**；wire 词汇表取 `schemas.llm`，ADR-0016） |
 | `prompts` `schemas` | `schemas` 无依赖；`prompts` 只取 `schemas` 的类型（资产与装配，不取业务） |
 | `skills` `mcp` `hooks` `extensions` | `schemas` + 已注册的公开扩展接口；**内核不得反向 import 它们** |
@@ -188,7 +188,8 @@ R1 在**同一个 Python 包内**不由包边界保证，必须由检查器保�
 - 位置：**`src/questor/schemas/`**（随包发布、与代码同版本、运行时可直接校验）。
   顶层 `schemas/` 被否决：要么靠 hatchling `force-include` 塞进 wheel（脆弱配置），
   要么与代码不同版本（校验用的 schema 和运行代码不是同一份）。
-- `schemas/app_server/`：qst-app-server 方法与事件；`schemas/model/`：Workspace / Thread / Turn / Run / Item / Event。
+- `schemas/app_server/`：qst-app-server 方法与事件；`schemas/model/`：Workspace / Thread / Turn / Run / Item / Event；
+  `schemas/orchestration/`：编排域 Task / Plan / Goal / Evidence（M4，ADR-0025）。
 - schema 必须是**纯 JSON Schema**（TS 与其他语言可直接消费），Python 专有表达式不得写进去，pydantic 只做绑定。
 - 生成物：`ui/src/rpc/generated/`；**`just gen` 后 `git diff --exit-code` 必须为空**，CI 跑同一断言（R4 的可检查形式）。
 - 对外发布物（`packages/protocol`、插件 SDK）**等有第二个真实使用者时再建**（AGENTS §二：无第二使用者不做抽象）。
@@ -329,7 +330,7 @@ integration,adversarial,unit}、scripts/ci、ui/ 骨架、evals/ 骨架）。
 | M1 | `docs/specs/`（三资产）、`src/questor/schemas/`、`src/questor/testenv/`、`justfile`、`.editorconfig`、`.pre-commit-config.yaml`、`SECURITY.md`、`.github/`（workflows 3 个 + 模板 + dependabot）、`tests/{contract,fixtures}`、`scripts/{ci,gen}`、`evals/` 骨架、`ui/` 骨架（design token + schema 生成类型 + mock 协议服务；面板实体仍 M3） |
 | M2 | `cli` `serve(雏形)` `engine` `tools` `limen` `context` `gesta` `providers` `prompts` `config` `state` `secrets` `capability` `workspaces` `version`、`VERSION`、`third_party/`、`tests/e2e` 前置的 `evals/runner` |
 | M3 | `review` `worktree` `habena` `sessiontrace`、`ui/` 面板与视图注册表、WS 传输与 `serve http` 子命令（`starlette` + `uvicorn`，ADR-0022）；`contracts.yml` 契约护栏升级到方法族匹配。**`desktop/src-tauri/` + `assets/` + `desktop.yml` 推 M4/M5**（ADR-0024）；SSE 推 M8（ADR-0023） |
-| M4 | `vigilia` `orchestration` `evidence` 最小版、`tests/e2e/`、`docs.yml` |
+| M4 | `vigilia` `orchestration`（含编排 store/状态机/门）`evidence` 最小版、`tests/e2e/`、`docs.yml`、`serve` 编排方法族 + `ui/` 看板面板（ADR-0025/0026/0027/0028）。**看板 DAG 图推 E1；桌面壳推 M5**（ADR-0024 M4 收口） |
 | M5 | `evidence` 完整、`evals/` 三柱任务集扩充 |
 | M6 | `engine/adapters`（ACP / Claude / Codex） |
 | M7 | `skills` `mcp` `hooks` `extensions`、`plugins/`、`examples/`、`packages/`（仅在有第二使用者时） |

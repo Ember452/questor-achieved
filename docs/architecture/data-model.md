@@ -1,9 +1,9 @@
 # Questor 核心数据契约（data-model）
 
-版本: v1.2 | 更新: 2026-10-12 | 状态: accepted（M1 定稿；v1.1 补 queued→cancelled，见 ADR-0014；
-v1.2 补上下文工程记录，见 ADR-0017）
+版本: v1.3 | 更新: 2026-10-12 | 状态: accepted（M1 定稿；v1.1 补 queued→cancelled，见 ADR-0014；
+v1.2 补上下文工程记录，见 ADR-0017；v1.3 补编排域 Task/Plan/Goal/Evidence 与 Run 的编排绑定，见 ADR-0025/0027）
 关联: `overview.md` §7（草案出处）、`protocol.md`（跨进程边界）、`docs/specs/`（行为规格）、
-`src/questor/schemas/model/`（本契约的 JSON Schema 物化）
+`src/questor/schemas/model/` 与 `src/questor/schemas/orchestration/`（本契约的 JSON Schema 物化）
 
 **本文件是数据模型的唯一真相源**。改动必须先改本文并递增版本号，代码与 schema 跟随。
 schema 为纯 JSON Schema（Python pydantic 只做绑定，前端类型由生成而来，禁止手写 DTO）。
@@ -25,6 +25,11 @@ schema 为纯 JSON Schema（Python pydantic 只做绑定，前端类型由生成
 Workspace (1) ──< Thread (N) ──< Turn (N) ──< Run (N) ──< Item (N)
                                     │
                                     └──< Event（对外推送，只追加）
+
+编排域（v1.3，独立 store，见 §5；不写进线程正文——ADR-0025）
+Goal (1) ──< Task (N) ──< Task（子任务，DAG 依赖）
+              │
+              └── Plan (N) ── Task（由定稿 Plan 的步骤同步派生）
 ```
 
 ### Workspace
@@ -74,6 +79,7 @@ Workspace (1) ──< Thread (N) ──< Turn (N) ──< Run (N) ──< Item (
 | `workspace_revision_start` / `_end` | integer? | 修订号绑定（§4） |
 | `status` | string | 状态机见 §3 |
 | `usage` | object? | `{input_tokens, output_tokens, cost_usd?}` 累计 |
+| `task_id` / `goal_id` | string? | 编排绑定（v1.3）：本 run 所属的 Task / Goal；独立会话直接发起的 run 两者皆空（加性字段，见 ADR-0025） |
 
 ### Item
 
@@ -97,6 +103,63 @@ Run 产出的最小可审计单元。
 | `type` | string | 见 protocol.md §4 事件族 |
 | `run_id` / `turn_id` | string | 归属 |
 | `payload` | object | |
+| `created_at` | string | |
+
+### 编排实体（v1.3，ADR-0025）
+
+编排实体住**独立 append-only store**（§5），id 与时间戳沿用 §1 通用约定。
+
+**Plan** —— 先澄清→可修订→定稿才执行的可修订计划。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | |
+| `thread_id` | string? | 来源会话（模型提议计划时所在线程） |
+| `goal_id` | string? | 归属长跑目标 |
+| `requirement_revision` | integer | 需求修订号（≥1）；**递增即自动作废既有验收**（追加作废记录，不改写） |
+| `status` | string | `drafting` / `proposed` / `finalized` / `superseded` |
+| `steps` | object[] | 有序步骤 `{id, title, status, task_id?}`；定稿后可同步派生 Task |
+| `created_at` / `updated_at` | string | |
+
+**Task** —— 看板任务单元。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | |
+| `thread_id` | string? | 执行该任务的会话 |
+| `goal_id` | string? | 归属长跑目标 |
+| `plan_id` | string? | 由哪份计划派生 |
+| `title` | string | |
+| `status` | string | 状态机见 §3.3 |
+| `parent_task_id` | string? | 子任务树 |
+| `depends_on` | string[] | DAG 依赖边（前置任务 id） |
+| `acceptance` | object | `{status: 验收状态（§3.2）, requirement_revision, evidence_ids: []}` |
+| `run_id` | string? | 绑定的一次引擎执行 |
+| `created_at` / `updated_at` | string | |
+
+**Goal** —— 后台自驱长跑目标。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | |
+| `thread_id` | string | 承载会话 |
+| `objective` | string | 目标的一句话描述 |
+| `status` | string | `idle` / `running` / `paused` / `completed` / `failed` / `cancelled` |
+| `max_rounds` | integer? | 轮次上限（长跑止损） |
+| `round_count` | integer | 已跑轮次 |
+| `deadline` | string? | 时长上限（UTC ISO-8601） |
+| `created_at` / `updated_at` | string | |
+
+**Evidence** —— 声称的检查与当时录得的真实输出（§3.4，ADR-0027）。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | |
+| `subject_type` | string | `run` / `task` / `turn` |
+| `subject_id` | string | |
+| `claimed` | string | 声称做的检查（模型/工具报告） |
+| `recorded_output_ref` | string | 指向具体记录条目（Item/Event id 或 spill 回链）——**核对结论必须可追溯** |
+| `verdict` | string | `verified` / `mismatch` / `unverified`（无记录即 `unverified`，不臆断） |
 | `created_at` | string | |
 
 ## 3. 状态机
@@ -128,6 +191,34 @@ proposed → accepted_by_user → executing → reported → verified | regresse
 - **没有复跑也不轻信**：`verified` 的依据是"声称的检查与当时录得的真实输出并排核对"
   （overview §12 M5）。
 
+### 3.3 编排任务状态机（v1.3，ADR-0025）
+
+```
+inbox    → pending / completed(用户自勾) / cancelled
+pending  → planning / planned / executing(直跑) / cancelled
+planning → planned / failed(规划失败) / cancelled
+planned  → planning(重新规划) / executing / cancelled
+executing→ paused / completed(免审) / reviewed(完成待审) / failed / cancelled
+paused   → executing(恢复) / cancelled
+reviewed → completed(审核通过) / executing(打回重做) / cancelled
+completed→ ∅（终态）
+failed   → executing(重试)
+cancelled→ ∅（终态）
+```
+
+- 白名单**表驱动**、未知状态 fail closed，单点入口在 `orchestration/transitions.py`
+  （形态同 §3.1 的运行状态机）；`reviewed → executing` 即"打回重做"，与 §3.2 验收状态机在编排侧对应；
+- 破坏性编排动作（建任务、派发执行）须先过**编排门**：先有落库 Plan（`need_plan_first`）、
+  先有用户"开始执行"授权（`need_execution_authorization`）；门返回结构化错误载荷而非异常（B-43）；
+- **状态迁移只允许状态机驱动**，旁路写入视为契约破坏（架构测试强制）。
+
+### 3.4 证据核对（v1.3，ADR-0027）
+
+- `Evidence.verdict` 只取 `verified` / `mismatch` / `unverified`；**没有记录支持的结论一律 `unverified`**，
+  不臆断打分（诚实呈现铁律）；
+- 结论必带 `recorded_output_ref`，能指向具体 Item/Event/spill；
+- 证据只**追加**，绝不改写被核对的原文（append-only）；复跑核验不在本轮（overview §2），留待 M5。
+
 ## 4. 工作区修订号
 
 - 每次可能改变磁盘状态的动作（工具写/命令执行/接管操作）产生新修订，`revision` 单调递增；
@@ -142,6 +233,7 @@ proposed → accepted_by_user → executing → reported → verified | regresse
 | --- | --- | --- |
 | 会话正文 | `~/.questor/sessions/<thread_id>.jsonl` | **append-only JSONL，唯一真相源** |
 | 搜索索引 | `~/.questor/index/`（SQLite） | **可丢弃可重建**，损坏即重建不修复 |
+| 编排实体 | `~/.questor/orchestration/tasks.jsonl` | **独立 append-only JSONL 唯一真相源**（Task/Plan/Goal/Evidence 记录）；索引可重建；不写进线程正文（ADR-0025） |
 | 工作文件（粘贴长文本/图片） | `~/.questor/files/` | 带过期，清理与历史快照分离 |
 | 工具结果落盘 | 会话目录内 `<tool_use_id>.txt` | O_EXCL 幂等写（B-24），预览 2KB 回链 |
 | 上下文工程记录 | 会话正文 JSONL 内的 `context.boundary` / `context.replacements` 记录 | **与正文同流、append-only**（ADR-0017）：压缩边界与替换决策均只追加不改写；它们是内核的上下文事实，**不是 ItemKind**，对外可见性走 `notice/compact` 事件族（protocol §4） |

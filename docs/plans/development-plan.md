@@ -262,7 +262,49 @@ SSE（M8）"。④ **Terminal 面板 / Browser 面板 / `thread/search` / `selec
 
 ## Phase M4 — 长跑与编排（vigilia + orchestration + evidence 最小版）
 
-**状态**：`- [ ]` 未开始
+**状态**：`- [x]` **已完成 2026-10-12**（M4a 契约先行 / M4b vigilia / M4c orchestration /
+M4d evidence 最小版 / M4e 接口面 + UI + e2e + docs.yml），**总出口达成**（e2e 主钉绿 +
+状态机无旁路写入守卫绿）
+
+**M4 实际结果（2026-10-12）**：契约先行——ADR-0025（编排域实体/状态机/独立 store）、0026
+（vigilia 调度与清扫）、0027（evidence 最小版与 export 接口）、0028（协议加性演进）；
+data-model v1.3、protocol v1.1、schema（`schemas/orchestration/` + app_server 19 方法族
+5 通知族 + `Run.task_id`/`goal_id`）。代码：`vigilia`（声明式触发器 + tick/per-task 锁复判
++ 游标清扫 + 双 reconcile + 检查点 + `process` wake）；`orchestration`（单点状态机 + 独立
+append-only store + 编排门 + Plan/Goal/Task/board + `OrchestrationService`）；`evidence`
+（核对器 + export 接口 + 投影）；`tools`（`OrchestrationPort` 注入 + `plan`/`task` 工具）；
+`serve`（19 编排方法 + 5 通知族）；`cli`（task/goal 薄命令）；`ui`（Board 分栏看板 + 确认/打回）；
+`tests/e2e/`（转后台→任务总结→打回→重做→diff 可回看）；`docs.yml` + `check_docs.py`。护栏：
+`test_orchestration_transition_single_entry`、`test_orchestration_fold_kinds_are_projected`、
+`test_vigilia_*`（含对抗）、`test_orchestration_gate/store/service`、`test_evidence_*`、
+`test_ci_parity`（扩 docs.yml）。**负向验证**：两条新编排护栏各注入一次真实漂移即红（已复原）；
+B-96 的拒绝分支临时禁用即红（已复原）；B-94 由并发用例当场抓到（5→1）。
+
+**M4 收尾四件事**：① 本计划状态勾销 + 此实际结果；② `overview.md` §12 M4 行标记已完成；
+③ 四条 ADR 已落（索引同步）；④ 坑目录 B-40/41/42/43/44/49 转 covered、新增 B-94/95/96、
+B-38/39 裁 moot。
+
+**M4 偏离留痕**：① 看板 **DAG 图推 E1**（D7；M4 落注册表驱动的分栏看板，满足前端跟随即止）；
+② 桌面壳 `desktop/src-tauri/` + `assets/` + `desktop.yml` **推 M5**（ADR-0024 M4 收口）；
+③ `OrchestrationPort` 为"编排门有真实调用方"而落（D4），若评审否决则退化为 served-only 编排；
+④ evals N=12 基线首跑仍 pending（本机无凭据），按 ADR-0021 口径继续诚实标注，不凑基线。
+
+**分段与偏离留痕（2026-10-12，用户裁定"扩展优先"）**
+
+- **M4a 契约先行**：ADR-0025（编排域实体/状态机/独立 store）、0026（vigilia 调度与清扫）、
+  0027（evidence 最小版与 export 接口）、0028（协议加性演进）；data-model v1.3、protocol v1.1、
+  schema 新族 `schemas/orchestration/v1.json` + app_server 方法族；overview/structure/本计划回写；
+  生成链重跑（`just gen-check` 绿）。
+- **M4b vigilia**：声明式触发器（once/interval/cron）+ tick（per-task 锁 B-49）+ 分批游标清扫（B-40）
+  + once 幂等（B-42）+ 启动/周期双 reconcile（B-44）+ 唤醒检查点；`process` 工具补"改唤醒周期"。
+- **M4c orchestration**：`transitions.py` 单点状态机 + 独立 append-only store + 编排门（结构化载荷 B-43）
+  + Plan/Goal/Task/board；模型侧 `plan`/`task` 工具经 `OrchestrationPort` 注入（tools 不 import orchestration）。
+- **M4d evidence 最小版**：声称 vs 录得核对器 + `export` 接口形状 + 投影；不做复跑。
+- **M4e 接口面**：serve 编排方法族与通知族 + assembly 注入 + CLI 薄命令 + `ui/` 看板面板
+  + `tests/e2e/` + `docs.yml`。
+- **偏离**：① 看板 **DAG 图推 E1**（M4 落注册表驱动的分栏看板，满足 `AGENTS.md` §五 前端跟随即止）；
+  ② 桌面壳 `desktop/src-tauri/` + `assets/` + `desktop.yml` **推 M5**（ADR-0024 M4 收口）；
+  ③ `OrchestrationPort` 为"编排门有真实调用方"而落，若评审否决则退化为 served-only 编排（见 ADR-0025 失效条件）。
 
 **做什么**（= structure §11 M4 行）：`vigilia`、`orchestration`、`evidence` 最小版、`tests/e2e/`。
 
@@ -277,7 +319,7 @@ SSE（M8）"。④ **Terminal 面板 / Browser 面板 / `thread/search` / `selec
 
 **阅读地图**：EvoFlow `collab/`、`gateway/task_queue_runner.py`、`gateway/automation_runner.py`+`automation_scheduler.py`、`gateway/zombie_run_sweeper.py`、`app/channels/services/goal_service.py`、`app/gateway/channel_result_push.py`；wuu `internal/appserver/thread_delete.go`+`session_organization_handlers`+`search.go`；FlowCoder `scheduler/`+`watchdog/`（仅参照，投机性设计不照单）。
 
-**前端同步点**：看板 UI（`@xyflow/react` DAG）、任务总结卡与确认/打回交互（可审计轨迹以 evopanel `ModelTrajectory*` 一族为范本）。
+**前端同步点**：看板 UI（M4 落**注册表驱动的分栏看板**——任务列表 + 状态分栏；`@xyflow/react` 的 DAG 图**推 E1**，理由见上"偏离"①）、任务总结卡与确认/打回交互（可审计轨迹以 evopanel `ModelTrajectory*` 一族为范本）。
 
 **出口判据**（§12）：端到端链跑通"转后台→出任务总结→打回→重做→diff 可回看"；状态机无旁路写入。
 

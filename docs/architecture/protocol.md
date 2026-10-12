@@ -1,6 +1,6 @@
 # Questor 跨进程协议（protocol）
 
-版本: v1.0 | 更新: 2026-10-11 | 状态: accepted（M1 定稿）
+版本: v1.1 | 更新: 2026-10-12 | 状态: accepted（M1 定稿；v1.1 补编排方法族/通知族与协议加性演进规则，见 ADR-0028）
 关联: `overview.md` §8（草案出处）、`data-model.md`（实体契约）、
 `src/questor/schemas/app_server/`（本协议的 JSON Schema 物化）、
 `docs/specs/behavior-protocol-wuu.md`（协议形状参照）
@@ -12,6 +12,9 @@
 ## 1. 传输与信封
 
 - 协议名 `qst-app-server/v0.1`；**版本严格相等，不做降级兼容**（B-60）。
+- **版本号只标记破坏性变化**（ADR-0028）：新增方法族/通知族、追加可选字段属**加性变化，
+  不升版本**——客户端经 `initialize` 的 `methods` / `notification_families` 发现能力，
+  并按 §2 容忍未知通知；删改方法、改变字段语义/类型/必需集合才升 `v0.x`。
 - 两种传输、**同一会话层**（Web 宿主不得拥有第二套契约或私有端点）：
   - 桌面（Tauri sidecar）：**stdio 上的 NDJSON**；
   - 网页（本地）：Gateway 的 **WS/SSE**，默认只绑 `127.0.0.1`。
@@ -64,6 +67,19 @@
 | `content/read` / `attachment/read` | **deferred content**：大内容按引用延迟取 |
 | `selection/annotate` | 选中文字→批注/侧聊/只改这段（源定位 = 修订号 + 字节 offset） |
 
+### 编排与长跑（v1.1；ADR-0025/0026/0027）
+
+| 方法 | 说明 |
+| --- | --- |
+| `task/create` / `task/list` / `task/show` | 看板任务；`task/create` 须先过编排门（无 Plan → `need_plan_first`） |
+| `task/plan` | 写入/修订计划（Plan）；`requirement_revision` 递增即作废既有验收 |
+| `task/start` / `task/pause` / `task/resume` | 执行控制；`task/start` 须用户「开始执行」授权（`need_execution_authorization`） |
+| `task/reject` / `task/retry` / `task/complete` | 验收打回（`reviewed → executing`）/ 重做 / 通过（`reviewed → completed`） |
+| `goal/create` / `goal/list` / `goal/show` | 后台自驱长跑目标 |
+| `goal/start` / `goal/stop` | 起跑/停止 Goal 长跑循环 |
+| `schedule/list` / `schedule/enable` / `schedule/disable` | 值守调度（`once`/`interval`/`cron`，vigilia） |
+| `evidence/get` | 按 subject（run/task/turn）取证据核对结果（声称 vs 录得） |
+
 ### 能力与配置
 
 | 方法 | 说明 |
@@ -82,6 +98,10 @@
 | `delta` / `replace` | 流式文本双通道 |
 | `run/status` | 状态机迁移（含旁态与终态） |
 | `notice/compact` | 压缩通知（started/success/noop/失败） |
+| `task/status` / `plan/updated` | 编排：任务状态迁移与计划修订（v1.1，ADR-0025） |
+| `goal/status` | 长跑目标状态迁移（v1.1，ADR-0025） |
+| `evidence/reported` | 证据核对结论（含 `recorded_output_ref`，v1.1，ADR-0027） |
+| `notice/schedule` | 值守调度事件（触发/跳过，v1.1，ADR-0026） |
 
 ## 5. `initialize`
 
@@ -109,8 +129,8 @@
 | error_kind | 场景 | model_next_action 示例 |
 | --- | --- | --- |
 | `boundary_denied` | limen 拒绝 | "use read-only tools, or tell the user..." |
-| `need_execution_authorization` | 编排门 | "待用户「开始执行」后重试" |
-| `need_plan_first` | 编排门 | "先调用 plan 落库计划" |
+| `need_execution_authorization` | 编排门（M4 启用） | "待用户「开始执行」后重试" |
+| `need_plan_first` | 编排门（M4 启用） | "先调用 plan 落库计划" |
 | `stale_revision` | 修订号不匹配 | "re-read the file at the new revision" |
 | `protocol_version_mismatch` | 握手失败 | 无（终止） |
 | `unknown_method` / `invalid_params` | 信封层 | — |
