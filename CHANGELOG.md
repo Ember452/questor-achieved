@@ -61,3 +61,37 @@
 
 见上方 `[未发布]`。M3 出口判据 1–4 全部经测试钉住；判据 5（evals N=12 首跑）
 诚实标注"未跑"（本机无凭据），见 `evals/README.md` §M3d。
+
+## [M4 骨架] - 2026-10-12（长跑与编排；ADR-0025/0026/0027/0028）
+
+### Added
+- `src/questor/vigilia/` — 值守长跑：声明式触发器（`once`/`interval`/`cron`）+ tick
+  （per-task 锁 + 守卫锁，拿锁后复判，B-49/B-94）+ 分批游标清扫（B-40）+ once 幂等（B-42）
+  + 同分钟去重（B-41）+ 启动/周期双 reconcile（B-44）+ 唤醒检查点；`process` 工具补"改唤醒周期"。
+- `src/questor/orchestration/` — 编排域：`transitions.py` 单点任务状态机（data-model §3.3）、
+  独立 append-only store（`~/.questor/orchestration/tasks.jsonl` + 可重建索引，ADR-0025）、
+  编排门（结构化错误载荷 B-43）、Plan/Goal/Task/board、`OrchestrationService`（端口实现）。
+- `src/questor/evidence/` — 验收证据最小版：声称 vs 录得核对器、`export` 接口形状、
+  按 subject 投影（ADR-0027；不做复跑）。
+- `src/questor/schemas/orchestration.py` + `schemas/orchestration/v1.json`（编排实体契约，
+  data-model v1.3）；`schemas/vigilia.py`（调度形状）。
+- `tools/ports.py` `OrchestrationPort` + `ToolContext.orchestration`/`thread_id`（R1 端口注入）；
+  模型侧 `plan`/`task` 工具经该端口生效（tools 不 import orchestration）。
+- 提示词资产 `plan_protocol.toml` / `task_protocol.toml` / `goal_loop.toml`（禁止内联提示词）。
+- `serve` 方法族 `task/*` `goal/*` `schedule/*` `evidence/get`（19 项）+ 通知族
+  `task/status` `plan/updated` `goal/status` `evidence/reported` `notice/schedule`；
+  `initialize.notification_families` 改为从注册表取（单一真相）。
+- `cli` 薄命令 `questor task {list,show,create}` / `questor goal {list,create}`（能力全经 serve）。
+- `ui/src/panels/board.tsx` + 注册表登记：任务分栏看板 + 任务总结卡确认/打回（DAG 图推 E1，D7）。
+- `tests/e2e/` — M4 出口主钉：转后台 → 任务总结 → 打回 → 重做 → diff 可回看。
+- `.github/workflows/docs.yml` + `scripts/ci/check_docs.py`（文档相对链接存在性）。
+- 坑目录新增 B-94/B-95/B-96；B-40/41/42/43/44/49 由 open 转 covered；B-38/B-39 裁定 moot。
+
+### Changed
+- `docs/architecture/data-model.md` → v1.3（编排实体 + `Run.task_id`/`goal_id`）；
+  `protocol.md` → v1.1（编排方法族/通知族 + 协议加性演进规则 ADR-0028）；
+  `overview.md` §7/§12/§14、`structure.md` §5/§6/§11、`development-plan.md` M4 同步。
+- `structure.md` §5 依赖矩阵给 `orchestration` 增 `state`（独立 store 需原子写/锁/路径单点）。
+
+### Removed
+- 无。
