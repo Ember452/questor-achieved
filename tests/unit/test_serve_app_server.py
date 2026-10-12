@@ -13,6 +13,8 @@ from typing import Any
 import pytest
 
 from questor.engine import Engine
+from questor.engine.model import StreamEnd
+from questor.schemas.llm import LLMUsage, ModelCapabilities, WindowSource
 from questor.schemas.model import PermissionMode, Thread, Timestamp
 from questor.serve import Dispatcher, Notification, parse_line, run_stdio
 from questor.serve.app_server import PROTOCOL_NAME, AppServer
@@ -211,3 +213,97 @@ async def test_stdio_writes_only_protocol_frames(tmp_path: Any) -> None:
 
 def test_error_payload_shape_is_stable() -> None:
     assert error_payload("invalid_params", "bad") == {"code": "invalid_params", "message": "bad"}
+
+
+@pytest.mark.asyncio
+async def test_thread_create_rejects_unknown_engine_id() -> None:
+    """data-model.md §2：engine_id 不静默切换——非内建引擎显式报错，不吞成 questor-engine。"""
+    server = AppServer(create_engine=_no_engine)
+    dispatcher = server.build_dispatcher()
+    await dispatcher.handle_line(
+        _frame("thread/create", {"workspace_id": "ws-x", "engine_id": "codex"}, "21")
+    )
+    await dispatcher.drain()
+    payload = json.loads(dispatcher.writers.lines[-1])
+    assert payload["id"] == "21"
+    assert payload["error"]["code"] == "invalid_params"
+    assert "未知引擎" in payload["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_max_concurrency_gates_parallel_runs(tmp_path: Any) -> None:
+    """max_concurrency=1 时第二个 run 必须排队，直到第一个终态——回显字段有执行体。"""
+    with fake_home():
+        from questor.gesta import create_thread
+
+        for tid in ("thread-sem-a", "thread-sem-b"):
+            create_thread(
+                Thread(
+                    id=tid,
+                    workspace_id="ws-sem",
+                    title=tid,
+                    engine_id="questor-engine",
+                    permission_mode=PermissionMode.STANDARD,
+                    pinned=False,
+                    archived=False,
+                    created_at=T0,
+                    updated_at=T0,
+                )
+            )
+        release = asyncio.Event()
+        entered = asyncio.Event()  # run_a 进入 stream 后置位，确定它已占住唯一令牌
+        started = {"a": False, "b": False}
+
+        class _Gated:
+            def __init__(self, name: str) -> None:
+                self._name = name
+
+            @property
+            def capabilities(self) -> ModelCapabilities:
+                return ModelCapabilities(
+                    context_window=100_000,
+                    max_output_tokens=1000,
+                    supports_thinking=False,
+                    supports_prompt_cache=False,
+                    window_source=WindowSource.CONFIG,
+                )
+
+            async def stream(self, request: Any):
+                started[self._name] = True
+                entered.set()
+                await release.wait()
+                yield StreamEnd(usage=LLMUsage(), stop_reason="end_turn")
+
+            async def aclose(self) -> None:
+                return None
+
+        def create_engine(thread_id: str, mode: PermissionMode) -> Engine:
+            name = "a" if thread_id.endswith("a") else "b"
+            return Engine(
+                model=_Gated(name),  # type: ignore[arg-type]
+                registry=_registry(),
+                ctx=_ctx(tmp_path),
+                mode=mode,
+                roots=[str(tmp_path)],
+            )
+
+        server = AppServer(create_engine=create_engine, max_concurrency=1)
+        dispatcher = server.build_dispatcher()
+        await dispatcher.handle_line(
+            _frame("turn/start", {"thread_id": "thread-sem-a", "user_text": "go"}, "31")
+        )
+        # 等 run_a 真正进入 stream（已拿到唯一令牌）
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        assert started["a"] is True
+        assert started["b"] is False
+
+        await dispatcher.handle_line(
+            _frame("turn/start", {"thread_id": "thread-sem-b", "user_text": "go"}, "32")
+        )
+        await asyncio.sleep(0.05)
+        # a 卡在 release、占住唯一令牌 → b 的 engine 根本不会被调到（排队）
+        assert started["b"] is False, "max_concurrency=1 时第二个 run 应排队而非并发突破"
+
+        release.set()
+        await server.wait_idle()
+        assert started["b"] is True, "a 终态释放令牌后，b 应获准启动"

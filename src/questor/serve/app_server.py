@@ -46,6 +46,7 @@ from questor.sessiontrace import project_thread, project_turn
 from questor.state.paths import thread_path
 from questor.version import build_commit, questor_version
 from questor.workspaces import (
+    WorkspaceError,
     current_revision,
     get_workspace,
     is_within_workspace,
@@ -81,6 +82,9 @@ class AppServer:
     max_concurrency: int = 2
     issues: tuple[str, ...] = ()
     _runs: dict[str, asyncio.Task[None]] = field(default_factory=dict, repr=False)
+    #: 真实并发限流：initialize 回显的 max_concurrency 必须有执行体兑现（非空头支票）。
+    #: lazy 建（首次 turn_start 时在 loop 内），上限 = max_concurrency。
+    _run_sem: asyncio.Semaphore | None = field(default=None, repr=False)
     #: 输出汇：旧单一 callback 保留为测试钩子；新多宿主走 _fanout
     _notify: Callable[[Notification], None] | None = None
     #: M3a-3 插话队列与接管栅栏（同线程 lazily 建）
@@ -194,11 +198,21 @@ class AppServer:
         workspace_id = params.get("workspace_id")
         if not isinstance(workspace_id, str) or not workspace_id:
             raise ValueError("thread/create 缺少必需字段 workspace_id")
+        # data-model.md §2：engine_id "创建时绑定，不静默切换（未知引擎显式报错）"。
+        # 本期只有内建引擎；收下 engine_id 又不路由会造"记了 codex、跑的却是 questor-engine"
+        # 的两套真相，故非内建一律显式拒（外部引擎路由随 M6 engine/adapters）。
+        engine_id = str(params.get("engine_id", BUILTIN_ENGINE_ID))
+        if engine_id != BUILTIN_ENGINE_ID:
+            raise ProtocolError(
+                "invalid_params",
+                f"未知引擎 {engine_id!r}（本期仅内建 {BUILTIN_ENGINE_ID!r}，外部引擎随 M6）",
+                model_next_action=f"omit engine_id or pass {BUILTIN_ENGINE_ID!r}",
+            )
         thread = Thread(
             id=str(params.get("id") or f"thread-{uuid.uuid4().hex[:12]}"),
             workspace_id=workspace_id,
             title=params.get("title"),
-            engine_id=str(params.get("engine_id", BUILTIN_ENGINE_ID)),
+            engine_id=engine_id,
             permission_mode=PermissionMode(str(params.get("permission_mode", "standard"))),
             pinned=False,
             archived=False,
@@ -224,6 +238,10 @@ class AppServer:
         engine = self.create_engine(thread_id, ctx.permission_mode)
         # M3a-3：把插话队列挂到 engine（B-67/94 消费点在 iteration 起点）
         engine.attach_inbox(self._inbox_for(thread_id))
+        # max_concurrency 的真实执行体：lazy 建信号量（此时必在 event loop 内），
+        # 超上限的 run 在 _pump 里排队，而不是并发突破——让 initialize 的回显成为承诺。
+        if self._run_sem is None:
+            self._run_sem = asyncio.Semaphore(self.max_concurrency)
         request = TurnRequest(
             thread_id=thread_id, user_text=text, resume=bool(params.get("resume", False))
         )
@@ -250,10 +268,13 @@ class AppServer:
 
     async def _pump(self, engine: Engine, request: TurnRequest, thread_id: str) -> None:
         del thread_id
-        async for event in engine.run_turn(request):
-            notification = notification_of(event)
-            if notification is not None:
-                self._publish(notification)
+        # 并发限流：拿到令牌才启动引擎循环，run 终态后释放（async with 覆盖异常/取消）。
+        assert self._run_sem is not None  # turn_start 建 task 前已 lazy 初始化
+        async with self._run_sem:
+            async for event in engine.run_turn(request):
+                notification = notification_of(event)
+                if notification is not None:
+                    self._publish(notification)
 
     async def run_stop(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
         """取消传播：取消生成器任务→ 内核清理→ cancelled 终态（engine 侧已实现）。"""
@@ -563,7 +584,7 @@ class AppServer:
             raise ValueError("workspace/revision 需要 workspace_id")
         try:
             rev = await asyncio.to_thread(current_revision, workspace_id)
-        except Exception as exc:  # WorkspaceError 的基类在 workspaces里，用 Exception 兑接一次
+        except WorkspaceError as exc:  # 未注册/损坏记录都归此基类，不裸接 Exception
             raise ProtocolError("invalid_params", str(exc)) from exc
         return {"revision": rev}
 
