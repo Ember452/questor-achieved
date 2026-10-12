@@ -52,4 +52,8 @@
 | [0021](0021-m2-exit-split-evals-deferred.md) | M2 出口拆分：evals 对照基线移出 M2.3 + 判据可执行性口径 | accepted |
 | [0022](0022-serve-ws-starlette-uvicorn.md) | serve 传输层引入 starlette + uvicorn（仅本地 127.0.0.1） | accepted |
 | [0023](0023-m3-transport-ws-only.md) | M3 传输层只落 WS，SSE 推到 M8 | accepted |
-| [0024](0024-desktop-shell-deferred-to-m4.md) | 桌面壳 `desktop/src-tauri/` 从 M3 摘出，落 M4/M5 交界 | accepted |
+| [0024](0024-desktop-shell-deferred-to-m4.md) | 桌面壳 `desktop/src-tauri/` 从 M3 摘出，落 M4/M5 交界（M4 收口再明确为 M5） | accepted |
+| [0025](0025-orchestration-domain-and-store.md) | 编排域：Task/Plan/Goal 实体、状态机与独立 append-only store | accepted |
+| [0026](0026-vigilia-scheduling-and-sweep.md) | vigilia 调度与清扫语义：声明式触发器 + tick 游标幂等 + 唤醒检查点 | accepted |
+| [0027](0027-evidence-minimal-and-export-interface.md) | evidence 最小版：声称 vs 录得的并排核对，export 形状先定死为接口 | accepted |
+| [0028](0028-protocol-additive-evolution.md) | 协议演进规则：加性方法/通知不升版本，破坏性改动才升 | accepted |
