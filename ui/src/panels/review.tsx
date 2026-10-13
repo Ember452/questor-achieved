@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { client } from "../rpc/client";
 import type { FileDiff } from "../rpc/generated/app_server-v0-1";
+import { FileDiffView } from "./review.diff-view";
 import type { PanelProps } from "./registry";
 import "./review.css";
 
@@ -118,10 +119,10 @@ function FileDiffCard({
           aria-hidden="true"
         />
       </header>
-      {/* 折叠态：body 完全不入 DOM（textContent 不含 hunk header，B-103 语义折叠而非视觉裁剪）。*/}
+      {/* 折叠态：body 完全不入 DOM（@pierre/diffs 不入 DOM，B-103 语义折叠而非视觉裁剪）。*/}
       {!state.collapsed && (
         <div className="qst-review-card-body">
-          <pre className="qst-review-card-pre">{diff.unified || "(no changes)"}</pre>
+          <FileDiffView diff={diff} />
         </div>
       )}
     </section>
