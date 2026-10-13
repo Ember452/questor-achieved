@@ -7,13 +7,16 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 
-export interface SidecarHandle {
+export interface SidecarHandleLike {
+  exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
+  kill(signal?: NodeJS.Signals): void;
+}
+
+export interface SidecarHandle extends SidecarHandleLike {
   pid: number;
   stdin: NodeJS.WritableStream;
   stdout: NodeJS.ReadableStream;
   stderr: NodeJS.ReadableStream;
-  exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
-  kill(signal?: NodeJS.Signals): void;
 }
 
 export async function startSidecar(opts: {
