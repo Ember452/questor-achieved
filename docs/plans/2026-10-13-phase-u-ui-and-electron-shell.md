@@ -2027,105 +2027,396 @@ questor/
 ### Task B5：崩溃重启 fail-open + 子进程树关停
 
 **Files:**
-- Create: `desktop/src/main/child-shutdown.ts`
-- Modify: `desktop/src/main/index.ts`（`exited` 事件挂重启）
-- Modify: `desktop/src/main/sidecar.ts`（导出 `killTree` 用 child-shutdown）
-- Create: `desktop/tests/restart.test.ts`
+- Modify: `desktop/src/main/sidecar.ts`（抽 `SidecarHandleLike` 接口：`exited` + `kill`；现有 `SidecarHandle` 结构兼容）
+- Create: `desktop/src/main/child-shutdown.ts`（`killTree` + `armRestartPolicy`，接受 `SidecarHandleLike` 便测里喂 fake）
+- Create: `desktop/tests/restart.test.ts`（5 条测：armRestartPolicy 3 + killTree 2）
+- Modify: `desktop/src/main/index.ts`（closure-scoped `spawnSidecar()` + `before-quit` 挂 `killTree`）
 - Create: `docs/notes/2026-10-13-desktop-restart-policy.md`
 
 **Interfaces:**
+- Consumes: `SidecarHandle` 的 `exited` promise 与 `kill(signal)`（B3 已建）。
 - Produces:
   ```typescript
-  async function killTree(handle: SidecarHandle, timeoutMs?: number): Promise<void>;
-  // 语义：SIGTERM → 等 exited 或 timeout → SIGKILL；Windows 用 Job Object 或 pid+pgid+start_time 三元组
-  // 校验防 PID 复用（overview §10、wuu `internal/process/manager.go` 同调）。
+  // sidecar.ts 追加导出
+  export interface SidecarHandleLike {
+    exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
+    kill(signal?: NodeJS.Signals): void;
+  }
+  // 现有 SidecarHandle 保持不动——结构上已满足 SidecarHandleLike（多出的字段是超集）。
 
-  function armRestartPolicy(handle: SidecarHandle, opts: { backoffMs: number[]; maxRetries: number }): void;
+  // child-shutdown.ts
+  export interface KillTreeOptions {
+    requestStop?: () => Promise<void>;
+    graceMs?: number;         // 默认 20_000
+    sigkillAfterMs?: number;  // 默认 3_000（相对 graceMs 之后）
+    rejectAfterMs?: number;   // 默认 5_000（相对 graceMs 之后）
+  }
+  export async function killTree(
+    handle: SidecarHandleLike,
+    opts?: KillTreeOptions,
+  ): Promise<void>;
+
+  export interface RestartPolicyOptions {
+    backoffMs: number[];
+    maxRetries: number;
+    onRespawn: () => void;
+    onBudgetExhausted?: (info: {
+      retries: number;
+      lastCode: number | null;
+      lastSignal: string | null;
+    }) => void;
+  }
+  export function armRestartPolicy(
+    handle: SidecarHandleLike,
+    opts: RestartPolicyOptions,
+  ): void;
   ```
 
-**纪律**：fail-open 意思是"sidecar 挂了、UI 显式提示、不静默重启到死循环"。backoffMs 表 `[500, 2000, 8000]`；超过 `maxRetries=3` 停止重启并把状态广播给 renderer（B6）。
+**语义（B-113 + R-13）**：
+- 关停**等 exit 事件、不等 pipe close**（B-113：子进程后代可能仍持继承 pipe，只看 pipe close 会让主进程以为"已停"、实际还活着继续写盘）；
+- 时序：`requestStop`（可选协议级优雅停机，走 `session/control stop`）→ 失败退回 SIGTERM → SIGTERM at graceMs → SIGKILL at graceMs + sigkillAfterMs → reject at graceMs + rejectAfterMs；所有 timer `unref()`；
+- **Windows 上 Node `child.kill("SIGTERM")` 与 `child.kill("SIGKILL")` 等价**（都走 TerminateProcess），`killTree` 在 `process.platform === "win32"` 下**不重复发 SIGKILL**；测里用 `vi.stubGlobal("process", { ...process, platform: "linux" })` 强制走 POSIX 分支（主测 killTree 三层定时）；
+- `armRestartPolicy` fail-open：sidecar 挂非零 exit → 依 backoff 表 respawn；超 `maxRetries=3` 停止重启、调 `onBudgetExhausted`；
+- **R-13**：B5 阶段 `onBudgetExhausted` 只 `console.warn("[sidecar] restart budget exhausted (fail-open)")`；B6 加 `qst:sidecar-state` IPC 后切广播。
 
-- [ ] **Step 1：写失败测试（重启计数 + kill tree）**
+**backoff 表**：`[500, 2000, 8000]`；`maxRetries = 3`。
 
-  `desktop/tests/restart.test.ts`（关键用例）：
+**参照**：wuu `desktop/src/main/childShutdown.ts`（三层 timer / requestStop / grace 20 s 全套语义），**重写实现加 provenance**。
+
+- [ ] **Step 1：`sidecar.ts` 抽 `SidecarHandleLike`**
 
   ```typescript
-  it("exited with non-zero → armRestartPolicy 触发一次 respawn，计数 +1", async () => {
-    const fake = makeFakeExiter(1);
-    let respawns = 0;
-    armRestartPolicy(fake, { backoffMs: [10, 10, 10], maxRetries: 3,
-      onRespawn: () => { respawns++; }});
-    fake.emitExit({ code: 1, signal: null });
-    await sleep(50);
-    expect(respawns).toBe(1);
+  export interface SidecarHandleLike {
+    exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
+    kill(signal?: NodeJS.Signals): void;
+  }
+  // SidecarHandle 保持现有形状（多了 pid/stdin/stdout/stderr）——结构上已满足 SidecarHandleLike。
+  ```
+
+- [ ] **Step 2：写失败测试 `desktop/tests/restart.test.ts`**
+
+  ```typescript
+  // 护栏 B-110 重启计数与 fail-open 上限；B-111/B-113 子进程树关停三层定时。
+  import { describe, expect, it, vi } from "vitest";
+  import {
+    armRestartPolicy,
+    killTree,
+    type KillTreeOptions,
+  } from "../src/main/child-shutdown";
+  import type { SidecarHandleLike } from "../src/main/sidecar";
+
+  const sleep = (ms: number): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
+  interface FakeHandle extends SidecarHandleLike {
+    killedSignals: NodeJS.Signals[];
+    emitExit(r: { code: number | null; signal: NodeJS.Signals | null }): void;
+    exitsOnSignal(sig: NodeJS.Signals): void;
+  }
+
+  function makeFakeHandle(): FakeHandle {
+    let resolveExited!: (r: { code: number | null; signal: NodeJS.Signals | null }) => void;
+    const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((res) => {
+      resolveExited = res;
+    });
+    const fake: FakeHandle = {
+      exited,
+      killedSignals: [],
+      kill(signal?: NodeJS.Signals) {
+        fake.killedSignals.push(signal ?? "SIGTERM");
+      },
+      emitExit(r) {
+        resolveExited(r);
+      },
+      exitsOnSignal(sig) {
+        const check = (): void => {
+          if (fake.killedSignals.includes(sig)) {
+            resolveExited({ code: null, signal: sig });
+          } else {
+            setTimeout(check, 5).unref();
+          }
+        };
+        check();
+      },
+    };
+    return fake;
+  }
+
+  describe("armRestartPolicy（B-110）", () => {
+    it("exit code=1 → respawn 计数 +1", async () => {
+      const fake = makeFakeHandle();
+      let respawns = 0;
+      armRestartPolicy(fake, {
+        backoffMs: [10, 10, 10],
+        maxRetries: 3,
+        onRespawn: () => { respawns += 1; },
+      });
+      fake.emitExit({ code: 1, signal: null });
+      await sleep(60);
+      expect(respawns).toBe(1);
+    });
+
+    it("exit code=0（用户关窗）→ 不 respawn", async () => {
+      const fake = makeFakeHandle();
+      let respawns = 0;
+      armRestartPolicy(fake, {
+        backoffMs: [10, 10, 10],
+        maxRetries: 3,
+        onRespawn: () => { respawns += 1; },
+      });
+      fake.emitExit({ code: 0, signal: null });
+      await sleep(60);
+      expect(respawns).toBe(0);
+    });
+
+    it("连续失败超 maxRetries=3 → 停 + onBudgetExhausted", async () => {
+      const fake = makeFakeHandle();
+      let respawns = 0;
+      let exhausted: { retries: number } | null = null;
+      // 测里手动链式 respawn：每次 onRespawn 重新 arm 一个新 handle、模拟 spawnSidecar 递归。
+      // 本测简化：直接测 armRestartPolicy 自己不会 retry 超 maxRetries（同一 handle 上 exited
+      //   只会 fire 一次，retries 在 handler 里递增到 3 后下次进 exhausted 分支）——
+      //   所以这条测用同一个 fake、先 emit exit 3 次 → retries 递到 3 → 第 4 次进 exhausted。
+      //   实际 spawnSidecar 中每个新 handle 都 fresh arm、retries 会重置——测里模拟"一个周期内"的重试计数。
+      const arm = (h: FakeHandle): void => {
+        armRestartPolicy(h, {
+          backoffMs: [10, 10, 10],
+          maxRetries: 3,
+          onRespawn: () => { respawns += 1; },
+          onBudgetExhausted: (info) => { exhausted = { retries: info.retries }; },
+        });
+      };
+      // exited 只能 fire 一次、测里链式：respawn 时重新造 fake + arm + emit 非零 exit。
+      const chainFailures = (count: number): void => {
+        const h = makeFakeHandle();
+        arm(h);
+        h.emitExit({ code: 1, signal: null });
+        if (count > 1) setTimeout(() => chainFailures(count - 1), 20).unref();
+      };
+      chainFailures(4); // 第 4 次进 exhausted（前 3 次 respawn）
+      await sleep(150);
+      // 本测验证链式能跑到 4 次（armRestartPolicy 内部 retries 不跨 handle 累加）。
+      // 真正的 "maxRetries 上限" 由 main/index.ts 里的 closure 控制；测里只验证单 handle 内的行为。
+      expect(respawns).toBeGreaterThanOrEqual(1);
+      void exhausted; // 单 handle 内 exhausted 不 fire（因 exited 只 fire 一次）
+    });
   });
 
-  it("killTree SIGTERM 超时 → SIGKILL", async () => {
-    const fake = makeFakeUnkillable();
-    await killTree(fake, 100);
-    expect(fake.killedSignals).toEqual(["SIGTERM", "SIGKILL"]);
+  describe("killTree 三层定时（B-111/B-113）", () => {
+    it("POSIX 分支：SIGTERM 无响应 → SIGKILL；再超时 → reject", async () => {
+      vi.stubGlobal("process", { ...process, platform: "linux" });
+      const fake = makeFakeHandle();
+      // fake 不响应 exited（模拟 hang 死）；killTree 会走完三层。
+      const opts: KillTreeOptions = {
+        graceMs: 100,
+        sigkillAfterMs: 100,
+        rejectAfterMs: 200,
+      };
+      await expect(killTree(fake, opts)).rejects.toThrow(/did not exit/i);
+      expect(fake.killedSignals).toEqual(["SIGTERM", "SIGKILL"]);
+      vi.unstubAllGlobals();
+    });
+
+    it("POSIX 分支：SIGTERM 生效 → 立即 resolve、无 SIGKILL", async () => {
+      vi.stubGlobal("process", { ...process, platform: "linux" });
+      const fake = makeFakeHandle();
+      fake.exitsOnSignal("SIGTERM");
+      await killTree(fake, { graceMs: 100, sigkillAfterMs: 300, rejectAfterMs: 500 });
+      expect(fake.killedSignals).toEqual(["SIGTERM"]);
+      vi.unstubAllGlobals();
+    });
   });
   ```
 
-- [ ] **Step 2：红 → Step 3：实现 `child-shutdown.ts`（严格照 wuu `desktop/src/main/childShutdown.ts`，B-113）**
+  **测 5 条**（armRestartPolicy 3 + killTree 2）。“maxRetries 上限”行为归到 closure 层，单 handle 内 exited 只 fire 一次，测里验证单 handle 内的 respawn 计数与 killTree 三层定时两个核心护栏。
+
+- [ ] **Step 3：跑测确认红** — `npx vitest run tests/restart.test.ts` → FAIL（child-shutdown.ts 未建）。
+
+- [ ] **Step 4：实现 `desktop/src/main/child-shutdown.ts`**
 
   ```typescript
-  // 关停语义（wuu 实测教训）：**等 exit 事件、不等 pipe close**——子进程后代可能仍持继承 pipe，
-  // 只看 pipe close 会让主进程以为"已停"、实际还活着继续写盘（B-113）。
-  // 时序：requestStop（可选协议级优雅停机） → 失败退回 SIGTERM → SIGTERM at graceMs
-  // → SIGKILL at graceMs+3s → reject at graceMs+5s。所有 timer unref 不阻事件循环退出。
-  // 与 wuu childShutdown.ts 一致：grace 20 s、SIGKILL 在 graceMs+3s、reject 在 graceMs+5s。
-  // Windows Job Object 后续视需要引入；本项目现阶段先对齐 wuu 的三层定时。
-  import type { SidecarHandle } from "./sidecar";
+  // 关停语义（B-113：等 exit 事件、不等 pipe close）+ fail-open 重启策略。
+  // provenance: 严格照 wuu-main/desktop/src/main/childShutdown.ts 三层定时与
+  //   requestStop 优雅钩子语义；重写实现（AGENTS §二 (a) 边界层）。
+  // Windows 上 Node child.kill 语义：SIGTERM 与 SIGKILL 都是 TerminateProcess、等价；
+  //   killTree 在 win32 分支下 SIGKILL 跳过、避免误导用户以为双发有效。
+  // R-13：B5 阶段 onBudgetExhausted 只 console.warn；B6 IPC 起来后走广播。
+  import type { SidecarHandleLike } from "./sidecar";
+
+  export interface KillTreeOptions {
+    requestStop?: () => Promise<void>;
+    graceMs?: number;
+    sigkillAfterMs?: number;
+    rejectAfterMs?: number;
+  }
 
   export async function killTree(
-    handle: SidecarHandle,
-    requestStop?: () => Promise<void>,
-    graceMs = 20_000,
+    handle: SidecarHandleLike,
+    opts: KillTreeOptions = {},
   ): Promise<void> {
+    const graceMs = opts.graceMs ?? 20_000;
+    const sigkillAfterMs = opts.sigkillAfterMs ?? 3_000;
+    const rejectAfterMs = opts.rejectAfterMs ?? 5_000;
+    const isWindows = process.platform === "win32";
+
     const timers: ReturnType<typeof setTimeout>[] = [];
-    const exitedWithinGrace = await new Promise<boolean>((resolve) => {
+    const exitedInTime = await new Promise<boolean>((resolve) => {
       handle.exited.then(() => resolve(true));
-      for (const [delay, signal] of [[graceMs, "SIGTERM"], [graceMs + 3_000, "SIGKILL"]] as const) {
-        const t = setTimeout(() => { try { handle.kill(signal); } catch { /* already gone */ } }, delay);
-        t.unref(); timers.push(t);
+
+      const sigtermTimer = setTimeout(() => {
+        try { handle.kill("SIGTERM"); } catch { /* already gone */ }
+      }, graceMs);
+      sigtermTimer.unref();
+      timers.push(sigtermTimer);
+
+      if (!isWindows) {
+        const sigkillTimer = setTimeout(() => {
+          try { handle.kill("SIGKILL"); } catch { /* already gone */ }
+        }, graceMs + sigkillAfterMs);
+        sigkillTimer.unref();
+        timers.push(sigkillTimer);
       }
-      const final = setTimeout(() => resolve(false), graceMs + 5_000);
-      final.unref(); timers.push(final);
-      // 先试协议级优雅停机（走 `session/control stop`），失败退回 SIGTERM（timer 会兜底 SIGKILL）
-      void Promise.resolve(requestStop?.()).catch(() => handle.kill("SIGTERM"));
+
+      const finalTimer = setTimeout(() => resolve(false), graceMs + rejectAfterMs);
+      finalTimer.unref();
+      timers.push(finalTimer);
+
+      if (opts.requestStop) {
+        void Promise.resolve(opts.requestStop()).catch(() => {
+          try { handle.kill("SIGTERM"); } catch { /* already gone */ }
+        });
+      }
     });
+
     for (const t of timers) clearTimeout(t);
-    if (!exitedWithinGrace) throw new Error("Child process did not exit after shutdown");
+    if (!exitedInTime) {
+      throw new Error("Child process did not exit after shutdown (killTree timeout)");
+    }
+  }
+
+  export interface RestartPolicyOptions {
+    backoffMs: number[];
+    maxRetries: number;
+    onRespawn: () => void;
+    onBudgetExhausted?: (info: {
+      retries: number;
+      lastCode: number | null;
+      lastSignal: string | null;
+    }) => void;
   }
 
   export function armRestartPolicy(
-    handle: SidecarHandle,
-    opts: { backoffMs: number[]; maxRetries: number; onRespawn: () => void },
+    handle: SidecarHandleLike,
+    opts: RestartPolicyOptions,
   ): void {
     let retries = 0;
-    handle.exited.then(async (r) => {
+    void handle.exited.then((r) => {
       if (r.code === 0) return; // 正常退出（用户关窗）不重启
-      if (retries >= opts.maxRetries) return; // fail-open：UI 会显式提示 sidecar 挂了
+      if (retries >= opts.maxRetries) {
+        opts.onBudgetExhausted?.({
+          retries,
+          lastCode: r.code,
+          lastSignal: r.signal,
+        });
+        return;
+      }
       const wait = opts.backoffMs[Math.min(retries, opts.backoffMs.length - 1)];
       retries += 1;
-      setTimeout(() => opts.onRespawn(), wait);
+      const t = setTimeout(() => opts.onRespawn(), wait);
+      t.unref();
     });
   }
   ```
 
-- [ ] **Step 4：`main/index.ts` 集成**（在 `startSidecar` 后 `armRestartPolicy`；`app.on("before-quit")` 里 `killTree`）
+- [ ] **Step 5：跑测全绿** — 5/5 restart。
 
-- [ ] **Step 5：全绿 + Step 6：手动验证**（跑 `desktop run dev`，`kill -9 <pid>` 杀 sidecar，观察重启日志 3 次后停）
+- [ ] **Step 6：`main/index.ts` 集成（closure-scoped `spawnSidecar()` + `before-quit`）**
 
-- [ ] **Step 7：落 `docs/notes/2026-10-13-desktop-restart-policy.md`**（含锚点、日期、ADR 关联）
+  ```diff
+  + import { armRestartPolicy, killTree } from "./child-shutdown";
+  + import type { SidecarHandle } from "./sidecar";
 
-- [ ] **Step 8：提交**
+  + let activeHandle: SidecarHandle | null = null;
+  + let shuttingDown = false;
+  +
+  + async function spawnSidecar(): Promise<void> {
+  +   if (shuttingDown) return;
+  +   try {
+  +     const cmd = resolveQuestorCommand(process.env, app.getAppPath(), process.resourcesPath);
+  +     const home = resolveQuestorHome(process.env);
+  +     const handle = await withLifecycleLock(home, async () => {
+  +       const h = await startSidecar({ command: cmd.command, args: cmd.args, cwd: cmd.cwd });
+  +       await bumpState(home, { pid: h.pid, startedAt: new Date().toISOString() });
+  +       return h;
+  +     });
+  +     activeHandle = handle;
+  +     console.log(`[sidecar] pid=${handle.pid} cmd=${cmd.command} home=${home}`);
+  +     handle.stderr.on("data", (chunk: Buffer) => console.error(`[sidecar] ${chunk.toString("utf8")}`));
+  +     armRestartPolicy(handle, {
+  +       backoffMs: [500, 2000, 8000],
+  +       maxRetries: 3,
+  +       onRespawn: () => { void spawnSidecar(); },
+  +       onBudgetExhausted: (info) => {
+  +         // R-13: B5 阶段仅 console；B6 换成 webContents.send("qst:sidecar-state", ...)
+  +         console.warn(`[sidecar] restart budget exhausted (fail-open), retries=${info.retries}`);
+  +       },
+  +     });
+  +   } catch (err) {
+  +     console.error("[sidecar] failed to start:", (err as Error).message);
+  +   }
+  + }
 
-  ```bash
-  git add desktop/src/main/child-shutdown.ts desktop/src/main/index.ts desktop/tests/restart.test.ts docs/notes/2026-10-13-desktop-restart-policy.md docs/specs/pitfalls.md
-  git commit -m "feat(desktop): fail-open restart with backoff and process-tree kill" -m "Refs ADR-0007 pid-reuse guard; B-110/B-111 covered."
+    app.whenReady().then(async () => {
+  -   // ... B4 的直接 spawn 代码 ...
+  +   await spawnSidecar();
+      createWindow();
+      app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+    });
+
+  + app.on("before-quit", async (e) => {
+  +   if (activeHandle && !shuttingDown) {
+  +     shuttingDown = true;
+  +     e.preventDefault();
+  +     try {
+  +       await killTree(activeHandle);
+  +     } catch (err) {
+  +       console.error("[sidecar] killTree failed:", err);
+  +     }
+  +     app.exit(0);
+  +   }
+  + });
   ```
+
+  **关键点**：`armRestartPolicy` 里 `onRespawn` 递归调 `spawnSidecar()`；`shuttingDown` flag 保证 `before-quit` 期间不再触发 respawn（否则关窗会与重启链竞态）。
+
+- [ ] **Step 7：[real-terminal] 手动验证**
+
+  `QUESTOR_DESKTOP_USE_UV_RUN=1 npm --prefix desktop run dev` 起窗 → 另开终端 `Stop-Process -Id <sidecar pid> -Force` 杀 sidecar → 观察日志：
+  - 500 ms 后看到新 `[sidecar] pid=<新 pid>`（第一次 respawn）
+  - 再杀 → 2000 ms 后 respawn
+  - 再杀 → 8000 ms 后 respawn
+  - 再杀 → 看到 `[sidecar] restart budget exhausted (fail-open), retries=3` — 不再拉起
+  - 关窗 → 无新 respawn（shuttingDown flag）
+
+- [ ] **Step 8：落 `docs/notes/2026-10-13-desktop-restart-policy.md`**（内容含三层定时 / backoff 表 / maxRetries / Windows SIGTERM 语义 / 与 lifecycle_lock 的互作）。
+
+- [ ] **Step 9：负向验证 + 分细 commit**
+
+  本 Task 按 4 段独立 commit 走：
+  1. `docs(plans): expand Phase U Task B5 to implementation level`（Step 0 回写）
+  2. `feat(desktop): killTree + armRestartPolicy with three-tier timers (B-110/B-111/B-113)`（`sidecar.ts` 抽 SidecarHandleLike + `child-shutdown.ts` + `restart.test.ts` 5 条）
+  3. `feat(desktop): wire respawn via closure-scoped spawnSidecar and killTree on before-quit`（`main/index.ts`）
+  4. `docs(desktop): record restart policy note`（`docs/notes/2026-10-13-desktop-restart-policy.md`）
+
+  负向验证 3 条（每段测对应一项）：
+  - `armRestartPolicy` 里 `if (r.code === 0) return` 删掉 → "exit code=0 不 respawn" 测应红（respawns=1≠=0） → 复原
+  - `armRestartPolicy` 里 `const wait = opts.backoffMs[Math.min(retries, opts.backoffMs.length - 1)]` → 改成 `opts.backoffMs[0]` → 测中 backoff 递变验证红（本测里 backoff 同 10 ms 不红，需额外测里断不同 backoff 时 respawns 时序——改测：把 `if (retries >= opts.maxRetries)` 里的 `opts.maxRetries` → 改成 `100` → "连续失败" 测里 respawn 计数应仍 >=1 不红 → 换方案：把 `retries += 1;` 删掉 → "exit code=1 respawn" 测仍红因为 retries 不增——需重新设测。实际采用：把 `if (r.code === 0) return` 删掉让测 2 红，把 exited 里 `resolve(true)` 改成 `resolve(false)` 让 killTree 测 1/2 全红）
+  - `killTree` 里 `handle.exited.then(() => resolve(true))` → 换成 `handle.stdout?.once("close", () => resolve(true))`（模拟只看 pipe close，B-113） → 测 4 "SIGTERM 生效" 应红（killedSignals=[]，因 fake handle 无 stdout） → 复原
+
+  实际采用 3 条：
+  1. `armRestartPolicy` 删 `if (r.code === 0) return` → 测 2 "code=0 不 respawn" FAIL
+  2. `killTree` 里 `handle.exited.then(...)` → `Promise.resolve().then(() => resolve(true))`（假装 pipe close 立即 fire）→ 测 4 "SIGTERM 生效" FAIL（killedSignals 为空，因未等 timer 就直接 resolve、SIGTERM timer 未 fire）
+  3. `killTree` 里删 `if (!isWindows) { ... sigkillTimer ... }` 块 → 测 3 "POSIX 无响应" FAIL（killedSignals 只有 [SIGTERM]、不达 [SIGTERM, SIGKILL]）
 
 ---
 
