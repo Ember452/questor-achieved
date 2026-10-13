@@ -20,7 +20,7 @@ Phase U 出口判据（`development-plan.md` §Phase U "出口判据"）：
 |---|---|---|---|
 | 1 | Electron 壳可双击打开、`serve stdio` 被 `child_process` 以管道拉起、窗口里能看到 Review 面板显示真 diff | 拉起 ✅、真 diff 待 [real-terminal] | B3 split 5/5 观测到 `[sidecar] pid=30256 cmd=uv`；Review diff 呈现依赖 `QUESTOR_MODEL_API_KEY`（本机无、按 M3/M4/M5 同口径记 pending） |
 | 2 | `runtime_state.json` 单调 generation + `lifecycle_lock` 用例绿；崩溃重启 fail-open 生效 | ✅ | B4 5 条测绿、B5 5 条测绿；三条负向验证均咬住（详见各 split commit body） |
-| 3 | Windows 打包产物可安装、可启动；`desktop.yml` CI 与本地同源 | 部分 | `desktop.yml` + `justfile` + `test_ci_parity.py` 已同步（B8）；打包配置文件就位（B7）、**`npm run package` 拉 GitHub Releases 失败**、需预放 electron zip 到 `%LOCALAPPDATA%/electron-builder/Cache/` 才能产 exe |
+| 3 | Windows 打包产物可安装、可启动；`desktop.yml` CI 与本地同源 | 部分 | `desktop.yml` + `justfile` + `test_ci_parity.py` 已同步（B8）；打包配置文件就位（B7）、**`npm run package` 拉 GitHub Releases 失败**、需预放 electron zip 到 `%LOCALAPPDATA%/electron-builder/Cache/` 才能产 exe。**另：即便产出 exe，包内只有壳无核**——`extraResources: []`，`questor-core.exe` 不交付（R-10 裁决，Python 打包另开 ADR）；安装后双击 = 壳窗口 + fail-open 无 sidecar，除非设 `QUESTOR_DESKTOP_CORE` env 指向本地开发核 |
 | 4 | `test_no_hardcoded_panel_case.py` 与 `test_ci_parity` 全绿 | ✅ | B8 后 parity 覆盖 desktop.yml、`just check` 也含 desktop-test |
 | 5 | `development-plan.md` Phase U 勾销；坑目录 B-108~B-118 全部 covered 并附负向验证输出 | ✅ | pitfalls.md 116/118 有效、编号连续、证据可定位；B-103~B-107 在 Track A、B-108~B-118 在 Track B 补入 |
 
