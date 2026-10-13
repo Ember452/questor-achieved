@@ -1180,34 +1180,333 @@ questor/
 ### Task B3：主进程 `child_process` 拉起 `questor serve stdio` sidecar
 
 **Files:**
-- Create: `desktop/src/main/sidecar.ts`（NDJSON 帧 + pending 表，形状照 wuu `appServerClients.ts::AppServerClient` 简化到单 client）
-- Create: `desktop/src/main/questor-command.ts`（严格照 wuu `wuuCommand.ts`：`QUESTOR_DESKTOP_CORE` env → `QUESTOR_DESKTOP_USE_UV_RUN=1` + source root → 打包 `Resources/bin/questor-core.exe`；**绝**不 PATH 兜底）
-- Create: `desktop/src/main/atomic-file.ts`（wuu `atomicFile.ts` 同款：O_EXCL + fsync + rename + mode 保留 + `.basename.pid.uuid.tmp` 命名；B4/B6 都依赖）
-- Create: `desktop/tests/sidecar.test.ts`（vitest Node 环境）
-- Create: `desktop/tests/questor-command.test.ts`（护栏：workspace 里有假的 `bin/questor` 也不能被 resolve，B-114）
-- Create: `desktop/tests/atomic-file.test.ts`（护栏：模拟 fsync 后 crash → 目标文件仍旧内容、temp 已清，B-115）
+- Modify: `desktop/package.json`（devDep 加 `vitest`；scripts 加 `test` 与 `test:watch`）
+- Create: `desktop/vitest.config.ts`（node 环境；include `tests/**/*.test.ts`）
+- Create: `desktop/src/main/atomic-file.ts`（照 `wuu-main/desktop/src/main/atomicFile.ts:13-67`；O_EXCL + fsync + rename + mode 保留 + `.basename.pid.uuid.tmp` 命名；B4/B6 依赖）
+- Create: `desktop/tests/atomic-file.test.ts`（护栏 B-115）
+- Create: `desktop/src/main/questor-command.ts`（照 `wuu-main/desktop/src/main/wuuCommand.ts:29-46`；`QUESTOR_DESKTOP_CORE` env → `USE_UV_RUN=1` + sourceRoot → 打包 `Resources/bin/questor-core[.exe]` → throw；**绝不** inspect workspace 下 `bin/questor`、**绝不** PATH 兜底）
+- Create: `desktop/tests/questor-command.test.ts`（护栏 B-114）
+- Create: `desktop/src/main/sidecar.ts`（NDJSON 帧 + spawn 三管道；照 `wuu-main/desktop/src/main/appServerClients.ts:34-46`）
+- Create: `desktop/tests/sidecar.test.ts`（vitest node 环境）
 - Modify: `desktop/src/main/index.ts`（whenReady 里 `resolveQuestorCommand()` → `startSidecar()`）
-- Modify: `desktop/package.json`（devDependencies 加 `vitest`、`@types/node`）
-- Modify: `desktop/electron.vite.config.ts`（把 ui vitest 已引入的 vitest 复用）
 
 **Interfaces:**
 - Consumes: `questor serve stdio`（Python 侧已就绪）；stdin/stdout 管道 NDJSON。
 - Produces:
   ```typescript
-  interface SidecarHandle {
+  // atomic-file.ts
+  export function writeTextFileAtomicSync(path: string, text: string, opts?: { defaultMode?: number }): void;
+  export function writeBufferFileAtomicSync(path: string, data: Buffer, opts?: { defaultMode?: number }): void;
+
+  // questor-command.ts
+  export interface QuestorCommand { command: string; args: string[]; cwd: string }
+  export function resolveQuestorCommand(env: NodeJS.ProcessEnv, appPath: string, resourcesPath?: string): QuestorCommand;
+
+  // sidecar.ts
+  export interface SidecarHandle {
     pid: number;
-    stdin: Writable;
-    stdout: Readable;
-    stderr: Readable;
+    stdin: NodeJS.WritableStream;
+    stdout: NodeJS.ReadableStream;
+    stderr: NodeJS.ReadableStream;
     exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
     kill(signal?: NodeJS.Signals): void;
   }
-  function startSidecar(opts: { command: string; args: string[] }): Promise<SidecarHandle>;
-  function writeFrame(handle: SidecarHandle, obj: unknown): void;   // NDJSON 单行
-  function readFrame(handle: SidecarHandle): Promise<unknown>;      // 读一行、parse
+  export async function startSidecar(opts: {
+    command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv;
+  }): Promise<SidecarHandle>;
+  export function writeFrame(handle: SidecarHandle, obj: unknown): void;
+  export function readFrame(handle: SidecarHandle): Promise<unknown>;
   ```
 
-- [ ] **Step 1：写失败测试**
+- [ ] **Step 1：装 vitest 到 desktop + 建 vitest 配 + 添 test 脚本**
+
+  Run: `npm --prefix desktop install -D vitest`，无 peer 报错。
+
+  新建 `desktop/vitest.config.ts`：
+
+  ```typescript
+  // desktop 侧 vitest：node 环境（主进程逻辑、无 DOM）；include 只到 tests/。
+  // 与 ui/vitest.config.ts 互不影响（两个 package、两份 vitest 配）。
+  import { defineConfig } from "vitest/config";
+
+  export default defineConfig({
+    test: {
+      environment: "node",
+      include: ["tests/**/*.test.ts"],
+    },
+  });
+  ```
+
+  `desktop/package.json` 补（保留现有 dev/build/typecheck、现有 deps 不变）：
+
+  ```diff
+    "scripts": {
+      "dev": "electron-vite dev",
+      "build": "electron-vite build",
+  -   "typecheck": "tsc --noEmit -p tsconfig.node.json"
+  +   "typecheck": "tsc --noEmit -p tsconfig.node.json",
+  +   "test": "vitest run",
+  +   "test:watch": "vitest"
+    },
+    "devDependencies": {
+      "@types/node": "^22.0.0",
+  +   "vitest": "^5.0.0",
+      "electron": "44.1.0",
+      "electron-vite": "^5.0.0",
+      "typescript": "~5.9.3",
+      "vite": "^6.3.5"
+    }
+  ```
+
+- [ ] **Step 2：写 `desktop/tests/atomic-file.test.ts`（先红）**
+
+  ```typescript
+  // 护栏 B-115：无 fsync 的 rename 不算 crash-safe。
+  //   ① 写入后内容新
+  //   ② 覆盖时 mode 与被覆盖前一致（chmod 0o604 后仍 0o604）
+  //   ③ 目标目录不存在时 mkdir -p 自动建
+  import { afterAll, beforeAll, describe, expect, it } from "vitest";
+  import { chmod, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+  import { tmpdir } from "node:os";
+  import { join } from "node:path";
+  import { writeTextFileAtomicSync } from "../src/main/atomic-file";
+
+  let dir = "";
+  beforeAll(async () => { dir = await mkdtemp(join(tmpdir(), "atomic-")); });
+  afterAll(async () => { await rm(dir, { recursive: true, force: true }); });
+
+  describe("atomic write (B-115)", () => {
+    it("写入后内容一致", async () => {
+      const path = join(dir, "a.txt");
+      writeTextFileAtomicSync(path, "hello");
+      expect(await readFile(path, "utf8")).toBe("hello");
+    });
+
+    it("覆盖时 mode 保留", async () => {
+      const path = join(dir, "m.txt");
+      writeTextFileAtomicSync(path, "v1");
+      await chmod(path, 0o604);
+      writeTextFileAtomicSync(path, "v2");
+      expect((await stat(path)).mode & 0o777).toBe(0o604);
+    });
+
+    it("目录不存在时 mkdir -p 自动建", async () => {
+      const path = join(dir, "sub/dir/x.txt");
+      writeTextFileAtomicSync(path, "ok");
+      expect(await readFile(path, "utf8")).toBe("ok");
+    });
+  });
+  ```
+
+  Run: `npm --prefix desktop run test` → atomic-file 三测先红（模块未建）。
+
+- [ ] **Step 3：实现 `desktop/src/main/atomic-file.ts`**
+
+  ```typescript
+  // crash-safe 写盘：mkdir -p → O_EXCL temp sibling → fchmodSync(mode) → fsyncSync → rename。
+  // 严格照 wuu-main/desktop/src/main/atomicFile.ts:13-67，重写。temp 命名 `.basename.pid.uuid.tmp`
+  // 保证多进程不撞；mode 与被覆盖前一致（缺省 0o600）；text/buffer 共享 writeCore。
+  // B-115：只做 writeFile+rename 而无 fsync，崩溃时 rename 可能已发生但字节仍在页缓存里。
+  import { randomUUID } from "node:crypto";
+  import fs from "node:fs";
+  import { basename, dirname, join } from "node:path";
+
+  type AtomicWriteOptions = { defaultMode?: number };
+
+  function writeCore(
+    path: string,
+    payload: string | Buffer,
+    encoding: BufferEncoding | undefined,
+    options: AtomicWriteOptions,
+  ): void {
+    const directory = dirname(path);
+    fs.mkdirSync(directory, { recursive: true });
+
+    let mode = options.defaultMode ?? 0o600;
+    try {
+      mode = fs.statSync(path).mode & 0o777;
+    } catch (error) {
+      if (!isMissingFileError(error)) throw error;
+    }
+
+    const temporaryPath = join(
+      directory,
+      `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
+    );
+    let descriptor: number | undefined;
+    try {
+      descriptor = fs.openSync(
+        temporaryPath,
+        fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY,
+        mode,
+      );
+      fs.fchmodSync(descriptor, mode);
+      if (typeof payload === "string") {
+        fs.writeFileSync(descriptor, payload, encoding ?? "utf8");
+      } else {
+        fs.writeFileSync(descriptor, payload);
+      }
+      fs.fsyncSync(descriptor);
+      fs.closeSync(descriptor);
+      descriptor = undefined;
+      fs.renameSync(temporaryPath, path);
+    } catch (error) {
+      if (descriptor !== undefined) {
+        try { fs.closeSync(descriptor); } catch { /* preserve write error */ }
+      }
+      try { fs.rmSync(temporaryPath, { force: true }); } catch { /* preserve write error */ }
+      throw error;
+    }
+  }
+
+  export function writeTextFileAtomicSync(
+    path: string,
+    text: string,
+    options: AtomicWriteOptions = {},
+  ): void {
+    writeCore(path, text, "utf8", options);
+  }
+
+  export function writeBufferFileAtomicSync(
+    path: string,
+    data: Buffer,
+    options: AtomicWriteOptions = {},
+  ): void {
+    writeCore(path, data, undefined, options);
+  }
+
+  function isMissingFileError(error: unknown): boolean {
+    return (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "ENOENT"
+    );
+  }
+  ```
+
+  Run: `npm --prefix desktop run test` → atomic-file 三条全绿（questor-command 与 sidecar 测仍红，本 Task 内逐步转绿）。
+
+- [ ] **Step 4：写 `desktop/tests/questor-command.test.ts`（先红）**
+
+  ```typescript
+  // 护栏 B-114：绝不从 workspace 找 bin/questor，也不 PATH 兜底。wuu issue #8 同形坑。
+  import { afterEach, beforeEach, describe, expect, it } from "vitest";
+  import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+  import { tmpdir } from "node:os";
+  import { join } from "node:path";
+  import { resolveQuestorCommand } from "../src/main/questor-command";
+
+  let sandbox = "";
+  beforeEach(() => {
+    sandbox = join(tmpdir(), `qc-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(sandbox, { recursive: true });
+  });
+  afterEach(() => { rmSync(sandbox, { recursive: true, force: true }); });
+
+  describe("resolveQuestorCommand", () => {
+    it("QUESTOR_DESKTOP_CORE env 显式覆盖", () => {
+      const cmd = resolveQuestorCommand({ QUESTOR_DESKTOP_CORE: "/custom/core" }, sandbox, undefined);
+      expect(cmd.command).toBe("/custom/core");
+      expect(cmd.cwd).toBe(sandbox);
+    });
+
+    it("USE_UV_RUN=1 + 有 pyproject.toml → uv run sourceRoot", () => {
+      writeFileSync(join(sandbox, "pyproject.toml"), "[project]\nname='questor'\n");
+      const cmd = resolveQuestorCommand({ QUESTOR_DESKTOP_USE_UV_RUN: "1" }, sandbox, undefined);
+      expect(cmd.command).toBe("uv");
+      expect(cmd.args).toEqual(["run", "--directory", sandbox, "questor", "serve", "stdio"]);
+      expect(cmd.cwd).toBe(sandbox);
+    });
+
+    it("B-114 关键：workspace 里有假 bin/questor 也不能被 resolve，无 env 无打包 → throw", () => {
+      const bin = join(sandbox, "bin");
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(join(bin, "questor"), "#!/bin/sh\necho stale\n");
+      expect(() => resolveQuestorCommand({}, sandbox, undefined)).toThrow(/desktop core is missing/);
+    });
+
+    it("resourcesPath/bin/questor-core.exe 存在 → 用它", () => {
+      const res = join(sandbox, "Resources", "bin");
+      mkdirSync(res, { recursive: true });
+      const exe = join(res, "questor-core.exe");
+      writeFileSync(exe, "");
+      const cmd = resolveQuestorCommand({}, sandbox, join(sandbox, "Resources"));
+      expect(cmd.command).toBe(exe);
+    });
+  });
+  ```
+
+  Run: `npm --prefix desktop run test` → questor-command 四测先红（模块未建）。
+
+- [ ] **Step 5：实现 `desktop/src/main/questor-command.ts`**
+
+  ```typescript
+  // Questor 桌面核解析，严格照 wuu-main/desktop/src/main/wuuCommand.ts:29-46。
+  // 优先级：QUESTOR_DESKTOP_CORE env → USE_UV_RUN=1 + sourceRoot → 打包 Resources/bin/questor-core
+  //   → throw。**绝不** fall back 到 PATH 里的 questor（独立 CLI 装的可能版本漂移）。
+  // 关键：本函数从不 inspect appPath 下的 bin/questor——wuu issue #8 血泪坑（B-114）。
+  import { existsSync } from "node:fs";
+  import { join, resolve } from "node:path";
+
+  export interface QuestorCommand {
+    command: string;
+    args: string[];
+    cwd: string;
+  }
+
+  export function resolveQuestorCommand(
+    env: NodeJS.ProcessEnv,
+    appPath: string,
+    resourcesPath?: string,
+  ): QuestorCommand {
+    if (env.QUESTOR_DESKTOP_CORE) {
+      return { command: env.QUESTOR_DESKTOP_CORE, args: [], cwd: appPath };
+    }
+    if (env.QUESTOR_DESKTOP_USE_UV_RUN === "1") {
+      const sourceRoot = findSourceRoot(appPath);
+      if (sourceRoot) {
+        return {
+          command: "uv",
+          args: ["run", "--directory", sourceRoot, "questor", "serve", "stdio"],
+          cwd: sourceRoot,
+        };
+      }
+    }
+    const packaged = resolvePackagedCore(resourcesPath);
+    if (packaged) {
+      return { command: packaged, args: [], cwd: appPath };
+    }
+    throw new Error("questor desktop core is missing; reinstall the desktop app");
+  }
+
+  /** 从 appPath 往上找最近的含 pyproject.toml 的祖先目录，作为 uv run 的 sourceRoot。 */
+  function findSourceRoot(start: string): string | undefined {
+    let dir = resolve(start);
+    for (let i = 0; i < 8; i++) {
+      if (existsSync(join(dir, "pyproject.toml"))) return dir;
+      const parent = resolve(dir, "..");
+      if (parent === dir) return undefined;
+      dir = parent;
+    }
+    return undefined;
+  }
+
+  function resolvePackagedCore(resourcesPath: string | undefined): string | undefined {
+    if (!resourcesPath) return undefined;
+    for (const candidate of [
+      join(resourcesPath, "bin", "questor-core"),
+      join(resourcesPath, "bin", "questor-core.exe"),
+    ]) {
+      if (existsSync(candidate)) return candidate;
+    }
+    return undefined;
+  }
+  ```
+
+  Run: `npm --prefix desktop run test` → questor-command 四条全绿（sidecar 测仍红）。
+
+- [ ] **Step 6：写 sidecar 失败测试**
 
   `desktop/tests/sidecar.test.ts`：
 
@@ -1248,12 +1547,12 @@ questor/
   });
   ```
 
-- [ ] **Step 2：跑测试确认失败**
+- [ ] **Step 7：跑 sidecar 测确认失败**
 
-  Run: `npm --prefix desktop run test` （在 `desktop/package.json` `scripts.test` 加 `vitest run`）
+  Run: `npm --prefix desktop run test` （Step 1 已配好 `scripts.test`）
   Expected: FAIL（`sidecar.ts` 未创建）。
 
-- [ ] **Step 3：实现 `desktop/src/main/sidecar.ts`**
+- [ ] **Step 8：实现 `desktop/src/main/sidecar.ts`**
 
   ```typescript
   // Sidecar 生命周期：以 stdio NDJSON 与 Python `questor serve stdio` 通信。
@@ -1330,7 +1629,7 @@ questor/
   }
   ```
 
-- [ ] **Step 4：`main/index.ts` 里挂启动（B3 只启动、不接 renderer）**
+- [ ] **Step 9：`main/index.ts` 里挂启动（B3 只启动、不接 renderer）**
 
   ```diff
   + import { resolveQuestorCommand } from "./questor-command";
@@ -1356,20 +1655,20 @@ questor/
   3. 打包产物 `join(resourcesPath, "bin", "questor-core")`（Windows 额外试 `.exe`）存在 → 用它（B7 electron-builder 负责把 uv-build 后的 wheel 挨进 `Resources/bin/`）；
   4. 都失败 → throw `"questor desktop core is missing; reinstall the desktop app"`；**绝不 fall back 到 PATH 里的 `questor`**（那是独立 CLI 装的可能版本漂移）。
 
-- [ ] **Step 5：跑测试全绿**
+- [ ] **Step 10：跑测试全绿（atomic-file + questor-command + sidecar 一共 9 条）**
 
   Run: `npm --prefix desktop run test`
   Expected: 两条 PASS。
 
-- [ ] **Step 6：本地手动跑**
+- [ ] **Step 11：本地手动跑一次**
 
   Run: `npm --prefix desktop run dev` → 主进程 console 打印 `[sidecar] pid=NNNN` → 关掉窗口 → 打印 `[sidecar] exited {code:null, signal:'SIGTERM'}`（若 `uv run questor serve stdio` 正常）。
 
-- [ ] **Step 7：提交**
+- [ ] **Step 12：提交（B3）**
 
   ```bash
-  git add desktop/src/main/sidecar.ts desktop/src/main/index.ts desktop/tests/sidecar.test.ts desktop/package.json desktop/electron.vite.config.ts
-  git commit -m "feat(desktop): spawn questor serve stdio via child_process and roundtrip NDJSON" -m "Refs ADR-0030/0032; provenance wuu appServerClients.ts + EvoFlow backend.rs, rewritten."
+  git add desktop/vitest.config.ts desktop/package.json desktop/src/main/atomic-file.ts desktop/src/main/questor-command.ts desktop/src/main/sidecar.ts desktop/src/main/index.ts desktop/tests/atomic-file.test.ts desktop/tests/questor-command.test.ts desktop/tests/sidecar.test.ts docs/specs/pitfalls.md
+  git commit -m "feat(desktop): spawn questor serve stdio via child_process and roundtrip NDJSON" -m "Refs ADR-0030/0032; provenance wuu atomicFile.ts + wuuCommand.ts + appServerClients.ts, rewritten. Covers B-113/B-114/B-115 (B-113 flips fully covered in B5 with child-shutdown)."
   ```
 
 ---
