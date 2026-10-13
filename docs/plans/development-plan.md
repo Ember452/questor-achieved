@@ -1,6 +1,6 @@
 # Questor 开发计划（development-plan）
 
-版本: v0.3（对齐 structure v0.4；引用经 40 条抽查 + 复验）| 更新: 2026-10-11 | 状态: 待用户评审
+版本: v0.4（新 Phase U 界面/桌面壳主线提前、E1 并轨；桌面壳改判 Electron，ADR-0030）| 更新: 2026-10-13 | 状态: 待用户评审
 关联: `overview.md` §12（里程碑交付与出口判据，**不变真相**）、`structure.md`（目标态布局 v0.3）、`AGENTS.md`（工程纪律）、`docs/adr/`
 
 ## 0. 本计划怎么用
@@ -108,7 +108,7 @@ runner 协议 + result.schema）；ui/ 骨架（token 四文件 + mock + 第一�
 - **EvoFlow**：`collab/`（任务状态机白名单）、`agents/middlewares/tool_approval_middleware.py` + `tool_approval_executor.py`、`agents/human_gate_tools.py`（审批门真实承载："破坏性动作被门拒绝"的语义在此核对）、`persistence/`（存储分层）、`gateway/routers/tasks.py`（会话操作语义清单）、`gateway/zombie_run_sweeper.py`（自建清扫的必要性）；
 - **wuu**：`internal/tools/`（boundary 唯一门、敏感路径守卫、工具输出规则）、`internal/config/`（设置分层 strip 用户专属字段）、`internal/appserver/`（协议形状、initialize、deferred content、通知族）、`internal/session/`（inbox / held_user_work）、`internal/agentengine/` + `internal/enginecatalog/`（引擎契约与探测）、`internal/process/`（停树三元组校验）、`evals/`（公开结果 schema 与"结果先于声明"纪律）。
 
-**前端同步点**：`ui/` 骨架 M1a 出 schema、M1b 出 token 与 mock 服务（React 19 + TS + Vite 6 + Tailwind 4）；token 参照 **`evopanel/src/zcode-ui/styles.css`**（2053 行、Tailwind v4 `@theme` 所在；evopanel 另有 51 个分散 css，按面板归属扫描）；面板交互参照 wuu。rpc 层用生成类型 + **mock 协议服务**驱动 UI，不等内核。`desktop/src-tauri/` 壳骨架后置到 M2 末。
+**前端同步点**：`ui/` 骨架 M1a 出 schema、M1b 出 token 与 mock 服务（React 19 + TS + Vite 6 + Tailwind 4）；token 参照 **`evopanel/src/zcode-ui/styles.css`**（2053 行、Tailwind v4 `@theme` 所在；evopanel 另有 51 个分散 css，按面板归属扫描）；面板交互参照 wuu。rpc 层用生成类型 + **mock 协议服务**驱动 UI，不等内核。`desktop/` 壳改判为 Electron、物化改到 Phase U（ADR-0030），M2 末不再摆 Tauri 骨架。
 
 **出口判据**：
 - M1a：坑目录 ≥50 条且各有归属模块；`just gen` 后 `git diff --exit-code` 为空（前端类型可生成）；N=12 已写入 `evals/` 约定；
@@ -378,6 +378,48 @@ covered + 负向验证）。出口判据逐项：`test_report_verified_when_reco
 
 ---
 
+## Phase U — 界面 / 动效 / 桌面壳主线（Electron；ADR-0030 提前，紧接 M5）
+
+**状态**：`- [ ]` 未开始（本轮用户裁定：界面/桌面壳为当前主线，插入 M5 与 M6 之间；M6/M7/M8 后移；原 Phase E 的 E1 并入本相）
+
+**为何在这里（不是"做完 M8 再改界面"）**：内核三柱已建成（M2–M5 + e2e）、界面接口地基已锁死
+（ADR-0020 视图注册表骨架 + design token + 生成类型 + 双宿主契约）。界面/动效/桌面壳属"功能面"，
+按本文横切规则 7「接口面同期、功能面可后置」可安全重排、提前，且不回头改已完成模块的接口。
+
+**范围边界（硬约束，防"改一路改到内核"）**：本次**不动** `ui/` 之外的内核、`serve` 协议与 stdio/WS 传输、
+`schemas` 与生成链、视图注册表形状（ADR-0030 §结论 4）。若界面暴露出新协议方法/事件需求，那是契约改动，
+**停下走单独 ADR + 先改 `protocol.md` 递增版本**（AGENTS §七），不在本相顺手做。
+
+**怎么做**（纵向切片先行，控制 wuu desktop 241k 行体量的风险）：
+- **U0 壳 + 一个高保真面板（纵向切片）**：Electron 起壳（main/preload + electron-vite，renderer 复用
+  `ui/` 构建产物；主进程 `child_process` 以管道拉起 `questor serve stdio` sidecar，`runtime_state.json`
+  单调 generation + lifecycle_lock 防拉起竞态、sidecar 崩溃重启 fail-open——沿用 wuu/EvoFlow 同款设计决定，
+  重写实现加 provenance）；挑 **Review 面板**做到 wuu 级还原度（`@pierre/diffs` 真 diff + 逐文件 + 已阅态 +
+  过渡动效），先证明"Electron + React 能复刻 wuu 终端/发光观感 + 真 diff"，再横向铺其余面板。
+- **U1 四面板复刻 + 动效体系**：Files 预览（语法/图片/PDF）、Terminal（`@xterm/xterm` + `node-pty`）、
+  看板 DAG（`@xyflow/react`，原 E1 项）、主题 token 与动效（glow/拖拽布局/面板过渡，参照 wuu `dev/motion`、
+  `dev/plan-motion`、`dev/design-system`）、视图注册表铺满（新面板只能登记，护栏 `test_no_hardcoded_panel_case` 守）。
+- **U2 内嵌浏览器真接管（换 Electron 的核心收益）**：Browser 面板做成"面板那个 tab 即 Agent 操作页、
+  地址栏真驱动、popup 保留 opener 链、一点即暂停"（不再是 CDP 镜像）；原生壳能力（PiP/多窗口/自绘光标/托盘）
+  沿用 wuu 主进程 TS 模式重写。
+
+**文档产出**：`desktop/`（Electron）壳设计篇；`ui/README.md` 补桌面宿主段；ADR-0006/0024 修订已随 ADR-0030 落。
+
+**阅读地图**：wuu `desktop/electron.vite.config.ts`、`desktop/src/main/`（`appServerClients.ts` stdio sidecar、
+`browserHostWindows.ts`/`browserPiPWindow.ts` 内嵌浏览器与 PiP、`agentCursor.ts` 自绘光标、`childShutdown.ts`
+进程树关停）、`desktop/dev/motion`、`desktop/dev/plan-motion`、`desktop/dev/design-system` 动效与组件；
+evopanel `src/zcode-ui/app-shell/`（resizable 面板组合）、`src/zcode-ui/styles.css`（Tailwind v4 `@theme` token）。
+
+**前端同步点**：本相即界面主线本身——不再"内核做完、界面滞后"。
+
+**出口判据**（诚实标注：真机走查/evals 基线仍需 `QUESTOR_MODEL_API_KEY`，与 M3/M4/M5 同口径记 pending，不凑）：
+1. 能双击运行的 Electron 壳跑通——`questor serve stdio` 被壳以管道拉起、Review 面板显示真实 diff；
+2. 可见柱（Review 真 diff）与可干预柱（插话/接管）各有一个 wuu 级还原度的可演示面板；
+3. 内嵌浏览器做到真·同页接管（面板 tab 即 Agent 页面、一点即暂停），且 UI 文案如实描述（不谎称镜像为同页）；
+4. 新面板只能走视图注册表、不改内核（`test_no_hardcoded_panel_case` 绿）；不为界面好看牺牲三柱判据（AGENTS §五）。
+
+---
+
 ## Phase M6 — 外部引擎（engine/adapters）
 
 **状态**：`- [ ]` 未开始
@@ -408,9 +450,9 @@ covered + 负向验证）。出口判据逐项：`test_report_verified_when_reco
 
 ---
 
-## Phase E — 界面面与生态加料（前置：M3 前后端真接完成）
+## Phase E — 界面面与生态加料（E1 已并入 Phase U；剩 E2/E3）
 
-**状态**：`- [ ]` 未开始（**排在 M8 之后**，但它是**编号阶段**，不是"以后再说"）
+**状态**：`- [ ]` 未开始（E1 已提入 Phase U；E2 引擎矩阵随 M6、E3 插件生态随 M7 交付，非"以后再说"）
 
 为何单列一个阶段而不是并入 M1–M8：实测规模差距的大头不在 agent 内核——wuu `desktop` 241k 行
 ≈ 其 `internal` 340k 的 70%；EvoFlow `evopanel` 887k 是其 `backend` 377k 的 2.4 倍。**界面与生态
@@ -418,7 +460,7 @@ covered + 负向验证）。出口判据逐项：`test_report_verified_when_reco
 
 | 档 | 内容 | 出口判据 |
 | --- | --- | --- |
-| **E1 界面面全量** | Files 预览（语法/图片/PDF）、Review 逐文件 + 已阅态、Terminal（`@xterm/xterm`）、看板 DAG（`@xyflow/react`）、主题 token 与**视图注册表**成型（注：注册表**骨架已提前至 M3**，ADR-0020；E1 只补面板与 token 主题，不从 0 建）| 三柱各有一个完整可演示面板；新增面板只能走注册表，不得改内核 |
+| ~~E1 界面面全量~~ | **已提前并入 Phase U（ADR-0030）**：Files 预览、Review 逐文件、Terminal、看板 DAG、主题 token 与视图注册表铺满、Electron 桌面壳与内嵌浏览器真接管——全部见本文 Phase U | 由 Phase U 出口判据承接 |
 | **E2 引擎矩阵** | 外部引擎从 3 个扩到 5+（ACP 家族为主）；权限映射表补齐；引擎目录四态呈现 | 契约测试全引擎同绿；映射不承诺等价保护必须显式标注 |
 | **E3 插件与示例生态** | 内置插件 6–8 个（每个自带单测与集成测，与第三方同契约）、`examples/` 扩到 5 例、`packages/` 发布物（仅在有第二使用者时） | 关插件即停产品行为；示例照 README 能独立跑通 |
 

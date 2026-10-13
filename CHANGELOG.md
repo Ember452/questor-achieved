@@ -34,6 +34,11 @@
   B-60/63/64/65/66/67 从 open 转 covered（回填具体测试名）。
 
 ### Changed
+- **桌面壳选型改判 Electron；界面/桌面壳主线提前为 Phase U**（ADR-0030，取代 ADR-0006
+  壳选型与浏览器面板边界、改判 ADR-0024 排期）：`overview.md` v0.2 §4/§12/§14/§15、
+  `structure.md` v0.5 §2/§4/§7/§9/§11、`development-plan.md` v0.4（新 Phase U，E1 并轨）同步；
+  Browser 面板从 "CDP 镜像、不得称同一页" 升为 Chromium 内嵌真·同页接管。**内核/协议/
+  schema/sidecar 未动**（stdio 传输与壳无关，`desktop/` 原为 0 文件）。
 - `Workspace.revision` 由 write / edit 工具通过 `bump_revision` 单点递增（B-92）；
   `ToolContext.workspace_id` 新增字段；`serve/assembly.build_engine` 缺省时经
   `ensure_workspace_for_root` 归一化 workspace id（B-91）。

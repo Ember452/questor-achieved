@@ -1,6 +1,6 @@
 # Questor 设计总览（overview）
 
-版本: v0.1（设计基线）| 更新: 2026-10-11 | 状态: 待用户评审
+版本: v0.2（§4/§12/§14/§15 桌面壳改判 Electron、界面/桌面壳主线提前为 Phase U，ADR-0030）| 更新: 2026-10-13 | 状态: 待用户评审
 关联: `AGENTS.md`（工程纪律）、`docs/adr/0001`（命名）、`README.md`（对外定位）、`docs/architecture/structure.md`（物理布局、import 矩阵、目录物化节奏）
 
 本文是唯一的架构入口。**它不含实现，只含已定的设计决定与显式未决项**。
@@ -92,7 +92,7 @@ Questor 是**跑在自己电脑上的可审计 AI Agent 工作站**：Agent 在�
 ## 4. 架构分层与依赖方向
 
 ```
-UI 一套（`ui/`）两宿主：Tauri 桌面壳（stdio NDJSON 起 Python sidecar）· 浏览器（经网关 WS/SSE）
+UI 一套（`ui/`）两宿主：Electron 桌面壳（stdio NDJSON 起 Python sidecar）· 浏览器（经网关 WS/SSE）
    │  REST / SSE / WebSocket（仅呈现与交互，不含业务判断）
 网关 Gateway（Python，FastAPI）
    │  进程内调用
@@ -124,7 +124,7 @@ UI 一套（`ui/`）两宿主：Tauri 桌面壳（stdio NDJSON 起 Python sideca
 - **R5** 每个新增顶层包必须在本文 §6 登记一行职责，否则评审打回。
 
 **技术选型**：全 Python（≥3.12 下界，开发机 3.13），不引入 Go。
-模型调用用官方 SDK，MCP 用官方 Python SDK，桌面壳 Tauri（Rust）。
+模型调用用官方 SDK，MCP 用官方 Python SDK，桌面壳 Electron（Node/TS，ADR-0030）。
 核心依赖保持极简（pydantic v2 起步），**新增任何第三方依赖须先落 ADR**。
 
 **已知的依赖风险（尚未验证，进 M1 坑目录前需先跑原型）**：EvoFlow 的代码索引层把
@@ -132,10 +132,11 @@ UI 一套（`ui/`）两宿主：Tauri 桌面壳（stdio NDJSON 起 Python sideca
 该组合在本项目的解释器下界上能否安装，必须先实测再决定“自建索引”还是
 “换用后继打包方案”。本条是待验证风险，不是结论。
 
-**桌面壳已决**：选 Tauri。代价：`Browser` 面板只能是 **CDP 外挂 + 串流镜像**，
-做不到"面板里那个 tab 就是 Agent 正在用的页面、地址栏能真驱动、popup 保留 opener 链"
-（那是自带 Chromium 的 Electron 才有的性质）。因此**浏览器面板第一阶段不做**，
-按 L4 可选能力延后（完整理由待记 `ADR-0006`）。
+**桌面壳已决（ADR-0030 改判，2026-10-13）**：选 **Electron**（此前 ADR-0006 选 Tauri，其壳选型
+与浏览器面板边界两项已被 ADR-0030 取代）。Electron 自带 Chromium，故 `Browser` 面板可做**真·同页
+接管**——"面板里那个 tab 就是 Agent 正在用的页面、地址栏真驱动、popup 保留 opener 链、一点即暂停"。
+代价（+约 200 MB / Chromium 升级维护面 / 打包链）由用户显式接受，换取复刻 wuu 桌面壳体验形态。
+浏览器面板随界面主线（`development-plan.md` Phase U）进入交付，不再按 L4 延后。
 
 ---
 
@@ -321,11 +322,12 @@ IM 渠道、远程与移动端、多账号与费用治理、
 | M2 | 单轮能跑：内置引擎 + 8 工具 + `limen` + 会话落盘 + CLI（**已完成 2026-10-12**：M2.1/M2.2/M2.3 全部勾销，见 development-plan 的 M2.3 实际结果） | 一个真实小任务完整跑通并落盘可回放（已真机验证：`questor exec` 写文件→读回，会话 last_seq=22 可回放） |
 | M3 | 工作台数据面：`review` 修订号与 turn↔revision + `habena` 插话与接管 + `sessiontrace` 回放 + `worktree` 分叉 + `ui/` 视图注册表与 Review/Files 面板 + WS 传输与 `serve http` 子命令（**桌面壳推 M4/M5，SSE 推 M8** — ADR-0023/0024）（**已完成 2026-10-12**：M3a-1 schema 方法族 / M3a-2 review + diff 写时算 / M3a-3 habena + Fanout + Engine 消费点 / M3b-1 thread 四操作 + sessiontrace / M3b-2 worktree / M3b-3 WS + serve http / M3c UI 真接 + 注册表 / M3d evals 适配层，均已完成） | 面板显示真实 diff（`test_review_turn_diff` 钉住）；插话在下一个工具边界被消费（`test_habena_steer` 钉住）；接管即停（`test_habena_control` 钉住）；网页只绑 `127.0.0.1` 且无第二套契约（`test_serve_http_ws` 钉住）；evals N=12 首跑记录已发布（ADR-0021） |
 | M4 | 长跑与编排：`vigilia`（调度/清扫/唤醒检查点）+ `orchestration`（Plan/Goal/看板/验收打回）+ `evidence` 最小版 + `tests/e2e/` + `docs.yml`（ADR-0025/0026/0027；看板 DAG 推 E1，桌面壳推 M5）（**已完成 2026-10-12**：M4a 契约先行 / M4b vigilia / M4c orchestration / M4d evidence / M4e 接口面+UI+e2e+docs.yml 均已完成） | 端到端链跑通（转后台→任务总结→打回→重做→diff 可回看，`tests/e2e/test_longrun_board_chain.py` 钉住）；状态机无旁路写入（`test_orchestration_transition_single_entry.py` 钉住） |
-| M5 | 验收闭环：任务总结 → 确认／打回，并把"声称的检查"与真实记录输出并排核对（**已完成 2026-10-12**：M5a 契约/ADR-0029 / M5b 验收状态机强制 / M5c evidence 生产写入点 + 声称采集 / M5d schedule task 派发 / M5e 前端证据卡 / M5f evals 三柱扩充；**桌面壳推后续、复跑核验不做**） | 任一验收结论都能指向具体记录条目（`test_report_verified_when_recorded_ok` 钉住）；没有复跑也不轻信（`test_report_regressed_on_mismatch_and_missing_record` 钉住）；验收态单点入口（`test_update_task_cannot_change_acceptance_status` 钉住） |
+| M5 | 验收闭环：任务总结 → 确认／打回，并把"声称的检查"与真实记录输出并排核对（**已完成 2026-10-12**：M5a 契约/ADR-0029 / M5b 验收状态机强制 / M5c evidence 生产写入点 + 声称采集 / M5d schedule task 派发 / M5e 前端证据卡 / M5f evals 三柱扩充；**复跑核验不做；桌面壳与浏览器面板归 Phase U（ADR-0030）**） | 任一验收结论都能指向具体记录条目（`test_report_verified_when_recorded_ok` 钉住）；没有复跑也不轻信（`test_report_regressed_on_mismatch_and_missing_record` 钉住）；验收态单点入口（`test_update_task_cannot_change_acceptance_status` 钉住） |
+| U | **界面 / 动效 / 桌面壳主线**（ADR-0030 提前，紧接 M5 之后）：Electron 桌面壳（sidecar 拉起 + 窗口 + 能力声明 + 打包）、四面板复刻 wuu（Review / Files / Terminal / 内嵌浏览器真接管）、动效体系与主题 token、视图注册表铺满；**E1 并入本相** | 能双击运行的 Electron 壳跑通（`questor serve stdio` 被壳拉起）；可见柱（Review 真 diff）与可干预柱（插话/接管）各有一个 wuu 级还原度的可演示面板；新面板只能走注册表、不改内核（护栏 `test_no_hardcoded_panel_case` 仍绿） |
 | M6 | 外部引擎：ACP／Claude／Codex 适配器 + 权限映射表 | 契约测试全引擎同绿 |
 | M7 | 扩展面：skills／MCP／hooks／插件 | 关插件即停产品行为 |
-| M8 | 可选平台：执行环境、**网页自托管**、IM、远程、（延后）浏览器面板 | 各自 feature flag 默认关；网页对外暴露前需先过鉴权 ADR |
-| E | 界面面与生态加料（三档，细则见 `plans/development-plan.md`） | 三柱各有一个完整可演示面板；引擎 5+；内置插件 6–8 且关掉即停产品行为 |
+| M8 | 可选平台：执行环境、**网页自托管**、IM、远程 | 各自 feature flag 默认关；网页对外暴露前需先过鉴权 ADR（浏览器面板已随 Phase U 进入交付，ADR-0030） |
+| E | 界面面与生态加料（**E1 界面面已并入 Phase U**；剩 E2 引擎矩阵随 M6、E3 插件生态随 M7，细则见 `plans/development-plan.md`） | 引擎 5+；内置插件 6–8 且关掉即停产品行为 |
 
 **砍单预案**：M3 起若受阻，先砍 Terminal 与交付物预览，保 diff 与修订号；
 M6 受阻则整体延后外部引擎（它是最容易吞掉时间的部分）；
@@ -365,7 +367,7 @@ M6 受阻则整体延后外部引擎（它是最容易吞掉时间的部分）�
 | --- | --- | --- |
 | 跨模块数据只走 `schemas` | 模块间传数据一律用 schema 类型，不共享私有 dataclass / 裸 dict | 想把 engine/tools 拆成独立发布包时变成重写 |
 | schema 用纯 JSON Schema | 不嵌 Python 专有语法，pydantic 只做绑定 | 做 TS 客户端／远程端／第三方集成时要反推契约 |
-| GUI 能力必须经协议可达 | 不存在"只有桌面壳能调"的私有端点 | 换壳（Electron／移动／远程）或做遥控时重做内核 |
+| GUI 能力必须经协议可达 | 不存在"只有桌面壳能调"的私有端点 | 换壳（Electron／移动／远程）或做遥控时重做内核（**本次 ADR-0030 即经此门换 Electron，内核一行未动**） |
 | 路径单点解析 + `QUESTOR_HOME` | 禁止散写 `~/.questor` 字面量 | 多 profile、便携模式、远程宿主时需全局改 |
 | loop 不按 provider 名分支 | 差异写进 `providers/capabilities` 声明 | 接第 N 家模型时循环里塞满 if，且扩展者无法替换实现 |
 | 扩展与内置同契约 | `mcp`／`skills`／`hooks` 与第三方插件走同一套公开接口，无特权捷径 | 内置能力成为不可替换的黑箱，扩展 API 永远长不全 |
@@ -375,8 +377,10 @@ M6 受阻则整体延后外部引擎（它是最容易吞掉时间的部分）�
 | 协议加性演进 | 版本号只标记破坏性变化，加性方法/通知靠 `initialize` 的 `methods`/`notification_families` 发现（ADR-0028） | 后续不断加方法（引擎/插件/渠道）时不必全网改协议版本 |
 
 **明确不留的门**（现在不做，将来按 ADR 再开）：多租户与鉴权体系、消息队列与服务发现、
-插件市场、K8s／云沙箱、GUI 内嵌 Chromium、抽象基类与提前 registry。
+插件市场、K8s／云沙箱、抽象基类与提前 registry。
 理由：每一项都会把目录、配置与测试面撑大一圈，而今天没有第二个真实使用者。
+（注：原列于此的"GUI 内嵌 Chromium"已由 ADR-0030 按本行"将来按 ADR 再开"的规则正式开——
+桌面壳改判 Electron，Chromium 随壳进入。）
 
 ---
 
@@ -387,7 +391,7 @@ M6 受阻则整体延后外部引擎（它是最容易吞掉时间的部分）�
 | 全量重写导致边界层学费重付 | 前数月稳定性低于参照 | 坑目录 + 护栏 + 对照评测（§3、§11）；参照项目别停 |
 | 三柱同时推进 | 哪个都做不透 | 里程碑按柱分层交付，M3 只做可见与干预 |
 | 外部引擎适配吞时间 | 长期维护各家协议差异 | 延后到 M6，且映射表不承诺等价保护 |
-| 面板工程量误判 | 桌面端比内核更耗时 | Tauri 壳先行复用骨架；浏览器面板延后 |
+| 面板工程量误判 | 桌面端比内核更耗时（wuu desktop 241k 行 ≈ internal 的 70%） | Electron 壳沿用 wuu 主进程 TS 模式；界面主线（Phase U）纵向切片先行，先跑通一个高保真面板再横向铺 |
 | 权限模型与审批混为一谈 | 出现两套真相、提权漏洞 | R3 + 契约测试"审批不能提权" |
 | 用写文档代替交付 | 里程碑空转 | `AGENTS.md` 文档视距冻结 + 出口判据只认运行输出 |
 

@@ -1,6 +1,6 @@
 # Questor 项目结构（structure）
 
-版本: v0.4 | 更新: 2026-10-11 | 状态: 待用户评审（v0.4：M1 增补 `ui/` 骨架，裁定记录见 `docs/plans/development-plan.md` M1）
+版本: v0.5（§2/§4/§7/§9/§11 桌面壳改判 Electron、界面/桌面壳主线提前为 Phase U，ADR-0030）| 更新: 2026-10-13 | 状态: 待用户评审（v0.4：M1 增补 `ui/` 骨架，裁定记录见 `docs/plans/development-plan.md` M1）
 关联: `overview.md`（语义、分层、R1–R5、职责登记、契约的唯一来源）、`AGENTS.md` §二 §四、
 `docs/adr/0001`（命名）、`docs/adr/0007`（Windows 沙箱）
 
@@ -69,8 +69,9 @@ questor/
 │   ├── src/                    #   panels / conversation / state / rpc / design / i18n
 │   ├── index.html  vite.config.ts  vitest.config.ts  tsconfig.json  eslint.config.mjs
 │   └── package-lock.json        # 单一 lockfile（见 §7 lockfile 纪律）
-├── desktop/                    # M3：Tauri 桌面壳（**只包壳**，不持有前端代码）
-│   └── src-tauri/              #   Rust：窗口、sidecar 生命周期、capabilities、图标、tauri.conf.json
+├── desktop/                    # Phase U：Electron 桌面壳（**只包壳**，不持有前端代码）
+│   ├── main/  preload/         #   Node/TS：窗口、sidecar 生命周期（child_process 拉 Python）、能力声明、托盘
+│   └── electron.vite.config.ts #   electron-vite 构建；renderer 复用 ui/ 构建产物；electron-builder 打包
 ├── containers/                 # M8：执行环境镜像（worker 镜像 Dockerfile）
 ├── deploy/                     # M8：`web/`（compose + Caddyfile）自托管 Web 宿主；远程/遥控另计（需单独 ADR）
 ├── clients/                    # 远期：**只放原生/RN 等真异质客户端**；网页不建端，走 `ui/` 响应式
@@ -84,7 +85,7 @@ questor/
 │   ├── workflows/              # §10：ci / contracts / desktop / evals / docs / security / release
 │   ├── ISSUE_TEMPLATE/         # bug_report.md、feature_request.md
 │   ├── PULL_REQUEST_TEMPLATE.md
-│   └── dependabot.yml          # pip + npm + cargo + github-actions
+│   └── dependabot.yml          # pip + npm + github-actions（壳改 Electron/TS，cargo 随 Tauri 一并撤下）
 ├── pyproject.toml  uv.lock  justfile  VERSION
 ├── README.md  CHANGELOG.md  CONTRIBUTING.md  SECURITY.md  CODE_OF_CONDUCT.md
 ├── LICENSE  NOTICE             # NOTICE 列上游致谢（参照项目设计参考 + 第三方）
@@ -143,7 +144,7 @@ questor/
 | 协议服务 | `questor app-server`（NDJSON over stdio） | `cmd/wuu` 子命令 |
 | 自托管服务 | M8+ 才考虑 `questor relay` | `cmd/wuu-server`、`internal/remote` |
 | codegen | `scripts/gen/`：schema → TS 类型、THIRD-PARTY-NOTICES | `cmd/wuu-modelcatalog-gen`、`scripts/generate-*.ts` |
-| 桌面壳 | `desktop/`（Tauri sidecar 起 Python core） | `desktop/`（Electron spawn Go core） |
+| 桌面壳 | `desktop/`（Electron 主进程 `child_process` 起 Python sidecar） | `desktop/`（Electron spawn Go core，同款形态） |
 
 内置插件与示例各带自己的测试（`plugins/*/..._test.py`），不接受只验包不验行为。
 
@@ -205,20 +206,20 @@ R1 在**同一个 Python 包内**不由包边界保证，必须由检查器保�
 
 | 分块 | 职责 |
 | --- | --- |
-| `ui/src/panels/` | Review（逐文件真实 diff）、Files（预览与"只改这一段"）、Terminal；Browser 面板延后（决定见 overview §4，完整理由待补 `ADR-0006`） |
+| `ui/src/panels/` | Review（逐文件真实 diff）、Files（预览与"只改这一段"）、Terminal；Browser 面板（Electron 真·同页接管）随 Phase U 进入交付（壳选型改判见 `ADR-0030`，原 ADR-0006 镜像限制作废） |
 | `ui/src/conversation/` | 会话流、插话与排队、分叉、侧聊、选中引用与批注 |
 | `ui/src/workbench/` | 工作区与面板布局、展开/窄窗适配（三柱里的"可见"全在这层的约束里） |
 | `ui/src/state/` | 会话列表、工作区与面板状态 |
 | `ui/src/rpc/` | 协议客户端（WS/SSE）+ §6 生成的类型；**禁止手写 DTO** |
 | `ui/src/design/` | 设计 token 与风格基座（参照 evopanel 组件与样式体系） |
 | `ui/src/i18n/` | 文案分层（参照 EvoFlow `prompt_blocks_en/zh` 的拆分思路，但只存用户可见文案） |
-| `desktop/src-tauri/` | Rust：窗口、`questor` sidecar 进程生命周期与崩溃重启、capabilities、图标 |
+| `desktop/`（Electron main/preload） | Node/TS：窗口、`questor` sidecar 进程生命周期与崩溃重启、能力声明、图标与打包 |
 
 **宿主差异与约定**
 
 | 宿主 | 传输 | 绑定与信任 | 建立 |
 | --- | --- | --- | --- |
-| 桌面（Tauri） | 本机 **stdio NDJSON**（sidecar） | 无网络监听；本机用户即权限主体 | M3 |
+| 桌面（Electron） | 本机 **stdio NDJSON**（sidecar） | 无网络监听；本机用户即权限主体 | Phase U（ADR-0030） |
 | 网页（本地） | Gateway **WS/SSE** | **默认只绑 `127.0.0.1`**；无鉴权（同机同用户） | M3（与桌面同一构建产物） |
 | 网页（自托管/局域网） | Gateway WS/SSE + `deploy/web/` 反代 | **必须鉴权**（登录与会话归属），属 L4 能力且需单独 ADR | M8 |
 | 手机浏览器 | 同上（响应式） | 同上；不单独建 `clients/` | M8 |
@@ -229,12 +230,12 @@ R1 在**同一个 Python 包内**不由包边界保证，必须由检查器保�
 1. **一套会话层协议、两种传输**（桌面 stdio、网页 WS/SSE）；Web 宿主绝不得拥有第二套契约或私有端点
    （overview §8 §14）。违反的后果就是 wuu 那种 556 行协议文档也撕不平的双真相。
 2. **lockfile 只允许一个**（`ui/package-lock.json`，配 npm）。wuu 的 `desktop/` 同时存在 `bun.lock` 与
-   `package-lock.json`，是典型的双锁源漂移，不予复制。前端包若入 CI，dependabot 需同时覆盖 npm 与 cargo。
+   `package-lock.json`，是典型的双锁源漂移，不予复制。前端包若入 CI，dependabot 覆盖 npm（壳改 Electron 后不再有 cargo 生态）。
 
 **技术栈与现成件**（evopanel 实测在用，可直接沿用其选型，省掉 M3 重新选型）：
 React 19 + TS + Vite 6 + Tailwind 4 + **zustand** + SWR；
 `@xterm/xterm`（+ `node-pty` 侧支持）→ Terminal 面板；`@pierre/diffs` → Review diff 渲染；
-`@xyflow/react` → DAG 看板；`@tauri-apps/plugin-shell` → sidecar 生命周期；
+`@xyflow/react` → DAG 看板；Electron 主进程 `child_process` → sidecar 生命周期（替代 `@tauri-apps/plugin-shell`）；
 `streamdown` / `shiki` / `pdfjs-dist` / `lexical` → 流式 Markdown、代码高亮、PDF、编辑器。
 
 **版本纪律**：evopanel 用的是 **zustand v4**（`^4.5.7`）。本项目**显式选 v5** 并只用官方 hook 用法，
@@ -282,7 +283,7 @@ scripts/
 | --- | --- | --- |
 | `ci.yml` | 四条门禁 + import 矩阵 + pre-commit 同源命令 | M1 |
 | `contracts.yml` | schema 重新生成后无 diff；契约测试全引擎 | M1 |
-| `desktop.yml` | 前端 eslint / tsc --noEmit / vitest / Web 静态构建 / Tauri 构建；并跑一次"网页宿主仅 localhost 伺服"的冒烟 | M3 |
+| `desktop.yml` | 前端 eslint / tsc --noEmit / vitest / Web 静态构建 / Electron 构建（electron-builder）；并跑一次"网页宿主仅 localhost 伺服"的冒烟 | Phase U（ADR-0030；原推 M3→M5） |
 | `evals.yml` | 对照评测跑批并上传结果记录（不阻塞合入，阻塞里程碑出口） | M2 |
 | `docs.yml` | 文档策略 + 链接 + 站点构建 | M2 |
 | `release.yml` | 版本校验、产物、CHANGELOG 校验、发布 | 首次发布前 |
@@ -332,6 +333,7 @@ integration,adversarial,unit}、scripts/ci、ui/ 骨架、evals/ 骨架）。
 | M3 | `review` `worktree` `habena` `sessiontrace`、`ui/` 面板与视图注册表、WS 传输与 `serve http` 子命令（`starlette` + `uvicorn`，ADR-0022）；`contracts.yml` 契约护栏升级到方法族匹配。**`desktop/src-tauri/` + `assets/` + `desktop.yml` 推 M4/M5**（ADR-0024）；SSE 推 M8（ADR-0023） |
 | M4 | `vigilia` `orchestration`（含编排 store/状态机/门）`evidence` 最小版、`tests/e2e/`、`docs.yml`、`serve` 编排方法族 + `ui/` 看板面板（ADR-0025/0026/0027/0028）。**看板 DAG 图推 E1；桌面壳推 M5**（ADR-0024 M4 收口） |
 | M5 | `evidence` 完整、`evals/` 三柱任务集扩充 |
+| U | `desktop/`（Electron 壳：main/preload、sidecar 拉起、electron-builder 打包）、`assets/`、`desktop.yml`、`ui/` 四面板复刻 wuu（含 Terminal 的 `node-pty`、内嵌浏览器真接管）与动效/主题（**E1 并入**）（ADR-0030） |
 | M6 | `engine/adapters`（ACP / Claude / Codex） |
 | M7 | `skills` `mcp` `hooks` `extensions`、`plugins/`、`examples/`、`packages/`（仅在有第二使用者时） |
 | M8 | `containers/`、`deploy/web/`（自托管网页）、`clients/`（仅真异质端）、`release.yml` 首次发布链路；网页对外暴露需先过鉴权 ADR |

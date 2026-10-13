@@ -34,7 +34,7 @@
 | 0003 | 仓库边界与依赖拓扑（不依赖参照项目代码） | planned |
 | 0004 | 语义唯一来源与 adapter 位置 | planned |
 | [0005](0005-workspace-revision.md) | 工作区修订号与 turn↔revision 绑定 | accepted（M3d 归档） |
-| [0006](0006-desktop-shell-and-browser-panel.md) | 桌面壳选型与浏览器面板边界（Tauri 优先，镜像而非同页） | accepted |
+| [0006](0006-desktop-shell-and-browser-panel.md) | 桌面壳选型与浏览器面板边界（Tauri 优先，镜像而非同页） | accepted；壳选型与浏览器面板边界 **superseded by 0030** |
 | [0007](0007-windows-sandbox.md) | Windows 沙箱策略：诚实降级 + 进程树管理，强隔离走可选执行环境 | accepted |
 | [0008](0008-gate-scope-and-citation-checks.md) | 门禁范围与内容一致性、引用核查工具规范 | accepted |
 | [0009](0009-gate-entry-just.md) | 门禁入口用 just，及本机装不上时的退路 | accepted |
@@ -52,9 +52,10 @@
 | [0021](0021-m2-exit-split-evals-deferred.md) | M2 出口拆分：evals 对照基线移出 M2.3 + 判据可执行性口径 | accepted |
 | [0022](0022-serve-ws-starlette-uvicorn.md) | serve 传输层引入 starlette + uvicorn（仅本地 127.0.0.1） | accepted |
 | [0023](0023-m3-transport-ws-only.md) | M3 传输层只落 WS，SSE 推到 M8 | accepted |
-| [0024](0024-desktop-shell-deferred-to-m4.md) | 桌面壳 `desktop/src-tauri/` 从 M3 摘出，落 M4/M5 交界（M4 收口再明确为 M5） | accepted |
+| [0024](0024-desktop-shell-deferred-to-m4.md) | 桌面壳 `desktop/src-tauri/` 从 M3 摘出，落 M4/M5 交界（M4 收口再明确为 M5） | accepted；壳选型与排期 **改判 by 0030**（Electron + 提前为 Phase U） |
 | [0025](0025-orchestration-domain-and-store.md) | 编排域：Task/Plan/Goal 实体、状态机与独立 append-only store | accepted |
 | [0026](0026-vigilia-scheduling-and-sweep.md) | vigilia 调度与清扫语义：声明式触发器 + tick 游标幂等 + 唤醒检查点 | accepted |
 | [0027](0027-evidence-minimal-and-export-interface.md) | evidence 最小版：声称 vs 录得的并排核对，export 形状先定死为接口 | accepted |
 | [0028](0028-protocol-additive-evolution.md) | 协议演进规则：加性方法/通知不升版本，破坏性改动才升 | accepted |
 | [0029](0029-acceptance-loop-evidence-writepoint.md) | 验收闭环：状态机强制、evidence 生产写入点、声称显式绑定 tool_use_id | accepted |
+| [0030](0030-desktop-shell-electron-and-ui-track.md) | 桌面壳改判 Electron；界面/桌面壳主线提前为 Phase U（取代 0006 壳选型/浏览器面板边界、改判 0024 排期） | accepted |
