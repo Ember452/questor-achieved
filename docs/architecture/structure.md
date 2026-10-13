@@ -229,8 +229,10 @@ R1 在**同一个 Python 包内**不由包边界保证，必须由检查器保�
 
 1. **一套会话层协议、两种传输**（桌面 stdio、网页 WS/SSE）；Web 宿主绝不得拥有第二套契约或私有端点
    （overview §8 §14）。违反的后果就是 wuu 那种 556 行协议文档也撕不平的双真相。
-2. **lockfile 只允许一个**（`ui/package-lock.json`，配 npm）。wuu 的 `desktop/` 同时存在 `bun.lock` 与
-   `package-lock.json`，是典型的双锁源漂移，不予复制。前端包若入 CI，dependabot 覆盖 npm（壳改 Electron 后不再有 cargo 生态）。
+2. **lockfile 只允许一个包一份**（`ui/package-lock.json` + npm；`desktop/package-lock.json` 同。ADR-0032
+   明确：同一 package 内不得同时存在 `bun.lock` 与 `package-lock.json`——wuu `desktop/` 的
+   双锁漂移不复制；`ui/` 与 `desktop/` 不同 package 各一份属**不共享依赖树**，不触发本约束）。
+   前端包若入 CI，dependabot 覆盖 npm（壳改 Electron 后不再有 cargo 生态）。
 
 **技术栈与现成件**（evopanel 实测在用，可直接沿用其选型，省掉 M3 重新选型）：
 React 19 + TS + Vite 6 + Tailwind 4 + **zustand** + SWR；
