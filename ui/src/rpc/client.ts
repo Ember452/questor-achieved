@@ -51,6 +51,7 @@ import type {
   NoticeScheduleNotification,
 } from "./generated/app_server-v0-1";
 import type { JsonObject, Transport } from "./transport";
+import { IpcTransport, isElectronHost } from "./ipc-transport";
 import { WebSocketTransport } from "./websocket-transport";
 
 /** 本会话中 server 可能推的通知 union（按 method 分岔后 params 形状已知）。 */
@@ -92,7 +93,15 @@ export interface Api {
 type MethodName = keyof Api;
 
 export class QuestorClient {
-  constructor(private transport: Transport = new WebSocketTransport()) {}
+  // 构造函数默认参数分岔（R-02）：
+  //   isElectronHost() 返真 → IpcTransport 走 preload 桥（桌面宿主）；
+  //   否则 WebSocketTransport（浏览器 12 测零改路径）。
+  // 这个分岔只发生在默认参数上——显式传 transport 的注入位不变（测/集成可手动传 fake）。
+  constructor(
+    private transport: Transport = isElectronHost()
+      ? new IpcTransport(window.questorHost!)
+      : new WebSocketTransport(),
+  ) {}
 
   /** 强类型请求；method 与 params 都对齐 generated 类型（R4 的机器保证）。 */
   call<M extends MethodName>(method: M, params: Api[M]["params"]): Promise<Api[M]["result"]> {
