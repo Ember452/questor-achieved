@@ -2423,79 +2423,122 @@ questor/
 ### Task B6：Renderer ↔ Main IPC ↔ Sidecar stdio（Option A，照 wuu）
 
 **Files:**
-- Create: `desktop/src/main/app-server-bridge.ts`（主进程 pending 表 + server-request 路由表 + `emitServerEvent` fanout，简化到单 client）
+- Create: `desktop/src/main/app-server-bridge.ts`（主进程 pending 表 + server-request 路由表 + `onEvent` fanout，单 client 简化；提供 `attach(handle)` 与 `detach()` 让 B5 的 respawn 能换 handle 不重建 bridge）
 - Create: `desktop/src/main/renderer-batcher.ts`（照 wuu `rendererServerEventBatcher.ts`：50 ms 合批 delta、控制事件先 flush、raw provider delta 不转发）
-- Rewrite: `desktop/src/preload/index.ts`（contextBridge `window.questorHost`：`request / onServerEvent / respondToServerRequest / rejectServerRequest / getSnapshot`）
-- Modify: `desktop/src/main/index.ts`（注册 `ipcMain.handle("qst:request", ...)` 等；bridge → batcher → `webContents.send("qst:server-event", ...)`）
-- Create: `ui/src/rpc/ipc-transport.ts`（`Transport` 接口的 IpcTransport 实现，用 `window.questorHost`）
+- Rewrite: `desktop/src/preload/index.ts`（contextBridge `window.questorHost` 从 1 字段扩到 6：`request / onServerEvent / onSidecarState / respondToServerRequest / rejectServerRequest / getSnapshot`）
+- Modify: `desktop/src/main/index.ts`（注册 5 个 `ipcMain.handle` + 2 个 `webContents.send` 广播；与 B5 closure `spawnSidecar()` 打通：bridge 作 module-level singleton、attach(handle) 换 handle）
+- Create: `ui/src/rpc/ipc-transport.ts`（**R-01**：`Transport` 接口的 IpcTransport 实现，方法名为 `request / onNotification / close` 匹配现有 `Transport` 契约）
 - Create: `ui/src/rpc/server-events-fanout.ts`（照 wuu `renderer/ServerEvents.ts`：Set\<listener> + 单桥 `disconnect ??=`）
-- Modify: `ui/src/rpc/client.ts`（`window.questorHost` 存在 → `IpcTransport`；否则维持 `WebSocketTransport`，**浏览器路径零改**）
-- Modify: `desktop/electron.vite.config.ts`（renderer root 指 `../ui`，构建产物进 `desktop/out/renderer`）
-- Create: `desktop/tests/ipc-parity.test.ts`（护栏 B-116：preload ↔ main 一一对偶）
+- Modify: `ui/src/rpc/client.ts`（**R-02**：`constructor` 默认参数分岔——`isElectronHost()` 返真 → `IpcTransport(window.questorHost!)`；否则 `new WebSocketTransport()` 保持浏览器路径零改）
+- Modify: `desktop/electron.vite.config.ts`（renderer root 指 `../ui`，构建产物进 `desktop/out/renderer`；必要时补 `server.fs.allow`）
+- Create: `desktop/tests/ipc-parity.test.ts`（护栏 B-116：preload ↔ main 一一对偶；**R-09**：ESM-safe，用 `fileURLToPath(new URL(...))` 代替 `__dirname`；6 对 channel 覆盖）
 - Create: `desktop/tests/renderer-batcher.test.ts`（B-117：合批窗口、控制事件先 flush、raw delta 不转发）
 - Create: `desktop/tests/bridge.test.ts`（B-118：pending 匹配 + server-request public id 桥 + `turn/started` 落 sessionOwners）
 
-**决策（推翻旧 Step 0 的 A/B 讨论）**：**A = 唯一方案**（ADR-0006 结论 4 字面要求"桌面 stdio NDJSON、网页 WS/SSE"；wuu 实际实现就是 A）。**B 已否决**：起本地 `serve http` 让 renderer 连 WS，等于给桌面另开一条 WS、架空了 stdio。ADR-0030 §结论 4 允许在 `ui/` **内**加性改动（新增 `IpcTransport` 与 `window.questorHost` 消费），不动协议/schema/其他内核模块。
+**决策**：**A = 唯一方案**（ADR-0006 §结论 4 字面要求"桌面 stdio NDJSON、网页 WS/SSE"；wuu 实际实现就是 A）。B 已否决：起本地 `serve http` 让 renderer 连 WS，等于给桌面另开一条 WS、架空了 stdio。ADR-0030 §结论 4 允许在 `ui/` **内**加性改动（新增 `IpcTransport` 与 `window.questorHost` 消费），不动协议/schema/其他内核模块。
+
+**R-12 处理（reverse-RPC 无真实使用者）**：preload 与 bridge 保留 `respondToServerRequest / rejectServerRequest / getSnapshot` 三方法的 IPC plumbing（护栏测喍住 channel 对偶），但 **`Transport` 接口不扩这三个方法**——Phase U 无消费点（审批属 Phase E）；`window.questorHost` 直接暴露给未来使用者。completion doc 记 gap：Phase E 审批 UI 会加 `respondToServerRequest` 消费点。
+
+**R-13 处理（sidecar 状态广播）**：加 `qst:sidecar-state` channel（ipcRenderer.on ↔ webContents.send）；B5 阶段 `armRestartPolicy.onBudgetExhausted` 里的 `console.warn` 在 B6 里切成 `win.webContents.send("qst:sidecar-state", { kind: "budget-exhausted", retries, lastCode, lastSignal })`；renderer 可选消费、没消费时也不报错。
 
 **Interfaces:**
-- Consumes: `sidecar.ts` 的 `SidecarHandle` + `writeFrame`；`atomic-file.ts`（B4 写的 `runtime_state.json`）。
+- Consumes: `sidecar.ts` 的 `SidecarHandle` + `writeFrame`；`atomic-file.ts`（B4）；`armRestartPolicy` 的 `onBudgetExhausted` 与 `onRespawn`。
 - Produces:
   ```typescript
   // desktop/src/main/app-server-bridge.ts
-  class AppServerBridge {
-    dispatchRequest(method: string, params?: unknown): Promise<unknown>;
+  export class AppServerBridge {
+    attach(handle: SidecarHandle): void;   // B5 respawn 时换 handle、不重建 bridge
+    detach(): void;                        // 从当前 handle 的 stdout/stderr 拆 listener
+    dispatchRequest(method: string, params: JsonObject): Promise<JsonObject>;
     respondToServerRequest(publicRouteID: string, result: unknown): void;
     rejectServerRequest(publicRouteID: string, message: string): void;
     runningThreadsSnapshot(): RunningThreadSnapshot[];
     onEvent(listener: (evt: AppServerClientEvent) => void): () => void;
   }
-  // preload 挂 window.questorHost
-  interface QuestorHostApi {
-    request<T = unknown>(method: string, params?: unknown): Promise<T>;
+
+  // preload 挂 window.questorHost（**R-01**：request 返 JsonObject、onServerEvent 传 Notification）
+  export interface QuestorHostApi {
+    request<T = JsonObject>(method: string, params?: JsonObject): Promise<T>;
     respondToServerRequest(id: string, result: unknown): Promise<void>;
     rejectServerRequest(id: string, message: string): Promise<void>;
-    onServerEvent(handler: (event: ServerEvent) => void): () => void;
+    onServerEvent(handler: (n: Notification) => void): () => void;
+    onSidecarState(handler: (state: SidecarStateEvent) => void): () => void;
     getSnapshot(): Promise<RunningThreadSnapshot[]>;
   }
-  // ui/src/rpc/ipc-transport.ts
-  class IpcTransport implements Transport { /* call / subscribe / close */ }
-  function isElectronHost(): boolean;
+
+  // ui/src/rpc/ipc-transport.ts（**R-01**：方法名严格匹配现有 Transport）
+  export function isElectronHost(): boolean;
+  export class IpcTransport implements Transport {
+    constructor(host: QuestorHostApi);
+    request(method: string, params: JsonObject): Promise<JsonObject>;
+    onNotification(handler: NotificationHandler): () => void;
+    close(): void;
+  }
   ```
 
 - [ ] **Step 1：写失败测试（ipc-parity + batcher + bridge）**
 
-  `desktop/tests/ipc-parity.test.ts`（B-116）：
+  `desktop/tests/ipc-parity.test.ts`（B-116，**R-09**：ESM-safe 无 `__dirname`）：
 
   ```typescript
   // 扫 preload.ts 里的每个 ipcRenderer.invoke / sendSync / on 的 channel x，
   // 必须在 main 侧找到 ipcMain.handle / on / webContents.send 的对偶。
+  // desktop 包是 `type: "module"`、无 `__dirname`；统一走 import.meta.url + fileURLToPath。
   import { readFileSync, readdirSync } from "node:fs";
-  import { join } from "node:path";
-  const preloadSrc = readFileSync(join(__dirname, "../src/preload/index.ts"), "utf8");
-  const mainSrcs = readdirSync(join(__dirname, "../src/main"))
+  import { fileURLToPath } from "node:url";
+  import { describe, expect, it } from "vitest";
+
+  const preloadSrc = readFileSync(
+    fileURLToPath(new URL("../src/preload/index.ts", import.meta.url)),
+    "utf8",
+  );
+  const mainDir = fileURLToPath(new URL("../src/main", import.meta.url));
+  const mainSrcs = readdirSync(mainDir)
     .filter((f) => f.endsWith(".ts"))
-    .map((f) => readFileSync(join(__dirname, "../src/main", f), "utf8"))
+    .map((f) => readFileSync(mainDir + "/" + f, "utf8"))
     .join("\n");
-  const inv = [...preloadSrc.matchAll(/ipcRenderer\.invoke\(\s*"([^"]+)"/g)].map((m) => m[1]);
-  const syn = [...preloadSrc.matchAll(/ipcRenderer\.sendSync\(\s*"([^"]+)"/g)].map((m) => m[1]);
-  const onl = [...preloadSrc.matchAll(/ipcRenderer\.on\(\s*"([^"]+)"/g)].map((m) => m[1]);
-  const hnd = [...mainSrcs.matchAll(/ipcMain\.handle\(\s*"([^"]+)"/g)].map((m) => m[1]);
-  const mon = [...mainSrcs.matchAll(/ipcMain\.on\(\s*"([^"]+)"/g)].map((m) => m[1]);
-  const snd = [...mainSrcs.matchAll(/webContents\.send\(\s*"([^"]+)"/g)].map((m) => m[1]);
-  it("qst:* invoke ↔ ipcMain.handle 对偶", () => {
-    for (const ch of inv) expect(hnd, `ipcMain.handle 缺对偶：${ch}`).toContain(ch);
-  });
-  it("qst:* sendSync ↔ ipcMain.on 对偶（若引入同步 bootstrap）", () => {
-    for (const ch of syn) expect(mon, `ipcMain.on 缺对偶：${ch}`).toContain(ch);
-  });
-  it("qst:* ipcRenderer.on ↔ webContents.send 对偶", () => {
-    for (const ch of onl) expect(snd, `webContents.send 缺对偶：${ch}`).toContain(ch);
+
+  function extractAll(re: RegExp, src: string): string[] {
+    return [...src.matchAll(re)].map((m) => m[1]);
+  }
+
+  const invoke = extractAll(/ipcRenderer\.invoke\(\s*"([^"]+)"/g, preloadSrc);
+  const sendSync = extractAll(/ipcRenderer\.sendSync\(\s*"([^"]+)"/g, preloadSrc);
+  const listen = extractAll(/ipcRenderer\.on\(\s*"([^"]+)"/g, preloadSrc);
+  const handles = extractAll(/ipcMain\.handle\(\s*"([^"]+)"/g, mainSrcs);
+  const onHandlers = extractAll(/ipcMain\.on\(\s*"([^"]+)"/g, mainSrcs);
+  const sends = extractAll(/webContents\.send\(\s*"([^"]+)"/g, mainSrcs);
+
+  describe("IPC channel parity (B-116)", () => {
+    it("every ipcRenderer.invoke has an ipcMain.handle pair", () => {
+      for (const ch of invoke) {
+        expect(handles, `ipcMain.handle 缺对偶：${ch}`).toContain(ch);
+      }
+    });
+    it("every ipcRenderer.sendSync has an ipcMain.on pair", () => {
+      for (const ch of sendSync) {
+        expect(onHandlers, `ipcMain.on 缺对偶：${ch}`).toContain(ch);
+      }
+    });
+    it("every ipcRenderer.on has a webContents.send pair", () => {
+      for (const ch of listen) {
+        expect(sends, `webContents.send 缺对偶：${ch}`).toContain(ch);
+      }
+    });
   });
   ```
 
-  `desktop/tests/renderer-batcher.test.ts`：断言 50 ms 内同 identity delta 合并为一、控制事件先 flush 后立刻 emit、raw provider delta 不转发；snapshot resolve 前 batch 已 flush（防重放）。
+  **六对 channel**（B6 完成后 ipc-parity 应咬住）：
+  1. `qst:request` invoke ↔ handle
+  2. `qst:respond-server-request` invoke ↔ handle
+  3. `qst:reject-server-request` invoke ↔ handle
+  4. `qst:snapshot` invoke ↔ handle
+  5. `qst:server-event` on ↔ webContents.send
+  6. **`qst:sidecar-state`** on ↔ webContents.send（**R-13**）
 
-  `desktop/tests/bridge.test.ts`：fake `SidecarHandle` + 三条断言：请求-响应按 id 匹配；`turn/started` 通知落 `sessionOwners`；server-initiated request 到达 renderer 侧时被替换成 `server-request-${N}` public id。
+  `desktop/tests/renderer-batcher.test.ts`：5 条断言——同 identity delta 50 ms 内合并、不同 identity 不合批、控制/终止事件先 flush 再立即 emit、raw provider delta (`content_delta`/`thinking_delta`/`tool_use_delta`) 不转发、`resolveSnapshot` 前 flush（防 snapshot 已含 delta 被 renderer 重放）。
+
+  `desktop/tests/bridge.test.ts`：fake `SidecarHandle` + 3 条断言——请求-响应按 id 匹配；`turn/started` 通知落 `sessionOwners`；server-initiated request 到达 renderer 侧时被替换成 `server-request-${N}` public id（内核真实 id 不外泄）。
 
 - [ ] **Step 2：跑测试全红**
 
@@ -2506,13 +2549,22 @@ questor/
   ```typescript
   // Renderer ↔ Main ↔ Sidecar NDJSON 桥。
   // 照 wuu `desktop/src/main/appServerClients.ts::AppServerClient` 简化到单 client
-  //（Questor 起步一 shell 一 workspace，多 client MRU 属后续）；**重写实现加 provenance**。
-  // B-118：server-initiated request 用 `server-request-${N}` public id 桥接，不暴露内核真实 id。
+  // （Questor 起步一 shell 一 workspace，多 client MRU 属后续）；**重写实现加 provenance**。
+  // B-118：server-initiated request 用 `server-request-${N}` public id 桥接，
+  // 不暴露内核真实 id（避免 renderer 直接拿真 id 发回时与内核内部 ID 空间发生漂移）。
+  // attach/detach 语义：B5 的 spawnSidecar 会 respawn 新 handle；bridge 作 module-level
+  // singleton、attach(newHandle) 换接但不丢 sessionOwners/pending 等长跑状态。
   import type { SidecarHandle } from "./sidecar";
   import { writeFrame } from "./sidecar";
+  import type { JsonObject } from "../../types/json-object"; // 实际项目里从 ui 侧 import 或内联
 
-  interface Pending { resolve: (v: unknown) => void; reject: (e: unknown) => void; method: string }
-  type AppServerClientEvent =
+  interface Pending {
+    resolve: (v: JsonObject) => void;
+    reject: (e: unknown) => void;
+    method: string;
+  }
+
+  export type AppServerClientEvent =
     | { kind: "notification"; message: { method: string; params?: unknown } }
     | { kind: "server-request"; message: { id: string; method: string; params?: unknown } }
     | { kind: "server-exit"; code: number | null; message: string };
@@ -2522,21 +2574,38 @@ questor/
     private nextRouteID = 1;
     private pending = new Map<string, Pending>();
     private serverRequestRoutes = new Map<string, { serverID: string }>();
-    private sessionOwners = new Set<string>();  // thread_id 集（单 client 时只记归属）
+    private sessionOwners = new Set<string>();
     private eventListeners = new Set<(evt: AppServerClientEvent) => void>();
     private stdoutBuf = "";
+    private currentHandle: SidecarHandle | null = null;
+    private stdoutListener?: (chunk: Buffer) => void;
+    private stderrListener?: (chunk: Buffer) => void;
 
-    constructor(private handle: SidecarHandle) {
-      handle.stdout.on("data", (chunk: Buffer) => this.onStdout(chunk));
-      // questor 侧已保证 stderr 洁净、只吞不转发到 stdout（B-87）
-      handle.stderr.on("data", () => { /* sink */ });
+    attach(handle: SidecarHandle): void {
+      this.detach();
+      this.currentHandle = handle;
+      this.stdoutListener = (chunk: Buffer) => this.onStdout(chunk);
+      handle.stdout.on("data", this.stdoutListener);
+      // questor 侧已保证 stderr 洁净、不污染 stdout（B-87）；主进程另在 main/index.ts 里
+      // 挂一个 console.error 监听器把日志透传给人看；bridge 自己只吞 stderr 保证不阻流。
+      this.stderrListener = () => { /* sink */ };
+      handle.stderr.on("data", this.stderrListener);
     }
 
-    dispatchRequest(method: string, params?: unknown): Promise<unknown> {
+    detach(): void {
+      if (!this.currentHandle) return;
+      if (this.stdoutListener) this.currentHandle.stdout.off("data", this.stdoutListener);
+      if (this.stderrListener) this.currentHandle.stderr.off("data", this.stderrListener);
+      this.currentHandle = null;
+    }
+
+    dispatchRequest(method: string, params: JsonObject): Promise<JsonObject> {
       const id = `req-${this.nextRequestID++}`;
-      return new Promise((resolve, reject) => {
+      const handle = this.currentHandle;
+      if (!handle) return Promise.reject(new Error("sidecar not attached"));
+      return new Promise<JsonObject>((resolve, reject) => {
         this.pending.set(id, { resolve, reject, method });
-        writeFrame(this.handle, { id, method, params });
+        writeFrame(handle, { id, method, params });
       });
     }
 
@@ -2544,14 +2613,19 @@ questor/
       const route = this.serverRequestRoutes.get(publicRouteID);
       if (!route) throw new Error("server request is no longer active");
       this.serverRequestRoutes.delete(publicRouteID);
-      writeFrame(this.handle, { id: route.serverID, result });
+      if (!this.currentHandle) throw new Error("sidecar not attached");
+      writeFrame(this.currentHandle, { id: route.serverID, result });
     }
 
     rejectServerRequest(publicRouteID: string, message: string): void {
       const route = this.serverRequestRoutes.get(publicRouteID);
       if (!route) throw new Error("server request is no longer active");
       this.serverRequestRoutes.delete(publicRouteID);
-      writeFrame(this.handle, { id: route.serverID, error: { code: "rejected", message } });
+      if (!this.currentHandle) throw new Error("sidecar not attached");
+      writeFrame(this.currentHandle, {
+        id: route.serverID,
+        error: { code: "rejected", message },
+      });
     }
 
     runningThreadsSnapshot(): { threadId: string }[] {
@@ -2574,25 +2648,40 @@ questor/
       }
     }
 
-    private handleFrame(msg: { id?: string; method?: string; params?: unknown; result?: unknown; error?: unknown }): void {
+    private handleFrame(msg: {
+      id?: string;
+      method?: string;
+      params?: unknown;
+      result?: unknown;
+      error?: unknown;
+    }): void {
       if (msg.id && msg.method === undefined && (msg.result !== undefined || msg.error !== undefined)) {
         const p = this.pending.get(msg.id);
         if (!p) return;
         this.pending.delete(msg.id);
-        if (msg.error) p.reject(msg.error); else p.resolve(msg.result);
+        if (msg.error) p.reject(msg.error);
+        else p.resolve((msg.result ?? {}) as JsonObject);
         return;
       }
       if (msg.id && msg.method) {
         const publicID = `server-request-${this.nextRouteID++}`;
         this.serverRequestRoutes.set(publicID, { serverID: msg.id });
-        const evt: AppServerClientEvent = { kind: "server-request", message: { ...msg, id: publicID } };
+        const evt: AppServerClientEvent = {
+          kind: "server-request",
+          message: { ...msg, id: publicID },
+        };
         for (const l of this.eventListeners) l(evt);
         return;
       }
       if (msg.method) {
         const params = msg.params as { thread_id?: string } | undefined;
-        if (msg.method === "turn/started" && params?.thread_id) this.sessionOwners.add(params.thread_id);
-        const evt: AppServerClientEvent = { kind: "notification", message: msg as { method: string; params?: unknown } };
+        if (msg.method === "turn/started" && params?.thread_id) {
+          this.sessionOwners.add(params.thread_id);
+        }
+        const evt: AppServerClientEvent = {
+          kind: "notification",
+          message: msg as { method: string; params?: unknown },
+        };
         for (const l of this.eventListeners) l(evt);
       }
     }
@@ -2601,12 +2690,49 @@ questor/
 
 - [ ] **Step 4：实现 `desktop/src/main/renderer-batcher.ts`**
 
-  严格照 wuu `rendererServerEventBatcher.ts`：`STREAM_DELTA_NOTIFICATION_METHODS = new Set(["item/agentMessage/delta","item/reasoning/delta","item/toolCall/delta","item/toolCall/outputDelta"])`；`RENDERER_IGNORED_STREAM_EVENT_TYPES = new Set(["content_delta","thinking_delta","tool_use_delta"])`；`DEFAULT_STREAM_BATCH_INTERVAL_MS = 50`；同 identity 合并、非 delta 事件先 flush 再立即 emit、`resolveSnapshot` 前 flush。导出 `class RendererServerEventBatcher { enqueue(event); flush(); resolveSnapshot<T>(request: Promise<T>): Promise<T>; }`。
+  严格照 wuu `rendererServerEventBatcher.ts` 138 行重写：
+
+  ```typescript
+  const STREAM_DELTA_METHODS = new Set([
+    "item/agentMessage/delta",
+    "item/reasoning/delta",
+    "item/toolCall/delta",
+    "item/toolCall/outputDelta",
+  ]);
+  const RENDERER_IGNORED_EVENT_TYPES = new Set([
+    "content_delta",
+    "thinking_delta",
+    "tool_use_delta",
+  ]);
+  const DEFAULT_BATCH_INTERVAL_MS = 50;
+
+  export class RendererServerEventBatcher {
+    // 同 identity（method + thread_id + turn_id + item_id）在 50 ms 窗口内合并；
+    // 非 delta 事件先 flush 当前 batch 再立即 emit；
+    // raw provider delta (RENDERER_IGNORED) 不转发到 renderer；
+    // resolveSnapshot<T>(p) 前先 flush，防 snapshot 已含 delta 被 renderer 重放。
+    enqueue(evt: AppServerClientEvent): void; // 按上述规则合批
+    flush(): void; // 强制 emit 当前 pending batch
+    resolveSnapshot<T>(request: Promise<T>): Promise<T>; // flush → await request → return
+  }
+  ```
+
+  测里用 fake clock (`vi.useFakeTimers()`) 验证：同 identity 三条 delta enqueue → advance 50 ms → 只 emit 一条聚合；中途插一条 `turn/completed` 控制事件 → 先 flush pending → 再立即 emit 控制事件；enqueue 一条 `content_delta` → emit 不转发。
+
 
 - [ ] **Step 5：改写 `desktop/src/preload/index.ts`**
 
   ```typescript
+  // preload 白名单出口：window.questorHost 六个方法（**R-13**：新增 onSidecarState）。
+  // 铁律：业务方法一律走 request("qst:xxx")——任何直透都违反纯壳纪律（overview §14）。
   import { contextBridge, ipcRenderer } from "electron";
+  import type { Notification } from "./generated-types/app_server-v0-1"; // 与 ui 侧共享类型
+
+  type ServerEvent = Notification;
+  type SidecarStateEvent =
+    | { kind: "up"; pid: number }
+    | { kind: "down"; code: number | null; signal: string | null; willRetry: boolean }
+    | { kind: "budget-exhausted"; retries: number; lastCode: number | null; lastSignal: string | null };
 
   const api = {
     request: <T>(method: string, params?: unknown) =>
@@ -2621,36 +2747,82 @@ questor/
       ipcRenderer.on("qst:server-event", listener);
       return () => ipcRenderer.removeListener("qst:server-event", listener);
     },
+    onSidecarState: (handler: (state: SidecarStateEvent) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, payload: SidecarStateEvent) => handler(payload);
+      ipcRenderer.on("qst:sidecar-state", listener);
+      return () => ipcRenderer.removeListener("qst:sidecar-state", listener);
+    },
   };
   contextBridge.exposeInMainWorld("questorHost", api);
   ```
 
-- [ ] **Step 6：`main/index.ts` 注册 IPC handlers + 挂 batcher**
+- [ ] **Step 6：`main/index.ts` 注册 IPC handlers + 挂 batcher + broadcast**
+
+  与 B5 closure 集成：bridge 作 module-level singleton、`attach(handle)` 换 handle 不重建；B5 阶段 `armRestartPolicy.onBudgetExhausted` 里的 `console.warn` 切到 `win.webContents.send("qst:sidecar-state", ...)`。
 
   ```typescript
-  const bridge = new AppServerBridge(sidecarHandle);
-  const batcher = new RendererServerEventBatcher((evt) => win.webContents.send("qst:server-event", evt));
-  bridge.onEvent((e) => batcher.enqueue(toServerEvent(e)));
+  // module-level singleton：bridge 跨 respawn 保持 sessionOwners/pending 不丢。
+  const bridge = new AppServerBridge();
+  let batcher: RendererServerEventBatcher | null = null;
+  let eventUnsub: (() => void) | null = null;
 
-  ipcMain.handle("qst:request", (_e, method, params) => bridge.dispatchRequest(method, params));
-  ipcMain.handle("qst:respond-server-request", (_e, id, r) => bridge.respondToServerRequest(id, r));
-  ipcMain.handle("qst:reject-server-request", (_e, id, m) => bridge.rejectServerRequest(id, m));
+  function wireBridgeToWindow(win: BrowserWindow): void {
+    batcher = new RendererServerEventBatcher((evt) => {
+      if (!win.isDestroyed()) win.webContents.send("qst:server-event", evt);
+    });
+    eventUnsub?.();
+    eventUnsub = bridge.onEvent((e) => {
+      if (e.kind === "notification") batcher?.enqueue(toServerEvent(e.message));
+      // server-request 与 server-exit 直接转发、不合批（控制事件先 flush）。
+      else batcher?.flush(), win.isDestroyed() || win.webContents.send("qst:server-event", e);
+    });
+  }
+
+  // spawnSidecar 成功后：
+  //   bridge.attach(handle);
+  //   broadcast({ kind: "up", pid: handle.pid });
+  //   armRestartPolicy(... onRespawn: () => { void spawnSidecar(); on新 handle 里再 attach },
+  //                     onBudgetExhausted: (info) => broadcast({ kind: "budget-exhausted", ...info }) ...)
+  // handle.exited 里 broadcast({ kind: "down", code, signal, willRetry: retries < maxRetries })。
+
+  function broadcast(state: SidecarStateEvent): void {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send("qst:sidecar-state", state);
+    }
+  }
+
+  ipcMain.handle("qst:request", (_e, method: string, params: JsonObject) =>
+    bridge.dispatchRequest(method, params),
+  );
+  ipcMain.handle("qst:respond-server-request", (_e, id: string, r: unknown) =>
+    bridge.respondToServerRequest(id, r),
+  );
+  ipcMain.handle("qst:reject-server-request", (_e, id: string, m: string) =>
+    bridge.rejectServerRequest(id, m),
+  );
   ipcMain.handle("qst:snapshot", () => bridge.runningThreadsSnapshot());
   ```
 
+  **关键点**：`win.isDestroyed()` 前置判防 renderer 已关与 sidecar 挂的竞态；bridge 作 singleton 保证 sessionOwners 跨 respawn 不丢（IPC handle 里直接 `bridge.dispatchRequest(...)`——未 attach 时会 reject "sidecar not attached"）。
+
 - [ ] **Step 7：新建 `ui/src/rpc/ipc-transport.ts` + `server-events-fanout.ts` + 修改 `client.ts`**
 
+  **R-01**：`IpcTransport` 方法名严格匹配现有 `Transport` 契约 `request / onNotification / close`。
+
   ```typescript
-  // ui/src/rpc/ipc-transport.ts —— Transport 的 Electron 实现
-  import type { Transport } from "./transport";
+  // ui/src/rpc/ipc-transport.ts
+  import type { Notification } from "./generated/app_server-v0-1";
+  import type { JsonObject, NotificationHandler, Transport } from "./transport";
   import { subscribeServerEvents } from "./server-events-fanout";
 
-  interface QuestorHostApi {
-    request<T>(method: string, params?: unknown): Promise<T>;
-    onServerEvent(handler: (event: ServerEvent) => void): () => void;
+  export interface QuestorHostApi {
+    request<T = JsonObject>(method: string, params?: JsonObject): Promise<T>;
+    onServerEvent(handler: (n: Notification) => void): () => void;
+    // R-12 plumbing（Phase E 消费时才接）：
     respondToServerRequest(id: string, result: unknown): Promise<void>;
     rejectServerRequest(id: string, message: string): Promise<void>;
-    getSnapshot(): Promise<RunningThreadSnapshot[]>;
+    getSnapshot(): Promise<{ threadId: string }[]>;
+    onSidecarState(handler: (state: unknown) => void): () => void;
   }
   declare global { interface Window { questorHost?: QuestorHostApi } }
 
@@ -2660,53 +2832,86 @@ questor/
 
   export class IpcTransport implements Transport {
     constructor(private host: QuestorHostApi) {}
-    call<T>(method: string, params?: unknown): Promise<T> { return this.host.request<T>(method, params); }
-    subscribe(topic: string) { return subscribeServerEvents(topic); }
-    close(): void { /* IPC 无连接概念，no-op */ }
+    request(method: string, params: JsonObject): Promise<JsonObject> {
+      return this.host.request<JsonObject>(method, params);
+    }
+    onNotification(handler: NotificationHandler): () => void {
+      return subscribeServerEvents(handler);
+    }
+    close(): void {
+      /* IPC 无连接概念、preload 桥常驻 */
+    }
   }
   ```
 
-  `ui/src/rpc/client.ts` 里：
+  **R-02**：`client.ts` 构造函数默认参数分岔（**不**新建 `createClient` 工厂，保持现有 `new QuestorClient()` 无参形式）：
 
   ```diff
-  - export const client = createClient(new WebSocketTransport(wsEndpoint));
   + import { IpcTransport, isElectronHost } from "./ipc-transport";
-  + const transport: Transport = isElectronHost()
-  +   ? new IpcTransport(window.questorHost!)
-  +   : new WebSocketTransport(wsEndpoint);   // 浏览器路径零改
-  + export const client = createClient(transport);
+
+  export class QuestorClient {
+  - constructor(private transport: Transport = new WebSocketTransport()) {}
+  + constructor(
+  +   private transport: Transport = isElectronHost()
+  +     ? new IpcTransport(window.questorHost!)
+  +     : new WebSocketTransport(),
+  + ) {}
+    ...
+  }
   ```
 
-  `ui/src/rpc/server-events-fanout.ts` 照 wuu `renderer/ServerEvents.ts`：Set\<listener> + `disconnect ??= window.questorHost.onServerEvent(handler)` + 最后一个 listener 走时 `disconnect=undefined`。护栏 A4 与 A5–A8 现有面板测试**继续跑浏览器路径**（`WebSocketTransport` 分支），不破现有测。
+  **浏览器路径零改**：`isElectronHost()` 在无 preload 的浏览器/happy-dom 环境里返 false → 走 `WebSocketTransport` → 现有 12 测仍绿。护栏 A5–A8 现有面板测继续跑浏览器路径、不破。
+
+  `ui/src/rpc/server-events-fanout.ts` 照 wuu `renderer/ServerEvents.ts`（21 行）重写：Set\<listener> + `disconnect ??= window.questorHost.onServerEvent(broadcast)` + 最后一个 listener 走时 `disconnect?.(); disconnect = undefined`。保证事件身份与顺序不丢。
 
 - [ ] **Step 8：`electron.vite.config.ts` renderer root**
 
   ```typescript
   renderer: {
     root: "../ui",
-    build: { outDir: fileURLToPath(new URL("out/renderer", import.meta.url)), emptyOutDir: true },
+    build: {
+      outDir: fileURLToPath(new URL("out/renderer", import.meta.url)),
+      emptyOutDir: true,
+    },
+    server: {
+      // electron-vite dev 下 vite 默认 `server.fs.allow` 仅开根与 workspace root；
+      // root 指 `../ui` 后需多开一层避免 "outside of allowed" 拦截。
+      fs: { allow: ["..", "../ui"] },
+    },
   }
   ```
 
-- [ ] **Step 9：手动跑 + 断链验证**
+  **验证方法**：`npm --prefix desktop run dev` 开时 renderer 应能加载 `ui/index.html` 里 `<script type="module" src="/src/main.tsx">`；DevTools Network 面板应能看到 ui/src 下的 tsx 以 vite transform 后的形式加载。
 
-  Run: `npm --prefix ui run build && npm --prefix desktop run dev` → 打开窗口 → 看到 Questor AppShell → 起一个 turn → Review 面板显示 diff。**断链**：`kill -9 <sidecar pid>` → renderer 3 s 内看到"sidecar 挂了、正在重启（fail-open）"提示（B5 backoff）；**重启窗口里 renderer 不需刷新页面**——preload 桥常驻，sidecar 复活后 `bridge.onEvent` 重挂即可。
+- [ ] **Step 9：[real-terminal] 手动跑 + 断链验证**
 
-- [ ] **Step 10：跑全套 + 提交**
+  Run: `npm --prefix ui run build && npm --prefix desktop run dev`（需先设 `QUESTOR_DESKTOP_USE_UV_RUN=1`）→ 打开窗口 → 看到 Questor AppShell 而非 B2 占位页→ 起一个 turn → Review 面板显示 diff。
 
-  Run: `npm --prefix desktop run test` 全绿；`npm --prefix ui run test` 全绿；`npm --prefix ui run typecheck` 0 error；`just check`（或 §Global Constraints 里的退路逐条手动跑）全绿；`test_no_hardcoded_panel_case` 与 `test_serve_http_ws` 仍绿（浏览器路径不破）。
+  **断链**（Windows PowerShell）：`Stop-Process -Id <sidecar pid> -Force` → renderer 500 ms 内看到 `qst:sidecar-state { kind: "down", willRetry: true }` → 3 s 内 respawn（B5 backoff）→ renderer **无需刷新页面**（bridge 作 singleton、attach 新 handle 后 sessionOwners 保留）。
 
-  ```bash
-  git add desktop/src/main/app-server-bridge.ts desktop/src/main/renderer-batcher.ts desktop/src/preload/index.ts desktop/src/main/index.ts desktop/electron.vite.config.ts ui/src/rpc/ipc-transport.ts ui/src/rpc/server-events-fanout.ts ui/src/rpc/client.ts desktop/tests/ipc-parity.test.ts desktop/tests/renderer-batcher.test.ts desktop/tests/bridge.test.ts docs/specs/pitfalls.md
-  git commit -m "feat(desktop): renderer<->main IPC<->sidecar stdio bridge (Option A per wuu)" -m "Refs ADR-0006 §结论 4 (desktop stdio, web WS) and ADR-0030. Covers B-113/B-116/B-117/B-118. Provenance: rewritten from wuu appServerClients.ts + preload.ts + rendererServerEventBatcher.ts + renderer/ServerEvents.ts, no code copy." --no-verify=false
-  ```
+  连续杀 3 次 → 第 4 次杀后 renderer 看到 `qst:sidecar-state { kind: "budget-exhausted", retries: 3 }` → 不再拉起。关窗 → before-quit killTree 走通。
+
+- [ ] **Step 10：分细 commit（6 段）**
+
+  本 Task 按 6 段独立 commit 走（跨 ui/desktop 两包、护栏测多、拆细便于回滚）：
+
+  1. `docs(plans): expand Phase U Task B6 to implementation level`（本 Step 0 回写）
+  2. `feat(desktop): AppServerBridge with pending table and server-request public-id routing (B-118)`（`sidecar.ts` 无变更 + `app-server-bridge.ts` + `bridge.test.ts`）
+  3. `feat(desktop): renderer batcher with 50ms delta merging and control-event flush (B-117)`（`renderer-batcher.ts` + `renderer-batcher.test.ts`）
+  4. `feat(desktop): preload window.questorHost 6 methods + qst:sidecar-state channel (B-116, R-13)`（`preload/index.ts` + `ipc-parity.test.ts` + `main/index.ts` IPC handlers + broadcast）
+  5. `feat(ui): IpcTransport matches existing Transport contract + server-events-fanout (R-01, R-02)`（`ipc-transport.ts` + `server-events-fanout.ts` + `client.ts` 构造函数默认参数）
+  6. `feat(desktop): point electron-vite renderer root to ../ui (Option A integration)`（`electron.vite.config.ts`）
+
+  收口全套：`check_docs / check_specs / check_notes` + `pytest tests/unit tests/architecture` + gen-check 无 diff + `npm --prefix ui run typecheck` + `npm --prefix ui run test` **12/12**（浏览器路径回归护栏）+ `npm --prefix desktop run typecheck` + `npm --prefix desktop run test` 累计。
 
 **B6 出口判据**：
-1. `qst:request` / `qst:respond-server-request` / `qst:reject-server-request` / `qst:snapshot` / `qst:server-event` 五对 IPC channel 一一对偶（`ipc-parity.test.ts` 咬住，B-116）；
-2. delta 事件 50 ms 窗口内按 identity 合批；控制/终止事件先 flush；raw provider delta 不转发（B-117）；
+1. `qst:request` / `qst:respond-server-request` / `qst:reject-server-request` / `qst:snapshot` 四对 invoke/handle + `qst:server-event` / **`qst:sidecar-state`** 两对 on/send —— 共 6 对 IPC channel 一一对偶（`ipc-parity.test.ts` 咬住，B-116）；
+2. delta 事件 50 ms 窗口内按 identity 合批；控制/终止事件先 flush；raw provider delta (`content_delta`/`thinking_delta`/`tool_use_delta`) 不转发（B-117）；
 3. server-initiated request 的 public id 桥接生效，内核真实 id 不出现在 renderer（B-118）；
-4. **浏览器宿主路径完全不变**：`window.questorHost` 不存在时 `client.ts` 走 `WebSocketTransport`；现有 `test_serve_http_ws` 与 Track A 全部面板测绿；
-5. 手动走查：起窗口 → 跑 turn → Review 真 diff 显示；`kill -9` sidecar → fail-open 提示 → 自动重启 → renderer 无需刷新。
+4. **浏览器宿主路径完全不变**（停止条件 #3）：`window.questorHost` 不存在时 `client.ts` 走 `WebSocketTransport`；现有 `test_serve_http_ws` 与 Track A 全部 12 面板测仍绿；
+5. [real-terminal] 手动走查（待用户回报）：起窗口 → 跑 turn → Review 真 diff 显示；`Stop-Process -Force` sidecar → renderer 看到 sidecar-state down/willRetry → 自动 respawn → renderer 无需刷新；连杀三次后看到 budget-exhausted。
+
+---
 
 ---
 
