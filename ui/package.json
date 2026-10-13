@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Questor 唯一前端代码源（一套代码两个宿主：Tauri 桌面 + 网页 localhost）",
+  "description": "Questor 唯一前端代码源（一套代码两个宿主：Electron 桌面 + 网页 localhost）",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

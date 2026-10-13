@@ -1,6 +1,6 @@
 # Questor 前端（`ui/`）
 
-**唯一前端代码源**：一套代码两个宿主——Tauri 桌面壳与浏览器。内核能力的可见性与可干预性
+**唯一前端代码源**：一套代码两个宿主——Electron 桌面壳与浏览器。内核能力的可见性与可干预性
 全部落在这里；内核做完而这里没入口，等于第一柱没做到（`AGENTS.md` §一）。
 
 ## 目录职责
@@ -42,5 +42,6 @@ React 19 + TS + Vite 6 + Tailwind 4 + zustand **v5** + SWR；`@xterm/xterm`（Te
 
 ## 尚未做（避免误读现有骨架）
 
-Browser 面板延后（理由 `overview.md` §4，完整 ADR 待补 `ADR-0006`）；Review/Files/Terminal 三面板
-尚未建目录；协议真连接属 M3。当前只承诺：第一屏骨架 + token 主题 + mock 驱动的会话渲染。
+已交付并真接：`Review` / `Files`（M3）、`Board` 看板（M4/M5）；协议真连接（stdio + WS + `serve http`）自 M3 起可用。
+尚未建面板：**Terminal** 与 **Browser**——随 Phase U（ADR-0030）进入交付；Electron 下 Browser 可做真·同页接管
+（面板 tab 即 Agent 操作页、一点即暂停），不再以“镜像”形式存在，也不适用原 ADR-0006 “不得称同一页面”限制。
