@@ -380,7 +380,9 @@ covered + 负向验证）。出口判据逐项：`test_report_verified_when_reco
 
 ## Phase U — 界面 / 动效 / 桌面壳主线（Electron；ADR-0030 提前，紧接 M5）
 
-**状态**：`- [ ]` 未开始（本轮用户裁定：界面/桌面壳为当前主线，插入 M5 与 M6 之间；M6/M7/M8 后移；原 Phase E 的 E1 并入本相）
+**状态**：`- [~]` **Track A（Review 面板 wuu 级还原度）已完成 2026-10-13**（A1~A9 全勾销，见下"Track A 实际结果"）；Track B（Electron 桌面壳）未开始。插入 M5 与 M6 之间；M6/M7/M8 后移；原 Phase E 的 E1 并入本相。
+
+**Track A 实际结果（2026-10-13）**：契约先行——ADR-0031（`@pierre/diffs` + `vitest` + `happy-dom` + `@testing-library/*`）；行为规格 `docs/specs/behavior-review-fidelity-wuu.md` 与坑 `B-103~B-107` 同步（五条均已 `covered` 并回填测名）。代码：`ui/src/design/tokens.css` 与 `themes.css` 扩族 `--elevation-*`/`--motion-*`/`--color-diff-*` 三族；`base.css` 加 `.qst-focus-ring` 与 `@media (prefers-reduced-motion: reduce)`；`ui/src/panels/review.tsx` 重写为卡片布局（折叠/已阅 dot/fingerprint 前 7 位/100+ hunks 默认折叠/空态早 return）；`ui/src/panels/review.css` 就近样式仅走 token，无 hex；`ui/src/panels/review.diff-view.tsx` 封装 `@pierre/diffs` React 入口（`processFile` + `<FileDiff themeType overflow="wrap">`），`buildFileDiff` 导出为纯函数供测射约层断言。测面：`ui/vitest.config.ts`（happy-dom + jest-dom setup）+ `ui/src/testing/{setup,fixtures}.ts`；`ui/tests/review.panel.test.tsx` 5 条判据 + `ui/tests/review.fidelity.test.tsx` 6 条（B-103/B-104/B-106）+ `ui/tests/design.tokens.test.ts` 2 条护栏；**12/12 vitest 全绿**，`tsc --noEmit` 0 error，`tests/architecture` 30 passed。**诚实标注**：人工浏览器走查需 `QUESTOR_MODEL_API_KEY`（本机无）记 pending；还原度判据已在封装契约层与 CSSOM 静态层钉住，不依赖真机。实现细节与 wuu 参考参照 `docs/plans/2026-10-13-phase-u-ui-and-electron-shell.md` Track A 各 Task commit。
 
 **为何在这里（不是"做完 M8 再改界面"）**：内核三柱已建成（M2–M5 + e2e）、界面接口地基已锁死
 （ADR-0020 视图注册表骨架 + design token + 生成类型 + 双宿主契约）。界面/动效/桌面壳属"功能面"，
