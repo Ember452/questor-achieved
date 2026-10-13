@@ -9,7 +9,7 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true,
-    "types": ["node"]
+    "types": ["node", "vitest/globals"]
   },
-  "include": ["src/main", "src/preload", "electron.vite.config.ts"]
+  "include": ["src/main", "src/preload", "electron.vite.config.ts", "vitest.config.ts", "tests"]
 }
