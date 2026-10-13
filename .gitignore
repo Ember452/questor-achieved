@@ -36,3 +36,8 @@ site/
 
 # Frontend (ui/)
 node_modules/
+
+# Desktop shell (desktop/) — electron-vite build output & local caches (ADR-0032)
+desktop/out/
+desktop/.vite/
+*.tsbuildinfo

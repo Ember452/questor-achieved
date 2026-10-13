@@ -1,0 +1,20 @@
+{
+  "name": "@questor/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "out/main/index.js",
+  "description": "Questor 桌面壳（Electron main/preload + renderer 复用 ui/ 构建产物；ADR-0030/0032）。只包壳，不含业务判断。",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "44.1.0",
+    "electron-vite": "^5.0.0",
+    "typescript": "~5.9.3",
+    "vite": "^6.3.5"
+  }
+}
