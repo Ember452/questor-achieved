@@ -1676,42 +1676,69 @@ questor/
 ### Task B4：`runtime_state.json` 单调 generation + `lifecycle_lock` 防拉起竞态
 
 **Files:**
+- Create: `desktop/src/main/questor-home.ts`（R-04 单点解析：`QUESTOR_HOME` env → `join(homedir(), ".questor")`；不 mkdir，写入侧走 atomic-file）
 - Create: `desktop/src/main/sidecar-state.ts`
 - Create: `desktop/src/main/sidecar-lock.ts`
-- Create: `desktop/tests/generation.test.ts`（单调性、lifecycle_lock）
-- Modify: `desktop/src/main/index.ts`（`startSidecar` 前后调 lock/state）
+- Create: `desktop/tests/generation.test.ts`（5 条：空 home 起步 gen=1 / 连续 bump 递增 / crash 残尾回 `.bak` / lifecycle_lock 并发串行 / lifecycle_lock 5 s 超时抛）
+- Modify: `desktop/src/main/index.ts`（`startSidecar` 前后包 `withLifecycleLock` + `bumpState`）
 
 **Interfaces:**
+- Consumes: `atomic-file.ts::writeTextFileAtomicSync`（B3 已落）。
 - Produces:
   ```typescript
-  interface SidecarState {
+  // questor-home.ts
+  export function resolveQuestorHome(env: NodeJS.ProcessEnv): string;
+
+  // sidecar-state.ts
+  export interface SidecarState {
     generation: number;    // 单调递增，每次成功拉起 +1
     pid: number;
-    startedAt: string;     // ISO
+    startedAt: string;     // ISO 8601
     // Option A（renderer↔main IPC↔sidecar stdio）下无 endpoint 字段——renderer 不直连内核。
     // 预留 future remote/relay 接入时开（属 M8，另开 ADR）。
   }
-  function readState(home: string): Promise<SidecarState | null>;
-  function bumpState(home: string, next: Omit<SidecarState, "generation">): Promise<SidecarState>;
-  async function withLifecycleLock<T>(home: string, fn: () => Promise<T>): Promise<T>;
+  export function readState(home: string): Promise<SidecarState | null>;
+  export function bumpState(home: string, next: Omit<SidecarState, "generation">): Promise<SidecarState>;
+
+  // sidecar-lock.ts
+  export function withLifecycleLock<T>(
+    home: string,
+    fn: () => Promise<T>,
+    opts?: { timeoutMs?: number; pollIntervalMs?: number },
+  ): Promise<T>;
   ```
 
-**参照**：wuu `desktop/src/main/appServerClients.ts` 的 generation 语义 + EvoFlow `backend.rs` 的 lifecycle_lock（**重写实现加 provenance**）。
+**锁与状态文件路径**：
+- state 目录：`join(home, "desktop")`（atomic-file 内部 mkdir -p，写入侧无需预建）
+- 主状态：`join(home, "desktop", "runtime_state.json")`
+- 备份：`join(home, "desktop", "runtime_state.json.bak")`
+- 锁：`join(home, "desktop", ".lifecycle.lock")`
+
+**参照**：wuu `desktop/src/main/appServerClients.ts` 的 generation 语义 + EvoFlow `evopanel/src-tauri/src/commands/backend.rs` 的 lifecycle_lock（**重写实现加 provenance**，AGENTS §二 (a) 边界层）。
 
 - [ ] **Step 1：写失败测试**
 
   `desktop/tests/generation.test.ts`：
 
   ```typescript
+  // 护栏 B-108 generation 单调性与 crash 残尾容错；护栏 B-109 lifecycle_lock 防并发拉起。
   import { afterEach, beforeEach, describe, expect, it } from "vitest";
-  import { mkdtemp, rm } from "node:fs/promises";
+  import { mkdtemp, rm, writeFile } from "node:fs/promises";
   import { tmpdir } from "node:os";
   import { join } from "node:path";
-  import { bumpState, readState, withLifecycleLock } from "../src/main/sidecar-state";
+  import { bumpState, readState } from "../src/main/sidecar-state";
+  import { withLifecycleLock } from "../src/main/sidecar-lock";
+
+  const sleep = (ms: number): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, ms));
 
   let home = "";
-  beforeEach(async () => { home = await mkdtemp(join(tmpdir(), "questor-desktop-")); });
-  afterEach(async () => { await rm(home, { recursive: true, force: true }); });
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "questor-desktop-"));
+  });
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+  });
 
   describe("generation 单调性（B-108）", () => {
     it("空 home 首次 bumpState → generation=1", async () => {
@@ -1727,18 +1754,27 @@ questor/
       expect(s.generation).toBe(2);
     });
 
-    it("state 文件损坏（残尾）时 readState 返回 null 而非抛（对齐 gesta B-74 容错）", async () => {
-      await bumpState(home, { pid: 1, startedAt: "x" });
-      // 追加半行模拟 crash 残尾
-      await appendFile(join(home, "runtime_state.json"), "\n{trunc");
-      expect(await readState(home)).not.toBeNull(); // 读回上一个完整版本
+    it("state 文件损坏（残尾）时 readState 回退到 .bak", async () => {
+      await bumpState(home, { pid: 42, startedAt: "2026-01-01T00:00:00Z" });
+      await bumpState(home, { pid: 43, startedAt: "2026-01-01T00:00:01Z" });
+      // 模拟 crash 残尾：把主 runtime_state.json 截半（`.bak` 完好 → 回退到 pid=42）
+      await writeFile(join(home, "desktop", "runtime_state.json"), '{"gener');
+      const s = await readState(home);
+      expect(s).not.toBeNull();
+      expect(s?.pid).toBe(42);
     });
   });
 
   describe("lifecycle_lock 防并发拉起（B-109）", () => {
-    it("两个 withLifecycleLock 并发 → 串行", async () => {
-      let peak = 0, cur = 0;
-      const fn = async () => { cur++; peak = Math.max(peak, cur); await sleep(50); cur--; };
+    it("三个 withLifecycleLock 并发 → 串行", async () => {
+      let peak = 0;
+      let cur = 0;
+      const fn = async (): Promise<void> => {
+        cur += 1;
+        peak = Math.max(peak, cur);
+        await sleep(50);
+        cur -= 1;
+      };
       await Promise.all([
         withLifecycleLock(home, fn),
         withLifecycleLock(home, fn),
@@ -1746,50 +1782,245 @@ questor/
       ]);
       expect(peak).toBe(1);
     });
+
+    it("获锁超时 → 5 s 抛 lifecycle lock busy", async () => {
+      const longFn = async (): Promise<void> => {
+        await sleep(6_000);
+      };
+      const first = withLifecycleLock(home, longFn);
+      await sleep(20); // 让 first 拿到锁
+      const started = Date.now();
+      await expect(withLifecycleLock(home, async () => undefined)).rejects.toThrow(
+        /lifecycle lock busy/i,
+      );
+      expect(Date.now() - started).toBeGreaterThanOrEqual(4_500);
+      await first;
+    });
   });
   ```
 
-  （`appendFile` 与 `sleep` 从 `node:fs/promises` / 顶部 helper 引入。）
-
 - [ ] **Step 2：跑测试确认失败**
 
-  Run: `npm --prefix desktop run test` — Expected: FAIL（模块未建）。
+  Run: `npm --prefix desktop run test` — Expected: FAIL（sidecar-state / sidecar-lock 模块未建）。
 
-- [ ] **Step 3：实现 `sidecar-state.ts` + `sidecar-lock.ts`（写盘走 atomic-file.ts，B-115）**
+- [ ] **Step 3：实现 `desktop/src/main/questor-home.ts`**
 
-  核心要点：
-  - 状态路径 `~/.questor/desktop/runtime_state.json`（走 `QUESTOR_HOME` 单点解析，overview §14"路径单点解析"）。
-  - **写路径必须走 B3 新落的 `atomic-file.ts`**（B-115：只做 `writeFile + rename` 而无 `fsync`，崩溃时 rename 可能已发生但字节仍在页缓存里、下次开机文件半新半旧）：唯一落盘口是 `writeTextFileAtomicSync(path, JSON.stringify(next, null, 2) + "\n")`；temp 命名 `.<basename>.<pid>.<uuid>.tmp` 保证多进程不撞。
-  - `readState`：读整个文件 + `JSON.parse`；不存在 → `null`；parse 失败但文件存在 → **回退到 `.bak`**（`bumpState` 写前把旧文件 rename 成 `.bak`，容 crash 残尾，B-108）。
-  - `bumpState`：读旧 → `generation+1` → 若旧存在则 `rename(runtime_state.json → runtime_state.json.bak)` → `writeTextFileAtomicSync(runtime_state.json, ...)`（含 fsync）→ 保留 `.bak`。
-  - `withLifecycleLock`：用 `.lifecycle.lock` 文件的 `wx`（O_CREAT|O_EXCL）独占创建立锁 + 心跳 mtime；获不到锁 → 50 ms 退避重试直到 5 s；释放走 `unlink`。跨进程锁——与 questor `state/` 的 storelock 语义同形，但**在 TS 侧重写**（不能 import Python）。
-  - `atomic-file.ts` 自身单测在 B3 已建；本 Task 不重复。
+  ```typescript
+  // 单点解析 Questor 用户状态目录（overview §14 "路径单点解析"）。
+  // 优先级：QUESTOR_HOME env（非空）→ join(homedir(), ".questor")。
+  // 返回绝对路径；**不 mkdir**——写入侧走 atomic-file 的 mkdir -p。
+  import { homedir } from "node:os";
+  import { join, resolve } from "node:path";
 
-- [ ] **Step 4：跑测试全绿**
+  export function resolveQuestorHome(env: NodeJS.ProcessEnv): string {
+    const raw = env.QUESTOR_HOME;
+    if (raw && raw.trim() !== "") return resolve(raw);
+    return resolve(join(homedir(), ".questor"));
+  }
+  ```
 
-  Run: `npm --prefix desktop run test` — Expected: PASS（4 条 generation + 1 条 lock）。
+- [ ] **Step 4：实现 `desktop/src/main/sidecar-state.ts`**
 
-- [ ] **Step 5：`main/index.ts` 集成**
+  ```typescript
+  // runtime_state.json 单调 generation + `.bak` crash 容错。
+  // provenance: wuu-main/desktop/src/main/appServerClients.ts 的 generation 语义
+  //   + EvoFlow evopanel/src-tauri/src/commands/backend.rs 的 state 文件形态；
+  //   重写实现（AGENTS §二 (a) 边界层）。
+  // B-115：写路径必须走 atomic-file.ts（O_EXCL temp + fsync + rename）。
+  // B-108：crash 残尾容错——bumpState 写前把旧文件 rename 成 `.bak`；readState
+  //   解析主文件失败时回退读 `.bak`，取上一次完整版本。
+  import { existsSync } from "node:fs";
+  import { readFile, rename } from "node:fs/promises";
+  import { join } from "node:path";
+  import { writeTextFileAtomicSync } from "./atomic-file";
+
+  export interface SidecarState {
+    generation: number;
+    pid: number;
+    startedAt: string;
+  }
+
+  const STATE_DIR = "desktop";
+  const STATE_FILE = "runtime_state.json";
+  const STATE_BACKUP = "runtime_state.json.bak";
+
+  function statePath(home: string): string {
+    return join(home, STATE_DIR, STATE_FILE);
+  }
+  function backupPath(home: string): string {
+    return join(home, STATE_DIR, STATE_BACKUP);
+  }
+
+  async function parseFile(path: string): Promise<SidecarState | null> {
+    if (!existsSync(path)) return null;
+    try {
+      const raw = await readFile(path, "utf8");
+      const parsed = JSON.parse(raw) as Partial<SidecarState>;
+      if (
+        typeof parsed.generation !== "number" ||
+        typeof parsed.pid !== "number" ||
+        typeof parsed.startedAt !== "string"
+      ) {
+        return null;
+      }
+      return {
+        generation: parsed.generation,
+        pid: parsed.pid,
+        startedAt: parsed.startedAt,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  export async function readState(home: string): Promise<SidecarState | null> {
+    const primary = await parseFile(statePath(home));
+    if (primary) return primary;
+    return parseFile(backupPath(home));
+  }
+
+  export async function bumpState(
+    home: string,
+    next: Omit<SidecarState, "generation">,
+  ): Promise<SidecarState> {
+    const current = await readState(home);
+    const generation = (current?.generation ?? 0) + 1;
+    const state: SidecarState = { generation, ...next };
+
+    // 有旧文件 → 先 rename 成 `.bak`；atomic 写新文件。
+    // rename 失败（旧文件不存在或权限）不阻断新写；主文件写盘走 atomic-file。
+    const oldPath = statePath(home);
+    if (existsSync(oldPath)) {
+      try {
+        await rename(oldPath, backupPath(home));
+      } catch {
+        /* 保留旧 `.bak`；atomic 写会覆盖 primary */
+      }
+    }
+    writeTextFileAtomicSync(oldPath, JSON.stringify(state, null, 2) + "\n");
+    return state;
+  }
+  ```
+
+- [ ] **Step 5：实现 `desktop/src/main/sidecar-lock.ts`**
+
+  ```typescript
+  // lifecycle_lock 防并发拉起。
+  // provenance: EvoFlow evopanel/src-tauri/src/commands/backend.rs 的 lifecycle_lock
+  //   语义；与 questor state/storelock 同形，在 TS 侧独立实现（不能 import Python）。
+  // B-109：两个桌面壳同开或 respawn 竞态下，同 home 只允许一个进程拉起 sidecar。
+  // 用 O_CREAT|O_EXCL（`wx` flag）独占创建立锁；获不到 → 50 ms 退避重试直到 5 s；
+  // 释放走 `unlinkSync`。本项目 Phase U 简化：孤儿锁（进程 crash 未释放）由下一次
+  //  获锁的 5 s 超时后运维手动清——mtime 心跳判定属 M8 remote/relay 场景。
+  import fs from "node:fs";
+  import { join } from "node:path";
+
+  const LOCK_DIR = "desktop";
+  const LOCK_FILE = ".lifecycle.lock";
+  const DEFAULT_TIMEOUT_MS = 5_000;
+  const DEFAULT_POLL_INTERVAL_MS = 50;
+
+  export async function withLifecycleLock<T>(
+    home: string,
+    fn: () => Promise<T>,
+    opts: { timeoutMs?: number; pollIntervalMs?: number } = {},
+  ): Promise<T> {
+    const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+    const dir = join(home, LOCK_DIR);
+    const lockPath = join(dir, LOCK_FILE);
+    fs.mkdirSync(dir, { recursive: true });
+
+    const deadline = Date.now() + timeoutMs;
+    let acquired = false;
+    while (!acquired) {
+      try {
+        const fd = fs.openSync(lockPath, "wx");
+        fs.closeSync(fd);
+        acquired = true;
+      } catch (error) {
+        if (!isExistError(error)) throw error;
+        if (Date.now() >= deadline) {
+          throw new Error(
+            `lifecycle lock busy: ${lockPath} (timeout ${timeoutMs} ms)`,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+      }
+    }
+
+    try {
+      return await fn();
+    } finally {
+      try {
+        fs.unlinkSync(lockPath);
+      } catch {
+        /* 已被外部清或权限受限：不掩盖 fn 结果 */
+      }
+    }
+  }
+
+  function isExistError(error: unknown): boolean {
+    return (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "EEXIST"
+    );
+  }
+  ```
+
+- [ ] **Step 6：跑测全绿**
+
+  Run: `npm --prefix desktop run test` — Expected: PASS（generation.test.ts 5 条；atomic+command+sidecar 累计 15/15）。
+
+- [ ] **Step 7：`main/index.ts` 集成**
 
   ```diff
-  - const handle = await startSidecar({...});
-  - console.log("[sidecar] pid=", handle.pid);
-  + const home = resolveQuestorHome(); // 走 QUESTOR_HOME 或 ~/.questor
-  + const handle = await withLifecycleLock(home, async () => {
-  +   const h = await startSidecar({ command: ..., args: ["serve","stdio"] });
-  +   await bumpState(home, { pid: h.pid, startedAt: new Date().toISOString() });
-  +   return h;
-  + });
+  + import { resolveQuestorHome } from "./questor-home";
+  + import { bumpState } from "./sidecar-state";
+  + import { withLifecycleLock } from "./sidecar-lock";
+
+    try {
+      const cmd = resolveQuestorCommand(process.env, app.getAppPath(), process.resourcesPath);
+  -   const handle = await startSidecar({ command: cmd.command, args: cmd.args, cwd: cmd.cwd });
+  -   console.log(`[sidecar] pid=${handle.pid} cmd=${cmd.command}`);
+  +   const home = resolveQuestorHome(process.env);
+  +   const handle = await withLifecycleLock(home, async () => {
+  +     const h = await startSidecar({ command: cmd.command, args: cmd.args, cwd: cmd.cwd });
+  +     await bumpState(home, { pid: h.pid, startedAt: new Date().toISOString() });
+  +     return h;
+  +   });
+  +   console.log(`[sidecar] pid=${handle.pid} cmd=${cmd.command} home=${home}`);
+      handle.stderr.on("data", (chunk: Buffer) => console.error(`[sidecar] ${chunk.toString("utf8")}`));
+      handle.exited.then((r) => console.warn(`[sidecar] exited`, r));
+    } catch (err) {
+      console.error("[sidecar] failed to start:", (err as Error).message);
+    }
   ```
 
-- [ ] **Step 6：负向验证 + 提交**
+- [ ] **Step 8：[real-terminal] 手动验证**
 
-  临时把 `bumpState` 里 `generation+1` 改成 `generation+0` → generation.test.ts 应红 → 复原。
+  跑 `QUESTOR_DESKTOP_USE_UV_RUN=1 npm --prefix desktop run dev` 起窗口一次，另开终端：
+  - `ls $env:USERPROFILE\.questor\desktop\` → 应有 `runtime_state.json` 与 `.lifecycle.lock`（跑起来时）；关窗后 `.lifecycle.lock` 应消失；
+  - 二次跑 `runtime_state.json` 里的 `generation` 应比上次大 1；`runtime_state.json.bak` 应存在（上次的完整快照）。
 
-  ```bash
-  git add desktop/src/main/sidecar-state.ts desktop/src/main/sidecar-lock.ts desktop/src/main/index.ts desktop/tests/generation.test.ts docs/specs/pitfalls.md
-  git commit -m "feat(desktop): monotonic generation and lifecycle_lock for sidecar spawn" -m "Covers B-108 (crash-tail tolerance), B-109 (concurrent spawn prevention). Provenance: wuu appServerClients + EvoFlow backend.rs, rewritten."
-  ```
+- [ ] **Step 9：负向验证 + 分细 commit**
+
+  本 Task 按 4 段独立 commit 走（与 B3 同节奏；展开回写以 `docs(plans)` 独立 commit 先落）：
+
+  1. `docs(plans): expand Phase U Task B4 to implementation level`（本 Step 0 回写）
+  2. `feat(desktop): resolve questor home path single-source`（`questor-home.ts`）
+  3. `feat(desktop): monotonic generation with atomic runtime_state.json + .bak fallback`（`sidecar-state.ts` + generation.test.ts 前 3 条测）
+  4. `feat(desktop): lifecycle_lock prevents concurrent spawn (B-109)`（`sidecar-lock.ts` + 并发串行与超时两条测）
+  5. `feat(desktop): wrap sidecar spawn in lifecycle_lock and bumpState`（`main/index.ts` 集成）
+
+  负向验证（每条测对应一段）：
+  - `sidecar-state.ts` 里 `generation+1` → `+0` → "连续两次 bumpState → generation 递增" 测应红 → 复原
+  - `sidecar-state.ts` 里 `writeTextFileAtomicSync(oldPath, ...)` → `fs.writeFileSync(oldPath, ...)` → "crash 残尾回 .bak" 测仍绿但 **atomic-file 侧的 `覆盖时 mode 保留`/`rename 失败时旧内容保留` 会被绕过**——为让 generation.test.ts 咬住，改为把 `bumpState` 里的 `await rename(oldPath, backupPath(home))` 注释掉 → "crash 残尾回 .bak" 测应红（`.bak` 不存在 → readState 主文件 parse 失败返 null）→ 复原
+  - `sidecar-lock.ts` 里 `"wx"` flag → `"w"` → "三个并发 → 串行" 测应红（并发 peak > 1）→ 复原
+
+  每条 commit 附对应负向验证输出。收口全套：`check_docs / check_specs / check_notes` + `pytest tests/unit tests/architecture` + `node scripts/gen/types.mjs` 后 `git diff --exit-code -- ui/src/rpc/generated` + `npm --prefix ui run typecheck` + `npm --prefix ui run test` **12/12** + `npm --prefix desktop run typecheck` + `npm --prefix desktop run test` **15/15**。
 
 ---
 
