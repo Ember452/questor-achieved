@@ -59,3 +59,4 @@
 | [0028](0028-protocol-additive-evolution.md) | 协议演进规则：加性方法/通知不升版本，破坏性改动才升 | accepted |
 | [0029](0029-acceptance-loop-evidence-writepoint.md) | 验收闭环：状态机强制、evidence 生产写入点、声称显式绑定 tool_use_id | accepted |
 | [0030](0030-desktop-shell-electron-and-ui-track.md) | 桌面壳改判 Electron；界面/桌面壳主线提前为 Phase U（取代 0006 壳选型/浏览器面板边界、改判 0024 排期） | accepted |
+| [0031](0031-ui-diff-renderer-and-vitest.md) | Review 面板 diff 渲染器与前端测试面依赖引入（@pierre/diffs + vitest + happy-dom） | accepted |
