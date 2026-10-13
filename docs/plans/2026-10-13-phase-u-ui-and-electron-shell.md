@@ -3044,61 +3044,152 @@ questor/
 
 ### Task B8：`desktop.yml` CI workflow + `justfile`/CI 同源
 
+**Scope (R-11 已裁决)**：本 Task 把 B3~B7 落下的 desktop 测/型检/构建入到 CI；`desktop.yml` 里的命令必须与 `justfile` 里的配方同源（AGENTS §四 “本地与 CI 不一致视为缺陷”）。`test_ci_parity.py` 需同步扩展三个 tuple/list 把 desktop 一侧拉进扫描，否则"本地绿、CI 红"重现（B-69 同形坑）。
+
 **Files:**
+- Create: `.node-version`（仓库根）与 `desktop.yml` `setup-node` 的 `node-version-file` 对齐；与 wuu `.node-version` 同主版本
 - Create: `.github/workflows/desktop.yml`
-- Modify: `justfile`（追加 `desktop-build` 与 `desktop-test` 目标；本地与 CI 同一批命令）
-- Modify: `tests/architecture/test_ci_parity.py`（把 `desktop.yml` 步骤名纳入 parity 断言）
+- Modify: `justfile`（追加 `desktop-test` 与 `desktop-build` 两目标；把 `desktop-test` 纳入 `check` 配方）
+- Modify: `tests/architecture/test_ci_parity.py`（三处 tuple/list 同步扩展）
 
 **Interfaces:**
-- Produces: CI 跑前端 eslint/tsc/vitest + Web 静态构建 + Electron 构建 + 冒烟"网页宿主仅 localhost 伺服"（structure.md §9）。
+- Produces：`desktop.yml` 在 `windows-latest` 上跑：ui ci/typecheck/test/build → desktop ci/typecheck/test/build → **不跑 `desktop package`**（拉 GitHub Releases zip 在 CI 上可预缓、Phase U 不卡，推到后续小计划）。localhost smoke 步骤用 Git Bash 保 `&` 后台与 `!` 取反语义。
 
-- [ ] **Step 1**：写 `desktop.yml`
+- [ ] **Step 1**：`.node-version` 仓库根
+
+  ```
+  20.18.0
+  ```
+
+  与 `wuu/.node-version` 对齐；devDep 与 CI 同一主版本。本地可选用 volta/mise 自动切。
+
+- [ ] **Step 2**：`.github/workflows/desktop.yml`
 
   ```yaml
   name: desktop
-  on: [push, pull_request]
+  on:
+    push:
+      branches: [main]
+    pull_request:
+  permissions:
+    contents: read
   jobs:
     desktop:
+      name: Desktop shell build/test (windows)
       runs-on: windows-latest
       steps:
         - uses: actions/checkout@v4
+          with: { fetch-depth: 0 }
         - uses: actions/setup-node@v4
-          with: { node-version-file: '.node-version' }
+          with:
+            node-version-file: '.node-version'
+            # 两份 lockfile 都入 cache key，一份变化就重建。
+            cache: npm
+            cache-dependency-path: |
+              ui/package-lock.json
+              desktop/package-lock.json
+        - uses: astral-sh/setup-uv@v3
+        - run: uv sync --frozen
         - run: npm --prefix ui ci
+        - run: npm --prefix desktop ci
+        # 与 justfile 里的目标一一对应（test_ci_parity 咬住）。
         - run: npm --prefix ui run typecheck
         - run: npm --prefix ui run test
         - run: npm --prefix ui run build
-        - run: npm --prefix desktop ci
         - run: npm --prefix desktop run typecheck
         - run: npm --prefix desktop run test
         - run: npm --prefix desktop run build
-        - run: npm --prefix desktop run package
-        - name: localhost smoke
+        # 本 Phase U 不跑 `desktop run package`——拉 GitHub Releases zip 需预缓。
+        # 推到后续小计划：开一个 `release` workflow 专门预缓 zip + 产 exe。
+        - name: localhost smoke (serve http binds 127.0.0.1 only)
+          shell: bash   # windows-latest 自带的 Git Bash；保 `&` 后台与 `!` 取反语义
           run: |
-            # serve http 起 → curl 127.0.0.1 methods → 断言 --host 0.0.0.0 启动即拒
             uv run questor serve http --host 0.0.0.0 &
+            SERVER_PID=$!
             sleep 2
-            "! curl -s http://0.0.0.0:8765/methods"
+            if curl -s http://127.0.0.1:8765/methods; then
+              echo "expected --host 0.0.0.0 to be rejected, but the server accepted"
+              kill $SERVER_PID
+              exit 1
+            fi
+            kill $SERVER_PID || true
   ```
 
-- [ ] **Step 2**：`justfile` 追加
+- [ ] **Step 3**：`justfile` 追加
+
   ```make
+  # Desktop 壳侧测（vitest node env）；不启 GUI，沙箱/CI 可同命。本地与 CI 同一命令。
   desktop-test:
       npm --prefix desktop run test
+
+  # 一套前端两宿主：ui 先 build 产 dist、desktop 后 build 把 dist 塑进 out/renderer。
   desktop-build:
-      npm --prefix ui run build && npm --prefix desktop run build
+      npm --prefix ui run build
+      npm --prefix desktop run build
   ```
 
-- [ ] **Step 3**：扩展 `test_ci_parity.py`——`justfile` 的 `check` 配方与 CI 步骤命令集合一致；本地跑 `.venv\Scripts\python.exe -m pytest tests/architecture/test_ci_parity.py -q` 应绿。
+  `check` 配方内追加 `desktop-test`（本地与 CI 命令集合等价）：
 
-- [ ] **Step 4**：负向验证——临时在 `justfile` 加一条 `desktop-check-unused` 目标但 CI 里没同步 → parity 测试应红 → 复原。
-
-- [ ] **Step 5**：提交
-
-  ```bash
-  git add .github/workflows/desktop.yml justfile tests/architecture/test_ci_parity.py
-  git commit -m "ci(desktop): workflow + justfile parity for Electron shell build/test"
+  ```diff
+  -check: lint types test arch specs gen-check types-check
+  +check: lint types test arch specs gen-check types-check desktop-test
+       @echo "just check: all green"
   ```
+
+- [ ] **Step 4**：`tests/architecture/test_ci_parity.py` 三处同步扩展（R-11）
+
+  ```diff
+  -GATE_RECIPES = (
+  -    "lint", "types", "test", "arch", "specs", "gen-check", "types-check", "build", "hooks",
+  -)
+  +GATE_RECIPES = (
+  +    "lint", "types", "test", "arch", "specs", "gen-check", "types-check",
+  +    "desktop-test",
+  +    "build", "hooks",
+  +)
+
+   # 环境准备类步骤：不属于门禁命令，允许只存在于 CI
+  -CI_ONLY_ALLOWED = frozenset({"uv sync", "npm ci --prefix ui"})
+  +CI_ONLY_ALLOWED = frozenset(
+  +    {"uv sync --frozen", "npm ci --prefix ui", "npm ci --prefix desktop", "uv sync"}
+  +)
+
+   # 判定"这是门禁命令"的前缀（ADR-0019 后生成链入口从 npm 搬到 node scripts/gen/，前缀同补）
+  -GATE_PREFIXES = ("uv run ", "npm --prefix ui run ", "node scripts/gen/", "uv build")
+  +GATE_PREFIXES = (
+  +    "uv run ",
+  +    "npm --prefix ui run ",
+  +    "npm --prefix desktop run ",
+  +    "node scripts/gen/",
+  +    "uv build",
+  +)
+  ```
+
+  `_workflow_commands` 里遍历的 tuple 加 `"desktop.yml"`：
+
+  ```diff
+  -for name in ("ci.yml", "contracts.yml", "security.yml", "docs.yml"):
+  +for name in ("ci.yml", "contracts.yml", "security.yml", "docs.yml", "desktop.yml"):
+  ```
+
+  docstring 里的“负向验证方法”行同步改写（下面 Step 5 中展开）。
+
+- [ ] **Step 5**：本地跑 parity 测确认绿
+
+  `uv run pytest tests/architecture/test_ci_parity.py -q` → 全绿。`just check` 里新拉入的 `desktop-test` 已能命中。
+
+- [ ] **Step 6**：负向验证（2 条）
+
+  1. **justfile 新添一条不同步到 CI** → `test_every_gate_recipe_command_runs_in_ci` 应红。具体：`justfile` 里临时在 `GATE_RECIPES` 内已含的 recipe 下新增一行 `npm --prefix desktop run typecheck -- --flagnotexist` → 本测报“justfile 里没任何 CI 步骤执行”红 → 复原。
+  2. **CI 里私改 flag** → `test_ci_invents_no_gate_commands_of_its_own` 应红。具体：`desktop.yml` 里将 `npm --prefix desktop run test` 改为 `npm --prefix desktop run test --not-a-flag` → 本测报“CI 里有 justfile 未声明的门禁命令”红 → 复原。
+
+- [ ] **Step 7**：分细 commit（3 段）
+
+  1. `docs(plans): expand Phase U Task B8 to implementation level`（本 Step 0 回写）
+  2. `chore(node): pin .node-version to 20.18.0 aligning CI setup-node`（`.node-version`）
+  3. `ci(desktop): workflow + justfile parity for Electron shell build/test`（`desktop.yml` + `justfile` 两 recipe + `check` 纳入 `desktop-test` + `test_ci_parity.py` 三处 tuple 扩展）
+
+  上面 3 里 yml 与 justfile 与 parity 测同步变（同一逻辑变更，拆开会造成 parity 测红）；parity 测本身作为护栏存在 → 3 里内包 2 条负向验证输出。
 
 ---
 
