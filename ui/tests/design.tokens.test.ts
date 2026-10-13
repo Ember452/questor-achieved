@@ -15,7 +15,8 @@ const read = (rel: string): string => readFileSync(resolve(__dirname, "..", rel)
 describe("Review 面板 diff 色只走 token", () => {
   // 面板源码里不得出现 hex 字面量（Tailwind 语义类如 `text-red-500` 不在扫查面——
   // 那是 danger 色、非 diff 语义色；真正的 diff add/del 色必须走 token）。
-  for (const file of ["src/panels/review.tsx", "src/panels/review.css.ts"]) {
+  // A6 将 `review.css.ts` 正名为标准 `review.css`（Vite 只处理 `.css`）。
+  for (const file of ["src/panels/review.tsx", "src/panels/review.css"]) {
     it(`${file} 无 diff hex 字面量`, () => {
       const src = read(file);
       expect(src).not.toMatch(/#[0-9a-fA-F]{3,8}/);
