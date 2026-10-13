@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Questor placeholder icon">
+  <!--
+    Phase U / B7 占位图标 —— 只是给 electron-builder 有个可解析的 SVG 源，
+    不代表最终视觉。icon.ico 生成走下一个小计划（见 README.md）。
+  -->
+  <rect width="512" height="512" rx="96" fill="#0b1220" />
+  <circle cx="256" cy="256" r="144" fill="none" stroke="#7dd3fc" stroke-width="24" />
+  <path d="M288 304 L368 384" stroke="#7dd3fc" stroke-width="32" stroke-linecap="round" />
+  <text x="256" y="286" text-anchor="middle" font-family="ui-sans-serif, system-ui" font-size="180" font-weight="700" fill="#e2e8f0">Q</text>
+</svg>

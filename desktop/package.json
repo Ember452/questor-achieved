@@ -9,12 +9,14 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json",
+    "package": "electron-builder",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "electron": "44.1.0",
+    "electron-builder": "^25.1.8",
     "electron-vite": "^5.0.0",
     "typescript": "~5.9.3",
     "vite": "^6.3.5",

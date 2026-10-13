@@ -1,0 +1,34 @@
+# electron-builder Windows NSIS 打包配置（ADR-0032 §结论 1）。
+# 只包 Electron JS 壳（main/preload/renderer 都在 `out/` 下）；
+# `questor-core.exe`（Python 核）**不交付** —— R-10 已裁决，另开 ADR。
+# extraResources 保持空 —— 未来 Python 打包 ADR 落地后往 `bin/questor-core.exe` 塞。
+# 缺 `icon.ico` 时 electron-builder 会 warn 但不阻断（R-10 确认 Phase U 不卡 icon）。
+# 不签名；用户机 Windows Defender 会弹 SmartScreen 提示，ADR-0032 §代价 已记。
+appId: com.questor.desktop
+productName: Questor
+copyright: "© 2026 Questor contributors"
+directories:
+  output: dist
+  buildResources: ../assets
+files:
+  # 只打 Electron 构建产物与 package.json 本身；node_modules 由 asar 默认排除。
+  # 白名单后置的 `!...` 是防止有人把 node_modules 硬 add 进 files 时误打 markdown /
+  # source map / .d.ts —— 那些既膨胀体积又不该出现在生产包里。
+  - out/**/*
+  - package.json
+  - "!**/node_modules/**/{*.md,LICENSE*,README*,*.map,*.d.ts}"
+asar: true
+compression: normal
+extraResources: []
+win:
+  target:
+    - nsis
+  icon: ../assets/icon.ico
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Questor
+artifactName: "${productName} Setup ${version}.${ext}"
