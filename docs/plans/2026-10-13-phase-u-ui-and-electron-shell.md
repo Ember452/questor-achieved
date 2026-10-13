@@ -3195,33 +3195,104 @@ questor/
 
 ### Task B9：Phase U 出口 e2e + Track B 人工走查
 
+**Scope**：本 Task 不引入新护栏测（护栏已在 B3~B8 逐段到位）；主要落：
+1. Python 侧的 e2e 将 `serve stdio` 与 `serve http` 两个宿主同一会话层的契约集成串钉住（与 M5 已建的单元测不重）；
+2. `docs/plans/2026-10-13-phase-u-completion.md` 汇总 pending 项与真终端走查方法；
+3. `development-plan.md` Phase U 状态行勾销；
+4. `docs/specs/pitfalls.md` 把 B-108~B-118 转 `covered` 并回填测名（B-103~B-107 已在 A3/A9 翻转）。
+
+**Electron e2e 不做**：Playwright + Electron 集成推后续小计划（需新工具链）；Phase U 出口以"desktop.yml CI + 手动走查截图 + Python e2e 契约串"为准。pending 项与理由在 completion doc 里诚实记（AGENTS §一 铁律 1）。
+
 **Files:**
-- Create: `tests/e2e/test_desktop_shell_vertical_slice.py`（Python 侧 e2e，用 `testenv` fake model + fake home）
-- Create: `docs/plans/2026-10-13-phase-u-completion.md`（走查记录 + 截图引用 + Track A/B 出口勾销）
-- Modify: `docs/plans/development-plan.md`（Phase U 状态勾销 + 实际结果）
-- Modify: `docs/specs/pitfalls.md`（B-103~B-112 全部 `covered`，回填测试名）
+- Create: `tests/e2e/test_desktop_shell_vertical_slice.py`（Python e2e，使用 `testenv` fake model + fake home）
+- Create: `docs/plans/2026-10-13-phase-u-completion.md`
+- Modify: `docs/plans/development-plan.md`（Phase U 状态行与 Track B 实际结果）
+- Modify: `docs/specs/pitfalls.md`（B-108~B-118 转 covered + 回填测名）
 
-- [ ] **Step 1**：写端到端测试：`test_desktop_shell_vertical_slice` 通过 `subprocess` 起 `desktop run dev --headless` 或用 Electron 的 `playwright` 集成——**本项目当前 `tests/e2e/` 是 Python 侧**，Electron e2e 需要新工具链。折中：Python 侧只 e2e 到 `serve stdio` 与 `serve http`（已有测试覆盖），Electron 层的 e2e 记为 pending（诚实呈现），Track B 出口以"手动走查截图 + desktop.yml 冒烟"为准。
+- [ ] **Step 1**：写 Python 侧 e2e
 
-- [ ] **Step 2**：全套门禁跑一遍（同 A9 Step 2 加 `npm --prefix desktop run test`、`desktop.yml` 冒烟本地等价）
+  目标：验"一套契约两宿主"在 shell 接入后仍同形——同一个 `initialize` + `thread/create` + `turn/start` + `review/turn_diff` 序列从 stdio 与 WS 两条入径进去结果一致。不测 Electron、不测主进程与 preload（属真终端范围）。
 
-- [ ] **Step 3**：`development-plan.md` Phase U 状态行改 `- [x] 已完成 YYYY-MM-DD（Track A / Track B…）` + 一段"实际结果"；缺 `QUESTOR_MODEL_API_KEY` 记 pending。
+  ```python
+  # tests/e2e/test_desktop_shell_vertical_slice.py
+  """Phase U Track B 出口 e2e：同一会话层、两宿主（stdio + http/WS）契约同形。
 
-- [ ] **Step 4**：`pitfalls.md` B-103~B-112 全部转 `covered` 并回填测试名；每条附负向验证输出（AGENTS §四护栏测试准入判据）。
+  M5 已将 stdio 宿主本身钉住（test_serve_stdio_host）；M3 已将 http+WS 钉住
+  （test_serve_http_ws）。本测不重复验证两宿主各自的单元行为，只钉"桌面壳接入后
+  两宿主同一会话层结果仍同形"——具体验证：
 
-- [ ] **Step 5**：提交 + 汇报
+  1. stdio 拉起同一 fake 会话 → initialize + thread/create + turn/start + review/turn_diff
+     → 拿到 diffs
+  2. http 宿主上同一序列 → 拿到完全一致的 diffs
+  3. 两宿主结果 JSON 化后相等（验证不依赖宿主特定信息）
 
-  ```bash
-  git add tests/e2e/test_desktop_shell_vertical_slice.py docs/plans/2026-10-13-phase-u-completion.md docs/plans/development-plan.md docs/specs/pitfalls.md
-  git commit -m "docs(phase-u): both tracks closed; pitfalls covered; e2e + smoke green"
+  不测：Electron 主进程与 preload（属真终端范围、需 uv/真实模型端点）；
+  不测：runtime_state.json / .lifecycle.lock（B4 单元测已钉、真终端验证入
+  completion doc 待办清单）。
+
+  关联：Phase U Track B 出口判据 1 与 4；M5/M3 的 serve 测试不重。
+  """
   ```
+
+  测内使用 `testenv` fixture 搭 fake home + fake model，与 `test_serve_stdio_host` 同模式。具体行实现时参考现有 `tests/integration/test_serve_stdio_host.py` 的帧循环形状，与 `tests/integration/test_serve_http_ws.py` 的 WS 客户端形状。
+
+- [ ] **Step 2**：本地跑全套（与之前同口径）
+
+  - `check_docs / check_specs / check_notes` 全绿
+  - `uv run pytest tests/unit tests/architecture tests/e2e -q` 全绿（新增一条 e2e）
+  - `npm --prefix ui run typecheck` + `test` 17/17
+  - `npm --prefix desktop run typecheck` + `test` 33/33
+  - `node scripts/gen/types.mjs` 后无 diff
+
+- [ ] **Step 3**：写 completion doc
+
+  至少含：
+  1. Phase U Track A / Track B 出口判据逐条对到代码与测名（已销 / pending）；
+  2. **`[real-terminal]` 待办清单**（汇总 B3 Step 11 / B4 Step 8 / B5 Step 7 / B6 Step 9 / B7 Step 6）：包括 `QUESTOR_DESKTOP_USE_UV_RUN=1` 下 `npm run dev` 拉起与关窗观察、`~/.questor/desktop/runtime_state.json` 与 `.lifecycle.lock` 验证、`Stop-Process -Force` 后 sidecar-state 广播与 backoff 日志、`npm run package` 前预缓 electron-builder 二进制、安装后双击冒烟；
+  3. **诚实记 pending**（AGENTS §一 铁律 1）：`npm run package` 产 exe 未验（网络阻）、真终端 [real-terminal] 项未跑（需用户回报）、Electron e2e 与 Playwright 工具链未入（推后续）、`qst:sidecar-state` IPC plumbing 无消费方（Phase E 审批 UI 时才消）、packaged Python core 未交付（另开 ADR）；
+  4. **Windows 观察**：vitest 5 与 pytest 的 transform/bytecode cache 均受 mtime 精度影响、负向验证时需 `--no-cache` 或 `shutil.rmtree(__pycache__)` 才可靠（候选新开 B-119）；
+  5. **gap 列表**：可干预柱（插话/接管）还原度未入本相、下一切片；Phase U 内的 `ui/` 仅 Review 一例。
+
+- [ ] **Step 4**：`development-plan.md` Phase U 状态行与 Track B 实际结果
+
+  状态行改为：`- [x]` **Track A + Track B 已完成 2026-10-13**（Track A：A1~A9；Track B：B1~B9；pending 项见 completion doc）。
+
+  新增一段 Track B 实际结果（与 Track A 实际结果平行）：契约不变（ADR-0030/0032）；代码：B2 壳骨架 / B3 拉起 + atomic + 命令解析 / B4 generation + lock / B5 fail-open + killTree / B6 Option A IPC + batcher + bridge / B7 打包配置 / B8 CI parity；护栏 desktop 测 33/33、UI 测 17/17（新 ipc-transport 5）；L3 逐段无 findings；pending：真终端 `npm run dev` 与安装冒烟、package 产 exe（网络阻）。
+
+- [ ] **Step 5**：`docs/specs/pitfalls.md` B-108~B-118 转 covered
+
+  逐条回填测名（已在 B4/B5/B6 各自 commit 里预先处理部分；本 Step 汇总确认）：
+
+  | 坑 | 回归到 | 测 | 归属 split |
+  |---|---|---|---|
+  | B-108 crash 残尾回 .bak | sidecar-state.ts | `desktop/tests/generation.test.ts` | B4 split 3/5 |
+  | B-109 lifecycle_lock 防并发 | sidecar-lock.ts | `generation.test.ts` lifecycle_lock describe | B4 split 4/5 |
+  | B-110 fail-open 重启上限 | child-shutdown.ts armRestartPolicy | `restart.test.ts` armRestartPolicy describe | B5 split 2/4 |
+  | B-111 子进程树关停三层定时 | child-shutdown.ts killTree | `restart.test.ts` killTree describe | B5 split 2/4 |
+  | B-112 runtime_state.json 路径单点 | questor-home.ts | 由 `generation.test.ts` 间接覆盖 | B4 split 1/5 |
+  | B-113 等 exit、不等 pipe close | killTree `handle.exited.then` | `restart.test.ts` killTree 两条 | B5 split 2/4 |
+  | B-114 绝不 workspace/PATH 找 bin | questor-command.ts | `questor-command.test.ts` B-114 关键测 | B3 split 3/5 |
+  | B-115 无 fsync 不算 crash-safe | atomic-file.ts | `atomic-file.test.ts` mode + rename | B3 split 2/5 |
+  | B-116 preload ↔ main channel 对偶 | ipc-parity.test.ts | `ipc-parity.test.ts` 5 条 | B6 split 4/6 |
+  | B-117 IPC 每 token 转发卡住 renderer | renderer-batcher.ts | `renderer-batcher.test.ts` 5 条 | B6 split 3/6 |
+  | B-118 server-request 内核 id 外泄 | app-server-bridge.ts | `bridge.test.ts` public-id 测 | B6 split 2/6 |
+
+  每条附对应 split commit 里已有的负向验证红输出作为证据链。
+
+- [ ] **Step 6**：分细 commit（3 段）
+
+  1. `docs(plans): expand Phase U Task B9 to implementation level`（本 Step 0 回写）
+  2. `test(e2e): desktop shell vertical slice (serve stdio + http contract equivalence)`（`tests/e2e/test_desktop_shell_vertical_slice.py`）
+  3. `docs(phase-u): close both tracks; pitfalls covered; real-terminal checklist consolidated`（completion doc + development-plan 勾销 + pitfalls flip）
+
+  上面 3 段中 completion doc 属主档，development-plan 与 pitfalls 的勾销/翻转 作为同一出口变更的一部分，一起 commit。
 
 **Phase U（Track B）出口判据**：
 1. Electron 壳可双击打开、`serve stdio` 被 `child_process` 以管道拉起、窗口里能看到 Review 面板显示真 diff；
 2. `runtime_state.json` 单调 generation + `lifecycle_lock` 用例绿；崩溃重启 fail-open 生效；
-3. Windows 打包产物可安装、可启动；`desktop.yml` CI 与本地同源；
+3. Windows 打包产物可安装、可启动；`desktop.yml` CI 与本地同源（本 Phase U **仅** 落 desktop 一侧的 typecheck+test，package 产 exe 推到 future release workflow，已在 B7 与 completion doc 诚实标 pending）；
 4. `test_no_hardcoded_panel_case.py` 与 `test_ci_parity` 全绿；
-5. `docs/plans/development-plan.md` Phase U 勾销；坑目录 B-103~B-112 全部 `covered` 并附负向验证输出。
+5. `docs/plans/development-plan.md` Phase U 勾销；坑目录 B-108~B-118 全部 `covered` 并附负向验证输出（B-103~B-107 已在 Track A 中处理）。
 
 ---
 

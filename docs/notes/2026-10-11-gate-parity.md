@@ -1,7 +1,7 @@
 # 门禁是怎么从"看着一致"变成"真的一致"的
 
 日期: 2026-10-11
-复核于: 2026-10-12
+复核于: 2026-10-13
 锚点: justfile, .github/workflows/ci.yml, tests/architecture/test_ci_parity.py,
       scripts/ci/check_specs.py, .pre-commit-config.yaml
 
@@ -37,6 +37,20 @@
   那是"CI 独有 flag"，而精准报错已经有别的办法拿到（失败时把真实 diff 写进 step summary）。
 - **一致性别靠承诺，靠测试**：`tests/architecture/test_ci_parity.py` 解析 justfile 与 workflow，
   两个方向都断言。它属于"跨文件一致性契约"，不是复述字面量。
+
+## 2026-10-13 重读与扩展（B8）
+
+本轮把 desktop 一侧拉进门禁——`desktop.yml` 新落、`justfile` 新加 `desktop-test` 与
+`desktop-build` 两配方。把新命令拉进 CI 前先把三处 tuple/list 同步扩到
+`test_ci_parity.py`（`GATE_RECIPES` / `GATE_PREFIXES` / `CI_ONLY_ALLOWED` /
+workflow 迭代列表），否则 desktop 一侧在 parity 里隐形。新护栏嗂到两条
+负向验证都咬红（bogus flag 分别注入 justfile 与 desktop.yml），证据链在 B8
+split 3/3 的 commit body。同一次里 `.node-version` 仓库根新增一个单行文件，
+给 CI `setup-node` 与本地 volta/mise 同一个主版本，避免"三处写同一个版本串"。
+
+一个工具层面的观察：Windows 上 pytest 的 `__pycache__` 与 vitest 的 transform
+cache 都有 mtime 精度丢失（与 B-68 里的跨平台漂移同一族现象），负向验证时
+必须先清缓存或 sleep 跨过秒精度边界，否则“测仍绿”会被误读成“护栏没咬人”。
 
 ## 可迁移的结论
 
