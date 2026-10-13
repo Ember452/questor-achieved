@@ -78,7 +78,13 @@ function registerIpcHandlers(): void {
     "qst:reject-server-request",
     (_e, id: string, m: string) => bridge.rejectServerRequest(id, m),
   );
-  ipcMain.handle("qst:snapshot", () => bridge.runningThreadsSnapshot());
+  ipcMain.handle("qst:snapshot", () =>
+    // F4（审查）：snapshot 前必须 flush 已合批的 delta，否则 renderer 拿到 snapshot
+    // 后又会收到已含在 snapshot 里的 delta 重放（B-117 的集成面语义）。
+    batcher
+      ? batcher.resolveSnapshot(Promise.resolve(bridge.runningThreadsSnapshot()))
+      : Promise.resolve(bridge.runningThreadsSnapshot()),
+  );
 }
 
 function wireBridgeToRenderer(): void {
@@ -109,6 +115,21 @@ function wireBridgeToRenderer(): void {
 
 async function spawnSidecar(): Promise<void> {
   if (shuttingDown) return;
+  // F2（审查）：模块级预算守门——armRestartPolicy 的 retries 是 per-handle 闭包，
+  // 每次 respawn 都从 0 计；若不在此卡住，秒退型 crash loop 会无限重开。
+  // MAX_SPAWN_ATTEMPTS 的真实执行点就是这一行（B-110）。
+  if (spawnAttempts >= MAX_SPAWN_ATTEMPTS) {
+    console.warn(
+      `[sidecar] restart budget exhausted (fail-open), attempts=${spawnAttempts}`,
+    );
+    broadcastSidecarState({
+      kind: "budget-exhausted",
+      retries: spawnAttempts,
+      lastCode: null,
+      lastSignal: null,
+    });
+    return;
+  }
   try {
     const cmd = resolveQuestorCommand(
       process.env,
@@ -188,7 +209,15 @@ app.on("before-quit", (e) => {
     e.preventDefault();
     void (async () => {
       try {
-        await killTree(activeHandle as SidecarHandle, { graceMs: 20_000 });
+        // F3（审查）：必须传 requestStop——killTree 的定时 SIGTERM 在 graceMs(20s)
+        // 之后才发；不传则每次关窗白等 20 秒。Windows 下 SIGTERM 即 TerminateProcess，
+        // POSIX 下给 Python 默认优雅退路；timer 只作兜底。
+        await killTree(activeHandle as SidecarHandle, {
+          graceMs: 20_000,
+          requestStop: async () => {
+            (activeHandle as SidecarHandle).kill("SIGTERM");
+          },
+        });
       } catch (err) {
         console.error("[sidecar] killTree failed:", err);
       }
