@@ -38,4 +38,30 @@
   --color-brand: #4f46e5;
   --color-danger: #dc2626;
   --color-success: #16a34a;
+
+  /* ---- Phase U Track A 扩展（参照 wuu dev/elevation,dev/motion,dev/design-system） ---- */
+
+  /* elevation 阴影族（4 级，与 wuu 主 renderer 卡片层级一致） */
+  --elevation-0: none;
+  --elevation-1: 0 1px 0 rgba(0, 0, 0, 0.04);
+  --elevation-2: 0 2px 4px rgba(0, 0, 0, 0.06);
+  --elevation-3: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --elevation-4: 0 8px 24px rgba(0, 0, 0, 0.10);
+
+  /* motion 时长与曲线族 */
+  --motion-fast: 120ms;
+  --motion-normal: 180ms;
+  --motion-slow: 240ms;
+  --motion-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --motion-ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* diff 色对（亮色基础值；.dark 覆盖见 themes.css） */
+  --color-diff-add-bg: #e6f6ec;
+  --color-diff-add-fg: #166534;
+  --color-diff-del-bg: #fbe7e7;
+  --color-diff-del-fg: #991b1b;
+  --color-diff-hunk-header-bg: #f6f6f7;
+  --color-diff-hunk-header-fg: #55555e;
+  --color-diff-line-number: #8a8a94;
+  --color-read-state-dot: #8a8a94;
 }

@@ -16,4 +16,15 @@
   --color-brand: #818cf8;
   --color-danger: #f87171;
   --color-success: #4ade80;
+
+  /* Phase U Track A：暗色下 diff 色对低饱和覆盖（B-106）。rgba 半透明而非直开亮色，
+     避免暗底上亮绿/亮红刺眼；行为规格 §4 与 evopanel `styles.css` 同形。 */
+  --color-diff-add-bg: rgba(22, 163, 74, 0.16);
+  --color-diff-add-fg: #a7f3d0;
+  --color-diff-del-bg: rgba(220, 38, 38, 0.18);
+  --color-diff-del-fg: #fecaca;
+  --color-diff-hunk-header-bg: rgba(255, 255, 255, 0.04);
+  --color-diff-hunk-header-fg: #a1a1aa;
+  --color-diff-line-number: #71717a;
+  --color-read-state-dot: #71717a;
 }

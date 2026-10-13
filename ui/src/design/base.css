@@ -40,3 +40,17 @@ body {
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Phase U Track A：焦点环与动效减弱（B-104）。交互组件默认上 `*:focus-visible` 会清
+   掉 outline——面板卡片头需要自己的可见焦点提示。护栏 `design.tokens.test.ts` 与
+   `review.fidelity.test.tsx` 都断言下方 `@media` 块存在。 */
+.qst-focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .qst-review-card-body,
+  .qst-review-read-dot {
+    transition: none !important;
+  }
+}
