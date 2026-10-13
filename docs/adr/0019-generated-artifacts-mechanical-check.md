@@ -72,3 +72,10 @@
 **触发重新评审**：① 生成链出现第二个语言宿主（桌面 Rust 需要 JSON schema 绑定）→ 扩
 `scripts/gen` 的输入族；② npm 依赖体量导致 CI 明显变慢 → 改用 lockfile 缓存或独立 job，
 但"CI 必须跑 gen check"这条不变。
+
+## 修订记录
+
+- **2026-10-13（ADR-0030 改判）**：触发重新评审项①中"桌面 Rust 需要 JSON schema 绑定"子句
+  不再适用——桌面壳由 Tauri/Rust 改判为 Electron/TS，与 `ui/` 同属一门语言，可直接消费同一套
+  `ui/src/rpc/generated/` 产物，无需为壳引入新的 schema 绑定。本 ADR 主体（"生成链定义点
+  归位 + notices 生成 + CI 断言无 diff"）不受影响。完整选型变更见 ADR-0030。

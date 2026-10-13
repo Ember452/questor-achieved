@@ -16,7 +16,7 @@
   不升版本**——客户端经 `initialize` 的 `methods` / `notification_families` 发现能力，
   并按 §2 容忍未知通知；删改方法、改变字段语义/类型/必需集合才升 `v0.x`。
 - 两种传输、**同一会话层**（Web 宿主不得拥有第二套契约或私有端点）：
-  - 桌面（Tauri sidecar）：**stdio 上的 NDJSON**；
+  - 桌面（Electron sidecar）：**stdio 上的 NDJSON**；
   - 网页（本地）：Gateway 的 **WS/SSE**，默认只绑 `127.0.0.1`。
 - 单行 JSON 上限 64 MiB；超限的命令输出走全量日志引用（deferred content）。
 - 信封：
