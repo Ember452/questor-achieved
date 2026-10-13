@@ -2917,44 +2917,128 @@ questor/
 
 ### Task B7：`assets/` + `electron-builder` Windows 打包
 
+**Scope (R-10 已裁决)**：本 Task 只包 **Electron JS 壳**（main/preload/renderer + `out/**`）；**不**交 `questor-core.exe`（Python 核PyInstaller / uv-venv 打包另开 ADR，推期到 Phase U 后）。安装后壳启动时 `resolveQuestorCommand` 需命中下面三条之一：
+1. `QUESTOR_DESKTOP_CORE` env——测试/开发机指到自建的 shim；
+2. `QUESTOR_DESKTOP_USE_UV_RUN=1` + 从 appPath 往上找到 `pyproject.toml`——开发者仓库内可用；
+3. `process.resourcesPath/bin/questor-core[.exe]`——未来 Python 打包 ADR 落地后。三条都缺时主进程 fail-open（catch 到 `throw "questor desktop core is missing"` 后仅 `console.error`、窗口照开）。这个**诚实限制**写进 `docs/plans/2026-10-13-phase-u-completion.md`。
+
+**R-07 已裁决**：`resolveQuestorCommand` packaged 分支保持 `args: []`——约定未来 `questor-core.exe` 是专用 shim（内联 `serve stdio`），不预先行事。若 Python 打包 ADR 选择“把通用 questor CLI 直接命名 questor-core.exe”，届时需切 `args: ["serve","stdio"]`，同步补写 ADR-0032 §失效条件（本 Task 不改代码，仅写注释与 completion doc 预告）。
+
 **Files:**
-- Create: `assets/icon.ico`（或从 `assets/icon.svg` 生成脚本产 ICO）
-- Create: `desktop/electron-builder.yml`
-- Create: `assets/README.md`（图标源与再生成命令）
-- Modify: `desktop/package.json`（scripts.package）
+- Create: `desktop/electron-builder.yml`（Windows NSIS 目标）
+- Create: `assets/README.md`（图标源与再生成命令，Phase U 用默认 icon，不阻断）
+- Create: `assets/icon.svg`（可选手写占位；缺 icon.ico 时 electron-builder 会警告不阻断）
+- Modify: `desktop/package.json`（devDep 加 `electron-builder`、scripts 加 `package`）
+- Modify: `docs/specs/pitfalls.md`——无新坑、仅确认 B-103~B-112 不属本 Task（他们属 Track A/B4）
 
 **Interfaces:**
-- Produces: `npm --prefix desktop run package` 产 `desktop/dist/Questor-Setup-<version>.exe`。
+- Produces：`npm --prefix desktop run package` 产 `desktop/dist/Questor Setup <version>.exe`（electron-builder 默认命名；不设定 `artifactName` 时中 `dist/`）。
 
-- [ ] **Step 1**：写 `electron-builder.yml`
+- [ ] **Step 1**：写 `desktop/electron-builder.yml`
 
   ```yaml
+  # electron-builder Windows NSIS 打包配置（ADR-0032 §结论 1）。
+  # 只包 Electron JS 壳；`questor-core.exe` 不交付，R-10 已裁决。
+  # extraResources 保持空——未来 Python 打包 ADR 落地后往 `bin/questor-core.exe` 塑。
   appId: com.questor.desktop
   productName: Questor
+  copyright: "© 2026 Questor contributors"
   directories:
     output: dist
     buildResources: ../assets
   files:
+    # 只打 Electron 构建产物与 package.json 本身；node_modules 由 asar 默认排除。
     - out/**/*
-    - "!**/node_modules/**/{*.md,LICENSE*,README*}"
+    - package.json
+    - "!**/node_modules/**/{*.md,LICENSE*,README*,*.map,*.d.ts}"
+  asar: true
+  compression: normal
+  extraResources: []
   win:
-    target: nsis
+    target:
+      - nsis
+    # 无 icon.ico 时 electron-builder 会警告但不阻断；R-10 确认 Phase U 不卡 icon。
     icon: ../assets/icon.ico
   nsis:
     oneClick: false
     perMachine: false
     allowToChangeInstallationDirectory: true
+    createDesktopShortcut: true
+    createStartMenuShortcut: true
+    shortcutName: Questor
+  artifactName: ${productName} Setup ${version}.${ext}
   ```
 
-- [ ] **Step 2**：`assets/README.md` 记录"图标源 + 再生成命令"（wuu `scripts/generate-icon.ts` 同款做法参照）；`assets/icon.svg` 起手。
-- [ ] **Step 3**：跑 `npm --prefix desktop run package` → 观察产物；缺 icon 会警告但不阻断（先占位）。
-- [ ] **Step 4**：跑一次冒烟——安装 exe → 双击 → 窗口打开 → 起 turn → Review diff 显示。**若 `QUESTOR_MODEL_API_KEY` 缺**：诚实记 pending（AGENTS §一 铁律 1），只跑 fake 场景。
-- [ ] **Step 5**：提交
+- [ ] **Step 2**：`assets/README.md` （手写）
 
-  ```bash
-  git add assets/ desktop/electron-builder.yml desktop/package.json
-  git commit -m "feat(desktop): electron-builder Windows NSIS packaging with assets"
+  写图标源与再生成命令（参照 wuu `scripts/generate-icon.ts`）；Phase U 不产 icon.ico，electron-builder 回退到内置默认，产物能跑。
+
+  ```markdown
+  # Questor 图标源
+
+  ## 现状
+  - Phase U (B7) 仅提供 `icon.svg` 手写占位；未交 `icon.ico`。
+  - `electron-builder` 缺 ico 时会 `warn skipping SysVsizeIcon ...` 不阻断构建；安装产物仍可用。
+  - 正式品牌图标设计与多尺寸 `icon.ico` 生成推到 Phase U 后的下一个小切片。
+
+  ## 再生成命令（待引入时启用）
+  ```sh
+  # 参照 wuu-main/scripts/generate-icon.ts（同调），从 icon.svg 产出多尺寸 ico：
+  # npx --yes @resvg/resvg-js-cli assets/icon.svg assets/icon.png --width 1024 --height 1024
+  # npx --yes png-to-ico assets/icon.png > assets/icon.ico
   ```
+  ```
+
+- [ ] **Step 3**：`assets/icon.svg` 手写占位
+
+  提供一个最简方形 SVG（与 structure.md §7 不约束图标内容一致）；`electron-builder.yml` `win.icon` 指向 `icon.ico`，缺则自动回退到默认。本步可不产 svg，README 里写 “下一个小切片补”。
+
+- [ ] **Step 4**：`desktop/package.json` 补
+
+  ```diff
+    "scripts": {
+      "dev": "electron-vite dev",
+      "build": "electron-vite build",
+      "typecheck": "tsc --noEmit -p tsconfig.node.json",
+  +   "package": "electron-builder",
+      "test": "vitest run",
+      "test:watch": "vitest"
+    },
+    "devDependencies": {
+      "@types/node": "^22.0.0",
+  +   "electron-builder": "^25.1.8",
+      "electron": "44.1.0",
+      "electron-vite": "^5.0.0",
+      "typescript": "~5.9.3",
+      "vite": "^6.3.5",
+      "vitest": "^5.0.4"
+    }
+  ```
+
+  跑 `npm --prefix desktop install` 拉 electron-builder；它走 npm registry、本会话已确认 registry 可达。
+
+- [ ] **Step 5**：`npm --prefix desktop run build` 后 `npm --prefix desktop run package` 产 `desktop/dist/*.exe`
+
+  - 本步产物大小约 80–120 MB（NSIS + Chromium，不塞 Python）；
+  - 缺 `icon.ico` 时报 `warn cannot execute winCodeSign / rcedit ... icon not found` 不阻断；
+  - 不签名，README 已声明（用户机 Windows Defender 会弹 SmartScreen 提示，ADR-0032 §代价 已记）。
+
+- [ ] **Step 6**：**[real-terminal] 冒烟验证**（待用户回报）
+
+  1. 安装 `Questor Setup <version>.exe`；
+  2. 从开始菜单启动；
+  3. 如环境已装 uv 且 `QUESTOR_DESKTOP_USE_UV_RUN=1` 已设 → 窗口加载 ui 里的 AppShell + sidecar 起 → 跑 turn → Review 面板显示真 diff；
+  4. 如环境无 uv → 主进程 `catch` 到 "questor desktop core is missing" console.error → 窗口照开（Electron 壳正常、UI 里需展示 sidecar 缺席提示——属 B6 已接上 plumbing 但未消费，Phase U completion doc 记 gap）。
+  5. **诚实记 pending**：若无法确认 sidecar 同域行为，按 AGENTS §一 铁律 1 不凑。
+
+- [ ] **Step 7**：分细 commit（2 段）
+
+  1. `docs(plans): expand Phase U Task B7 to implementation level`（本 Step 0 回写）
+  2. `feat(desktop): electron-builder Windows NSIS packaging with assets placeholder`（`electron-builder.yml` + `assets/README.md` + 可选 `assets/icon.svg` + `package.json` scripts/devDep）
+
+  无自动化护栏测（本 Task 主要是配置文件）；负向验证以“白名单变化”方式人工验证：
+  - 临时在 `electron-builder.yml` 里 `files:` 加一条 `src/**/*.ts`（源码级） → `dist/*.exe` 大小应变化（人工 `dir dist` 前后 diff）；
+  - 复原。因无自动化测可咬（`npm run package` 不在 CI 默认门禁里），验证方法写进 commit body（per AGENTS §四 护栏测准入判据“真实设计改动 vs 随手改个值”）。
 
 ---
 
