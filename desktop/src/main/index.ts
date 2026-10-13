@@ -1,19 +1,28 @@
 // Questor Electron 主进程入口（ADR-0030/0032）。
 // 职责严格收缩为纯壳：窗口、sidecar 生命周期、能力声明、图标与打包。
 // 不含业务判断（overview §14："GUI 能力必须经协议可达"）。
-// B3 在 whenReady 里 resolveQuestorCommand + startSidecar；B4 已包上 lifecycle_lock
-// 与 bumpState（per home 单点串行拉起与单调 generation 记录）；B5 接上 closure-scoped
-// spawnSidecar 工厂 + armRestartPolicy（fail-open backoff）+ before-quit killTree；
-// B6 会挂 ipcMain.handle 与桥。
+// B3 拉起 sidecar；B4 包 lifecycle_lock + bumpState；B5 接 closure-spawn
+// + killTree + armRestartPolicy；B6 挂 ipcMain.handle、batcher、bridge singleton
+// 与 sidecar-state 广播（Option A：renderer ↔ main IPC ↔ sidecar stdio）。
 
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import { fileURLToPath } from "node:url";
+import { AppServerBridge } from "./app-server-bridge";
 import { armRestartPolicy, killTree } from "./child-shutdown";
 import { bumpState } from "./sidecar-state";
 import { withLifecycleLock } from "./sidecar-lock";
 import { resolveQuestorCommand } from "./questor-command";
 import { resolveQuestorHome } from "./questor-home";
+import { RendererServerEventBatcher } from "./renderer-batcher";
 import { startSidecar, type SidecarHandle } from "./sidecar";
+
+type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
+type JsonObject = { [k: string]: Json };
+
+type SidecarStateEvent =
+  | { kind: "up"; pid: number }
+  | { kind: "down"; code: number | null; signal: string | null; willRetry: boolean }
+  | { kind: "budget-exhausted"; retries: number; lastCode: number | null; lastSignal: string | null };
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -38,8 +47,65 @@ function createWindow(): void {
 
 // B5：closure-scoped sidecar 工厂。`activeHandle` 与 `shuttingDown` 同模块顶——
 // before-quit 会置 shuttingDown=true 防止关窗与 respawn 竞态。
+// B6：bridge 作 module-level singleton、跨 respawn 保留 sessionOwners/pending 长跑状态；
+// batcher 同 singleton、webContents.send 到当前活窗口；spawnAttempts 给 willRetry 用。
 let activeHandle: SidecarHandle | null = null;
 let shuttingDown = false;
+let spawnAttempts = 0;
+const MAX_SPAWN_ATTEMPTS = 3;
+
+const bridge = new AppServerBridge();
+let batcher: RendererServerEventBatcher | null = null;
+let ipcRegistered = false;
+
+function broadcastSidecarState(state: SidecarStateEvent): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send("qst:sidecar-state", state);
+  }
+}
+
+function registerIpcHandlers(): void {
+  if (ipcRegistered) return; // whenReady 只会调一次；防止重入。
+  ipcRegistered = true;
+  ipcMain.handle("qst:request", (_e, method: string, params: JsonObject) =>
+    bridge.dispatchRequest(method, params),
+  );
+  ipcMain.handle(
+    "qst:respond-server-request",
+    (_e, id: string, r: unknown) => bridge.respondToServerRequest(id, r),
+  );
+  ipcMain.handle(
+    "qst:reject-server-request",
+    (_e, id: string, m: string) => bridge.rejectServerRequest(id, m),
+  );
+  ipcMain.handle("qst:snapshot", () => bridge.runningThreadsSnapshot());
+}
+
+function wireBridgeToRenderer(): void {
+  if (batcher) return;
+  batcher = new RendererServerEventBatcher((evt) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send("qst:server-event", evt);
+    }
+  });
+  bridge.onEvent((e) => {
+    if (e.kind === "notification") {
+      batcher?.enqueue(e.message);
+    } else if (e.kind === "server-request") {
+      // 控制事件不合批：先 flush pending、再直接转发；Phase U 无消费方，仍先接上 plumbing（R-12）。
+      batcher?.flush();
+      const payload: JsonObject = {
+        __kind: "server-request",
+        __publicId: e.message.id,
+        method: e.message.method,
+        params: (e.message.params as JsonObject | undefined) ?? {},
+      };
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send("qst:server-event", payload);
+      }
+    }
+  });
+}
 
 async function spawnSidecar(): Promise<void> {
   if (shuttingDown) return;
@@ -62,23 +128,36 @@ async function spawnSidecar(): Promise<void> {
       return h;
     });
     activeHandle = handle;
+    bridge.attach(handle);
     console.log(`[sidecar] pid=${handle.pid} cmd=${cmd.command} home=${home}`);
     handle.stderr.on("data", (chunk: Buffer) =>
       console.error(`[sidecar] ${chunk.toString("utf8")}`),
     );
-    handle.exited.then((r) => console.warn(`[sidecar] exited`, r));
+    broadcastSidecarState({ kind: "up", pid: handle.pid });
+    handle.exited.then((r) => {
+      console.warn(`[sidecar] exited`, r);
+      broadcastSidecarState({
+        kind: "down",
+        code: r.code,
+        signal: r.signal,
+        willRetry:
+          r.code !== 0 && spawnAttempts + 1 < MAX_SPAWN_ATTEMPTS,
+      });
+    });
     // B5 fail-open：非零 exit → backoff 后 respawn；超 maxRetries=3 后停。
-    // R-13: B5 阶段仅 console.warn；B6 换成 webContents.send("qst:sidecar-state", ...)
+    // B6：budget-exhausted 广播给 renderer（R-13），console.warn 保留方便开发机看到。
     armRestartPolicy(handle, {
       backoffMs: [500, 2000, 8000],
-      maxRetries: 3,
+      maxRetries: MAX_SPAWN_ATTEMPTS,
       onRespawn: () => {
+        spawnAttempts += 1;
         void spawnSidecar();
       },
       onBudgetExhausted: (info) => {
         console.warn(
           `[sidecar] restart budget exhausted (fail-open), retries=${info.retries}`,
         );
+        broadcastSidecarState({ kind: "budget-exhausted", ...info });
       },
     });
   } catch (err) {
@@ -89,6 +168,8 @@ async function spawnSidecar(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  registerIpcHandlers();
+  wireBridgeToRenderer();
   await spawnSidecar();
   createWindow();
   app.on("activate", () => {
@@ -111,6 +192,7 @@ app.on("before-quit", (e) => {
       } catch (err) {
         console.error("[sidecar] killTree failed:", err);
       }
+      bridge.detach();
       activeHandle = null;
       app.exit(0);
     })();
