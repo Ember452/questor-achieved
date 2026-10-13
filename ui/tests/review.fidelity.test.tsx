@@ -7,6 +7,8 @@
 //   - @pierre/diffs 的行文本由 shiki 异步高亮后才落进 shadow，测试环境里不可靠 → 不断言渲染后的行文本；
 //     改在封装契约层断言"交给 @pierre 的 FileDiffMetadata 是否含首尾两个 hunk 的完整行"（这才是 B-103 的
 //     真实回归面：截断 bug 会丢尾 hunk）。主题映射走同步的 :host style（color-scheme 可靠）。
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { ReviewPanel } from "../src/panels/review";
@@ -71,5 +73,16 @@ describe("B-106 暗色 diff 色对（随主题切换、不反相）", () => {
       const view = container.querySelector("[data-diff-theme]");
       expect(view?.getAttribute("data-diff-theme")).toBe("light");
     });
+  });
+});
+
+describe("B-104 prefers-reduced-motion", () => {
+  // happy-dom 不提供 matchMedia 回调，无法断言运行时实际拿到 reduce 后发生什么；
+  // 护栏选在CSSOM 静态层：`base.css` 必须含 `@media (prefers-reduced-motion: reduce)` 块
+  // 且块内带 `transition: none !important`——行为规格 §3。真实浏览器里 media query 自会命中。
+  it("base.css 声明 reduce 下卡片过渡关闭", () => {
+    const css = readFileSync(resolve(__dirname, "../src/design/base.css"), "utf8");
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
+    expect(css).toMatch(/transition:\s*none\s*!important/);
   });
 });

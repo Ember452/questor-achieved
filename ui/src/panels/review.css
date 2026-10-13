@@ -14,6 +14,14 @@
   transition: box-shadow var(--motion-normal) var(--motion-ease-standard);
 }
 
+/* A8 观感润色：hover 升到 elevation-2、active 内阴微沉，与 wuu 卡片层递手感对齐。 */
+.qst-review-card:hover {
+  box-shadow: var(--elevation-2);
+}
+.qst-review-card:active {
+  box-shadow: var(--elevation-1), inset 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
 .qst-review-card-header {
   display: flex;
   align-items: center;
