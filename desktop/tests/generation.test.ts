@@ -1,9 +1,14 @@
-// 护栏 B-108 generation 单调性与 crash 残尾容错。
+// 护栏 B-108 generation 单调性与 crash 残尾容错；
+// 护栏 B-109 lifecycle_lock 防并发拉起。
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bumpState, readState } from "../src/main/sidecar-state";
+import { withLifecycleLock } from "../src/main/sidecar-lock";
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 let home = "";
 beforeEach(async () => {
@@ -39,4 +44,44 @@ describe("generation 单调性（B-108）", () => {
     expect(s).not.toBeNull();
     expect(s?.pid).toBe(42);
   });
+});
+
+describe("lifecycle_lock 防并发拉起（B-109）", () => {
+  it("三个 withLifecycleLock 并发 → 串行", async () => {
+    let peak = 0;
+    let cur = 0;
+    const fn = async (): Promise<void> => {
+      cur += 1;
+      peak = Math.max(peak, cur);
+      await sleep(50);
+      cur -= 1;
+    };
+    await Promise.all([
+      withLifecycleLock(home, fn),
+      withLifecycleLock(home, fn),
+      withLifecycleLock(home, fn),
+    ]);
+    expect(peak).toBe(1);
+  });
+
+  it("获锁超时 → 抛 lifecycle lock busy", async () => {
+    // 注入短 timeout 避免撞 vitest 默认 5 s testTimeout；行为与默认 5 s 同形。
+    const longFn = async (): Promise<void> => {
+      await sleep(1_000);
+    };
+    const first = withLifecycleLock(home, longFn, {
+      timeoutMs: 2_000,
+      pollIntervalMs: 20,
+    });
+    await sleep(50); // 让 first 拿到锁
+    const started = Date.now();
+    await expect(
+      withLifecycleLock(home, async () => undefined, {
+        timeoutMs: 400,
+        pollIntervalMs: 20,
+      }),
+    ).rejects.toThrow(/lifecycle lock busy/i);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(350);
+    await first;
+  }, 5_000);
 });
