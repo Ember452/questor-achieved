@@ -48,6 +48,17 @@ export class AppServerBridge {
       /* sink */
     };
     handle.stderr.on("data", this.stderrListener);
+    // F1（审查）：sidecar 死亡时必须把在途 pending 全部 reject + 发 server-exit 事件，
+    // 否则 renderer 的 dispatchRequest Promise 永久悬挂（假死 spinner）。
+    // 旧 handle 的 exited 回调在新 attach 后靠 currentHandle 比较自行作废。
+    void handle.exited.then((r) => {
+      if (this.currentHandle !== handle) return;
+      const reason = `sidecar exited (code=${r.code} signal=${r.signal ?? "none"})`;
+      for (const l of this.eventListeners) {
+        l({ kind: "server-exit", code: r.code, message: reason });
+      }
+      this.detach();
+    });
   }
 
   detach(): void {
@@ -59,6 +70,17 @@ export class AppServerBridge {
       this.currentHandle.stderr.off("data", this.stderrListener);
     }
     this.currentHandle = null;
+    // F1：先拒掉所有在途请求与未应答的 server-request，再清归属表——
+    // 新 sidecar 认不得旧 id，留着只会让 renderer 永久等待。
+    for (const p of this.pending.values()) {
+      p.reject(new Error("sidecar detached; request did not complete"));
+    }
+    this.pending.clear();
+    this.serverRequestRoutes.clear();
+    // 审查 F5：run/status 协议形状只带 {status}、无 run/thread 身份（见 pitfalls B-122），
+    // 无法按终态精确移除单个归属——保守立场：bridge 换接（detach）时全清，
+    // snapshot 宁缺勿滥（诚实呈现铁律）。
+    this.sessionOwners.clear();
   }
 
   dispatchRequest(method: string, params: JsonObject): Promise<JsonObject> {
@@ -108,7 +130,18 @@ export class AppServerBridge {
       const line = this.stdoutBuf.slice(0, nl).trim();
       this.stdoutBuf = this.stdoutBuf.slice(nl + 1);
       if (!line) continue;
-      this.handleFrame(JSON.parse(line));
+      // F6（审查）：坏帧不得炸穿主进程（data 事件里抛未捕获异常会直接 crash）；
+      // 丢弃单行 + console.error 保留现场，不静默。
+      let frame: { id?: string; method?: string; params?: unknown; result?: unknown; error?: unknown };
+      try {
+        frame = JSON.parse(line) as typeof frame;
+      } catch (err) {
+        console.error(
+          `[bridge] 丢弃非法 NDJSON 帧: ${(err as Error).message}; 前 120 字符: ${line.slice(0, 120)}`,
+        );
+        continue;
+      }
+      this.handleFrame(frame);
     }
   }
 
