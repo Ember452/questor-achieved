@@ -1,0 +1,32 @@
+name: desktop
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  desktop:
+    name: Desktop shell test (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+          # 两份 lockfile 都进 cache key；任一份变化就重建缓存。
+          cache: npm
+          cache-dependency-path: |
+            ui/package-lock.json
+            desktop/package-lock.json
+      - run: npm --prefix ui ci
+      - run: npm --prefix desktop ci
+      # 与 justfile 里的目标一一对应（test_ci_parity 咬住"命令集合相等"）。
+      # ui typecheck 已在 ci.yml 里跑；此处只补 desktop 独有的门禁。
+      - run: npm --prefix desktop run typecheck
+      - run: npm --prefix desktop run test
+      # 本 Phase U 不跑 `desktop run build` / `desktop run package`：
+      #   - build 是"能否出产物"、非"改动破没破测试"，推到未来的 release workflow；
+      #   - package 需要 `%LOCALAPPDATA%/electron-builder/Cache/` 里预放 electron zip，
+      #     GitHub runner 拉 GitHub Releases 也会撞同样的网络前提（B7 已确认）。

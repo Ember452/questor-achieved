@@ -28,9 +28,20 @@ lint:
 types:
     uv run pyright
 
-# 前端类型检查（无 desktop.yml 之前，先把 tsc --noEmit 接进门禁）
+# 前端类型检查（ui + desktop 两侧都入 check；B8 把 desktop typecheck 拉进来，与 desktop.yml 同源）
 types-check:
     npm --prefix ui run typecheck
+    npm --prefix desktop run typecheck
+
+# Desktop 壳侧测（vitest node env）；不启 GUI，沙箱/CI 可同命。本地与 CI 同一命令。
+desktop-test:
+    npm --prefix desktop run test
+
+# 一套前端两宿主：ui 先 build 产 dist、desktop 后 build 把 dist 塑进 out/renderer。
+# 不进 `check`：build 不验新行为、只多一倍时长；也不入 `desktop.yml` CI（推 future release workflow）。
+desktop-build:
+    npm --prefix ui run build
+    npm --prefix desktop run build
 
 # schema → 前端类型（R4 生成链；真相源 src/questor/schemas，定义点在 scripts/gen/）
 gen:
@@ -70,7 +81,7 @@ build:
 hooks:
     uv run pre-commit run --all-files --color=never
 
-check: lint types test arch specs gen-check types-check
+check: lint types test arch specs gen-check types-check desktop-test
     @echo "just check: all green"
 
 ci: check build
