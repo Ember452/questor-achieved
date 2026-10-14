@@ -1,6 +1,6 @@
 """Tool 协议与执行结果——pydantic params 即 schema 来源（FlowCoder base.py 形状重写）。
 
-每个工具声明：name / description / kind（limen 的 ToolKind）/ mutates（本调用是否
+每个工具声明：name / description / kind（`schemas.model.ToolKind`）/ mutates（本调用是否
 改变世界）/ expects_path（limen B-31 的前提）/ concurrency_safe（B-16 分区依据）。
 执行签名是 ``execute(params, ctx)``：ctx 由 engine 组装（filestate、processmgr、
 todo、工作目录），工具自身无全局状态。
@@ -14,17 +14,17 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
+
+from questor.schemas.model import ToolKind
 
 if TYPE_CHECKING:
     from questor.tools.filestate import FileStateCache
     from questor.tools.impl.todo import TodoStore
     from questor.tools.ports import OrchestrationPort
     from questor.tools.processmgr import ProcessManager
-
-ToolKind = Literal["file", "shell", "process", "meta"]
 
 #: 各工具共用的目录跳过清单（list/search 遍历时忽略）
 SKIP_DIRS = frozenset(
