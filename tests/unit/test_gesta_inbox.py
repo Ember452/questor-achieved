@@ -35,14 +35,8 @@ def _message(
     client_id: str = "c1",
     session_id: str = "s1",
     content: str = "插一句",
-    **kwargs: object,
 ) -> InboxMessage:
-    return InboxMessage(
-        client_id=client_id,
-        session_id=session_id,
-        content=content,
-        **kwargs,  # type: ignore[arg-type]
-    )
+    return InboxMessage(client_id=client_id, session_id=session_id, content=content)
 
 
 def test_enqueue_requires_client_id_and_session(store: SessionStore) -> None:

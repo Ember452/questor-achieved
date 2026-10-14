@@ -35,8 +35,8 @@ def store(tmp_path: Path) -> Iterator[SessionStore]:
     handle.close()
 
 
-def _text(role: MessageRole, content: str, **kwargs: object) -> ChatMessage:
-    return ChatMessage(role=role, parts=[TextPart(text=content)], **kwargs)  # type: ignore[arg-type]
+def _text(role: MessageRole, content: str) -> ChatMessage:
+    return ChatMessage(role=role, parts=[TextPart(text=content)])
 
 
 def test_create_and_load_session(store: SessionStore) -> None:
