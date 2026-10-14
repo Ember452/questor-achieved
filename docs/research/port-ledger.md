@@ -83,3 +83,16 @@ Phase 1 已实测：id 为 `json.RawMessage`（数字/字符串皆可，原样�
 - 旧 `serve/{envelope,stdio,app_server,dispatch}.py` + 旧名测试：不拷行重写；旧 `serve/` 仍按 Phase 0 处置地图「过渡期保留」到 Phase 2a 新内核同批推倒（因 Phase 1 不写 handler，旧 app_server.py 与其绿测本阶段不动，新契约层并行立住、由 tests/contract 驱动）。
 - `tests/contract/`（原仅 README 空壳）：本阶段核心交付，建 wuu golden fixtures + 信封/模型层回放（不经 handler）。
 - `schemas/message.py` 新增；`schemas/app_server/` 新建 pydantic 模型包（取代旧 `app_server/v0-1.json`+生成链路线；该路线原服务已废弃的 ui/，Phase 1 改 pydantic 单一来源）。旧 `schemas/llm.py` 与新 `message.py` 的重合在 Phase 2a 收敛，本阶段记此不静默。
+
+### Phase 1 契约层落地状态（本批）
+
+- 已建（均已测）：`schemas/app_server/{names,envelope,initialize,entities,families}.py` +
+  `tests/contract/test_replay_wuu_frames.py`（真实 golden 两份 + 手写四族） +
+  `tests/architecture/test_protocol_single_source.py`（protocol.md§3/4/7↔names 双向）。
+- 不透明透传（**登记过的后置**，非遗漏）：`run` 内部（P1-7）、`InitializeResult` 各大 summary
+  （permissions/providers/model_profile/… 属 config 面）、`images`/`files` base64 形状——均以
+  `dict[str, Any]` 占位，随 Phase 2a/2b 逐字段收紧（届时补类型化模型 + 回放断言）。
+- **Phase 0 诚实更正**：上表所称“六份扫描已归档”中，`phase0-wuu-{renderer-assembly,sqlite-schema}.md`
+  **仍为 0 字节空文件**（本轮发现；之前误按文件存在判“齐”）。protocol-table 已在 Phase 1 回填；
+  另两份分属 Phase 2b/Phase 3 依赖，**需在其各自开工前补齐真实扫描**方可进该阶段（属 Phase 0 欠账，现挂此。
+  不影响 Phase 1 已交付的协议接缝完整性）。

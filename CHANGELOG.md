@@ -10,6 +10,19 @@
 ## [未发布]
 
 ### Added
+- **Phase 1 跨语言接缝契约层**（计划 Phase 1；protocol.md §8、behavior-protocol-wuu §5）：
+  - `schemas/message.py` — ChatMessage/Role/Part 判别联合 + FinishReason 归一枚举与映射
+    （照 `providers/types.go#L116-146`）；frozen + `extra=forbid` 机械拒凭据（P1-4）；Origin≠Role（P1-5）。
+  - `schemas/app_server/`（新包）— `names`（A 阶段方法/通知/错误单一来源注册表 + `questor-app-server/v0.1`）、
+    `envelope`（Request/Response/Notification/ReverseResponse，id 容数字或字符串 P1-2）、`initialize`
+    （全字段 result，未实测的 config 面 summary 以 dict 透传并登记后置）、`entities`（Thread/Turn/
+    ThreadItem/Run + 状态枚举；`Turn.items` nil→`[]` 硬语义 P1-3）、`families`（thread/turn/run/item 四族）。
+  - `tests/contract/` — wuu 帧回放（真实 golden 取自 `client_calls_test.go:60/:89` + 手写期望帧），
+    initialize+四族逐字段一致 + 硬语义 + 负向（camelCase/凭据注入即红）。
+  - `tests/architecture/test_protocol_single_source.py` — `protocol.md` §3/§4/§7 ↔ `names.py` 双向同源
+    护栏（B-119/B-121，契约侧即绿）。
+- **Phase 0 欠账修正**：回填曾为 0 字节的 `research/phase0-wuu-protocol-table.md`（方法/通知全枚举
+  + A 阶段处置）；`port-ledger` 标 `renderer-assembly`/`sqlite-schema` 两份仍空、需各自开工前补齐。
 - **Phase 0 收口（知识抢救 + 契约重立基，计划 §12-B/§12-E）**：新渲染层设
   计篇 `docs/architecture/modules/{review,habena}.md`；壳侧知识归档
   `docs/research/archive-desktop-restart-policy.md`（原 notes 锚定的 `desktop/src/main/*` 已移出）；

@@ -1,23 +1,34 @@
 # tests/contract
 
-**契约套件**：所有引擎跑**同一套行为契约测试**（`overview.md` §11）。参数化对象 = 内置引擎 +
-各外部适配器（M6 起：ACP / Claude / Codex）。
+本目录承载**两类**契约测试，共同点是"跨实现/跨语言的对账基线"，彼此独立：
 
-## 这里断言什么
+## 一、app-server 协议帧契约（Phase 1 已落地）· `test_replay_wuu_frames.py`
 
-- `turn` 生命周期与事件顺序（`turn/start` → 增量事件 → `turn/completed`）；
-- 插话只在步前边界被消费（B-67）、接管即停；
-- `stop` / `resume` / `fork` 的可观察语义；
-- **能力缺口必须显式报错，不许静默忽略**（外部适配器尤其）；
-- 权限档位映射不承诺等价保护时，返回值必须携带该声明。
+把「Electron 前端吃 wuu app-server 协议 + Python 后端」这道唯一跨语言接缝用**帧回放**钉死。
+wuu 协议**无代码生成**（TS/Go/Python 三份并行、会漂移），本套件是弥补该漂移的唯一防线
+（`protocol.md` §8、`docs/research/behavior-protocol-wuu.md` §5）。
 
-## 为什么它是 M1 最值钱的套件
+- **基准帧来源**（本机无 Go，不靠实跑，§1.5 机制 2 软模式）：
+  - **真实 golden**：wuu `_test.go` 里写死的期望 JSON，逐字取入 `fixtures/`：
+    - `fixtures/wuu_initialize_request.json` ← `internal/appserver/client_calls_test.go:60`
+    - `fixtures/wuu_reverse_response.json` ← `internal/appserver/client_calls_test.go:89`
+  - **手写期望帧**：逐方法读 `internal/appserver/protocol.go` 结构体、核对其 `json` tag 后按形状
+    手打（测试内附 wuu 行号锚点）。**线格式真相 = Go tag**，TS `packages/protocol/src/index.ts` 会漂移。
+- **断言**：initialize + thread/turn/run/item 四族逐字段一致（键名/类型/可选性）；含硬语义
+  `Turn.items` nil→`[]`（P1-3）、`Origin≠Role`、Provider 凭据 `extra=forbid` 拒（P1-4）、
+  `srv-` 反向 id（B-59）、版本严格相等不降级（B-60）。
+- **负向验证**：把某帧键改 camelCase 或塞未知键 → 模型必须 `ValidationError`（证明会咬人）。
+- **单一来源护栏**（同目录外，`tests/architecture/test_protocol_single_source.py`）：
+  `protocol.md` §3/§4/§7 ↔ `schemas/app_server/names.py` 双向同源；`schemas/app_server/` 是 A 阶段
+  线契约形状的 Python 侧唯一定义点。
 
-引擎抽象（`engine/contract/`）是本项目"不把路走窄"的主门：只要这套契约测试对内置引擎与
-外部引擎同绿，换引擎就是替换实现而非改上层。反过来说——**先写这套测试，再写第二个引擎**，
-否则契约会退化成"内置引擎私有行为的复述"（wuu 的 `agentengine` 边界定义是参照依据）。
+## 二、引擎行为契约（M6 落地，ADR-0033）
 
-## 现状
+所有引擎跑**同一套行为契约测试**（`overview.md` §11）：参数化对象 = 内置引擎 + 各外部适配器
+（ACP / Claude / Codex）。断言 turn 生命周期与事件顺序、插话只在步前边界消费（B-67）、接管即停、
+`stop`/`resume`/`fork` 可观察语义、能力缺口显式报错不静默忽略。**此项尚未落地**——`engine/contract/`
+提取（ADR-0033）是 M6 开工准入条件；在此之前该子集收集 0 条属预期。
 
-用例随 M2 引擎物化首批落地；在此之前本目录无用例属预期，`pytest tests/contract`
-收集 0 条不作为门禁依据（`AGENTS.md` §四）。
+## 运行
+
+`just` 的 `test`/`arch` 配方覆盖本目录（协议帧契约已入 `just check`）。

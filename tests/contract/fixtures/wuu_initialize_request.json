@@ -1,0 +1,9 @@
+{
+  "id": "1",
+  "method": "initialize",
+  "params": {
+    "protocol_version": "wuu-app-server/v0.1",
+    "client": { "name": "cloud-host" },
+    "capabilities": { "reverse_rpc": { "methods": ["browser/list_tabs"] } }
+  }
+}
