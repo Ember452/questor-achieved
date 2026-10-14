@@ -1,5 +1,7 @@
 # Phase U 出口记录（Track A + Track B）
 
+> ⚠️ **历史执行记录（2026-10-14 转向）**：其 `[real-terminal]` 步、`npm run package` 产 exe、可干预柱还原度等 pending，随旧代码废弃全部作废（见 `port-ledger` TL-2 / ADR-0044）。不得据此记"有人欠验收"。保留因它是 B-108~B-118 的唯一出处。
+
 日期: 2026-10-13 | 关联: `docs/plans/2026-10-13-phase-u-ui-and-electron-shell.md`、
 `docs/plans/development-plan.md` Phase U 行、ADR-0006 / 0030 / 0031 / 0032
 
