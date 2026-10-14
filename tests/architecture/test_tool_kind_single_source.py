@@ -54,9 +54,47 @@ def test_tool_kind_is_defined_in_exactly_one_module() -> None:
     assert definers == {_DEFINER}, f"ToolKind 的定义点不止一处: {sorted(definers)}"
 
 
-def test_tool_kind_members_are_the_declared_four() -> None:
-    """四档取值逐字锁定：新增类别要同时改门判定与呈现，不许只加一处。"""
-    assert get_args(model.ToolKind) == ("file", "shell", "process", "meta")
+def test_tool_kind_membership_matches_master_vocabulary() -> None:
+    """词表逐字锁定：取齐母本 wuu ``internal/tools/tool_info.go`` 的 ``ToolKind`` 常量集。
+
+    ``meta`` 是旧 questor 词（wuu 无对应值，语义最接近 ``unknown``），工具层重写时收敛删除；
+    差异已登 port-ledger，因此本断言同时是"临时偏离"的到期计时器。
+    """
+    wuu_kinds = {
+        "file",
+        "search",
+        "discovery",
+        "shell",
+        "test",
+        "git",
+        "web",
+        "session",
+        "skill",
+        "agent",
+        "process",
+        "schedule",
+        "mcp",
+        "browser",
+        "plugin",
+        "unknown",
+    }
+    assert set(get_args(model.ToolKind)) == wuu_kinds | {"meta"}
+
+
+def test_every_tool_kind_is_classified_by_the_gate() -> None:
+    """每个取值都必须被门的判定表明列（变更类 / 非变更类其一），两表不得重叠。
+
+    旧护栏只锁“四个值都在”，加一档时靠人不漏；本条把“只加一处”从人纪变成机纪：
+    新类别若不进 `limen/boundary` 的两张表之一就红（B-133）。
+    """
+    from questor.limen import boundary
+
+    members = set(get_args(model.ToolKind))
+    classified = set(boundary.MUTATING_KINDS) | set(boundary.NON_MUTATING_KINDS)
+    assert members - classified == set(), f"工具类未被门判定表覆盖：{sorted(members - classified)}"
+    overlap = set(boundary.MUTATING_KINDS) & set(boundary.NON_MUTATING_KINDS)
+    assert not overlap, "同一类不能两表都在"
+    assert classified - members == set(), "表里有词表没有的值（拼写漂移）"
 
 
 def test_tools_and_limen_import_the_shared_symbol() -> None:

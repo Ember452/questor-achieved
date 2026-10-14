@@ -10,6 +10,19 @@
 ## [未发布]
 
 ### Added
+- **Phase 2a 批次 2a：limen 门链与收紧型审批**（母计划 §1.5 机制 4；B-130/B-131/B-132/B-133）：
+  - 新增 `limen/{boundary,chain,approval,authorizer}.py`，逐函数对位 wuu
+    `internal/tools/{boundary.go,toolkit.go,review.go,authorization.go}` +
+    `internal/approvefor/review.go`：定序 hook→boundary→（特例位）→Reviewer→**Authorizer 在最后**、
+    同一 ctx 只过一次门的幂等护盾、Authorizer 报错即拒且只认字面 `"allow"`、
+    审批五态（`default` 分支为 `review_failed`，不是放行）、硬拒三件（凭据/参数提权/敏感路径写，
+    看目标不看内容）、`ToolKind` 词表取齐母本 16 值。
+  - 新测 46 条（`tests/unit/test_limen_chain.py` + `test_tool_kind_single_source` 扩充）；
+    三次负向注入均先贴红再复原（定序交换→3 条红；“非 deny 即允许”→3 条 DID NOT RAISE；
+    删 `meta` 子表项→覆盖断言红）。
+  - 技术债显式登记（port-ledger L-1~L-8）：L-8 旧 `gate.decide()` 与新链**并存至批次 3a**
+    且到时必须删除（同一语义两处实现）；L-2 母本 `markPermissionChecked` 调用点本轮**未读到**，
+    按“判定完成后打标”实现并作待复核项；L-6 本仓敏感判定单源复用，硬拒比母本更严。
 - **Phase 2a 批次 1：gesta 落成 SQLite 会话权威库**（母计划 §1.5 机制 1/4；ADR-0041、
   `data-model.md` v2.0；行为规格 `docs/specs/behavior-gesta-wuu.md` 已整体重写）：
   - 新增 `gesta/{schema,session_store,inbox,held_work,records,errors}.py`，逐函数对位 wuu

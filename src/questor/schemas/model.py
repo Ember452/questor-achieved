@@ -45,7 +45,36 @@ class PermissionMode(StrEnum):
 #: 只有底层 schemas。曾在两处各写一份 `Literal[...]`：`typing` 按参数元组缓存 `Literal`
 #: 特化，两份平行定义运行时是同一个对象，连 `is` 比都看不出来；漂移后 pyright 各自都绿，
 #: 代价是新类别在门里永远判不到。护栏：`tests/architecture/test_tool_kind_single_source.py`。
-ToolKind = Literal["file", "shell", "process", "meta"]
+#: 工具类词表：取齐母本 wuu ``internal/tools/tool_info.go`` 的 ``ToolKind`` 常量集
+#: （file/search/discovery/shell/test/git/web/session/skill/agent/process/schedule/mcp/
+#: browser/plugin/unknown）。**单点定义**：旧版曾在 ``tools/base.py`` 与 ``limen/gate.py``
+#: 各写一份，运行时 `is` 比都看不出来（B-120）。
+#:
+#: §1.7 缝 5：新增工具类只**扩本枚举**，不重构权限门（门的判定表在
+#: ``limen/boundary._MUTATING_KINDS``，新类别归不归类为变更只改那一行表）。
+#: ``schedule/mcp/plugin/browser/agent`` 等属后置/不做面的值，**现在保留在词表里**：
+#: 它们是边界字段而非机制，删掉就等于将来接这些面时要重写门与工具声明。
+#: ``meta`` 是旧 questor 词汇（wuu 无对应值，语义最接近 ``unknown``），
+#: 随 Phase 2a 批次 3a 重写工具层时收敛删除（差异已登 port-ledger）。
+ToolKind = Literal[
+    "file",
+    "search",
+    "discovery",
+    "shell",
+    "test",
+    "git",
+    "web",
+    "session",
+    "skill",
+    "agent",
+    "process",
+    "schedule",
+    "mcp",
+    "browser",
+    "plugin",
+    "unknown",
+    "meta",
+]
 
 
 class RunStatus(StrEnum):

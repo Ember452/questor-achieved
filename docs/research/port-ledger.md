@@ -147,6 +147,19 @@ Phase 1 已实测：id 为 `json.RawMessage`（数字/字符串皆可，原样�
 | G-12 | `thread/delete` 的“需 idle” | appserver 侧按 run 状态拒删活跃会话 | 本轮 `delete_session` 只保证“会话存在才删”；`SessionBusy` 错型已定义但**无调用者**（run 状态面属批次 4/5）——不得假装已拦 | 批次 4/5 |
 | G-13 | 时间列 | `timeText` UTC 文本 | `schema.now_text()` 单点 UTC ISO8601（创建序/送达判定/updated_at 排序共用一把尺） | 已定 |
 
+### 批次 2a：limen（权限门链，2026-10-14）
+
+| # | 项 | wuu 事实（函数本体已读到） | Questor 做法与理由 | 收口时机 |
+| --- | --- | --- | --- | --- |
+| L-1 | 门链定序 | ``toolkit.go::checkPermission`` L112-146：护盾→hook→``boundary.Check``→硬编码特例→``reviewToolCall``→**Authorizer 在最后** | ``limen/chain.py::PermissionChain.check`` 同序；plugin_manager 特例**不移植**（不做插件宿主），但保留它的设计原则注释（“可选复核不得默认变成隐式执行信任”）。负向已实测：把 Authorizer 提到 Reviewer 前→三条定序用例红 | 已定 |
+| L-2 | 幂等护盾载体 | Go 用 ``ctx.Value(permissionCheckedContextKey{})``；**打标的调用点本轮未读到** | Python 用可变的 ``PermissionContext.checked``，语义等价；本仓按“判定完成后落盾（拒也算判过）”实现——这是一项**待复核差异**，不得当成母本逐字同构 | 批次 4（engine 嵌套工具调用接入时复核） |
+| L-3 | Authorizer | ``authorization.go``：“boundary 仍权威、不可被 authorizer 提权”；报错即拒；``Outcome`` 必须字面 ``"allow"`` | ``enforce_authorizer``：None→放行、报错→``authorization provider unavailable``、``outcome.strip() != "allow"``→拒。负向已实测：改成“== deny 才拒”→三条 DID NOT RAISE | 已定 |
+| L-4 | 审批五态 | ``tools/review.go`` L44-64 的 switch：allow/deny→``review_denied``/unsure→``review_needs_context``/cancelled→``review_cancelled``/**default（含 failed 与未知值）→``review_failed``** | ``chain._review`` 逐分支对齐（包含 default 为拒）；`reviewer is None` 与报错过“审批通道不可用”均走 ``review_failed`` | 已定 |
+| L-5 | 硬拒三件 | ``approvefor/review.go`` L87-112：凭据调用、参数提权（两种拼法 L112）、敏感路径写；判定看目标不看内容 | 全收；凭据文件名集合由**装配方注入**（limen 不 import state/config，依 structure §3 依赖裁决） | 已定 |
+| L-6 | 敏感判定单源 | 母本在 ``tools/sensitive_paths.go`` 与 ``approvefor/review.go`` **各写一份**（后者只认 .env/私钥，较窄） | 本仓单点复用 ``limen/sensitive.classify``（宽表），因此硬拒**比母本更严**（如 .git 段也拒写）；差异已登记，不复制第二套真相 | 已定 |
+| L-7 | ``ToolKind`` 词表 | ``tool_info.go`` 16 个值 + ``ToolInfo{…,Exposure,ConcurrencySafe}``（旧版漏列后两项） | ``schemas/model.ToolKind`` 取齐 16 值；额外临时保留 ``meta``（旧 questor 词，wuu 无）——并新增护栏 ``test_every_tool_kind_is_classified_by_the_gate``（B-133）让“加一档忘改门”变成红。``Exposure``/``ConcurrencySafe`` 随批次 3a 的工具注册表落 | 批次 3a 删 ``meta`` |
+| L-8 | 新旧两代入口 | 不适用（旧 questor 实现） | ``gate.decide()`` + ``matrix.MODE_BOUNDARIES`` 仍是旧 ``tools/executor`` 的入口，与新 ``PermissionChain`` **并存到批次 3a**。这是同一语义的两处实现，属于登记在册的技术债：批次 3a 必须删除 ``gate.decide`` 并把矩阵并入 ``boundary`` 构造器，否则就是第二套真相；新代码不得再调 ``decide()`` | 批次 3a（硬到期） |
+
 ### 批次 1–5 的替换节律（防“新旧双真相”）
 
 每批次一个 commit：**新实现 + 新测试 + 旧实现同批移出**；例外只在“旧实现仍是被保留侧的生产依赖”时发生
