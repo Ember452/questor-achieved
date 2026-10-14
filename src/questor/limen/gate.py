@@ -35,9 +35,8 @@ from typing import Literal
 from questor.limen.commands import is_dangerous_command
 from questor.limen.reachability import is_within
 from questor.limen.sensitive import classify, read_blocked, redact
-from questor.schemas.model import PermissionMode
+from questor.schemas.model import PermissionMode, ToolKind
 
-ToolKind = Literal["file", "shell", "process", "meta"]
 Effect = Literal["allow", "deny"]
 
 _ERROR_KIND = "boundary_denied"
