@@ -28,28 +28,12 @@ lint:
 types:
     uv run pyright
 
-# 前端类型检查（ui + desktop 两侧都入 check；B8 把 desktop typecheck 拉进来，与 desktop.yml 同源）
-types-check:
-    npm --prefix ui run typecheck
-    npm --prefix desktop run typecheck
+# ui/ 与 desktop/ 已随 ADR-0040/0044 废弃并从工作树物理移出（快照在 reference-only-archive 分支）。
+# 前端类型检查 / 壳侧测 / gen 链的门禁配方在 Phase 2b 照 wuu renderer 重建时一并重建
+# （届时与 desktop.yml / contracts.yml 同批恢复，CI parity 测自动重新咬合）。
 
-# Desktop 壳侧测（vitest node env）；不启 GUI，沙箱/CI 可同命。本地与 CI 同一命令。
-desktop-test:
-    npm --prefix desktop run test
-
-# 一套前端两宿主：ui 先 build 产 dist、desktop 后 build 把 dist 塑进 out/renderer。
-# 不进 `check`：build 不验新行为、只多一倍时长；也不入 `desktop.yml` CI（推 future release workflow）。
-desktop-build:
-    npm --prefix ui run build
-    npm --prefix desktop run build
-
-# schema → 前端类型（R4 生成链；真相源 src/questor/schemas，定义点在 scripts/gen/）
-gen:
-    node scripts/gen/types.mjs
-
-# 生成后 git diff --exit-code 必须为空（R4 的可检查形式）
-gen-check:
-    node scripts/gen/types.mjs --check
+# schema → 前端类型生成链（R4）已随 ui/ 退役暂停；真相源 src/questor/schemas 保留，
+# scripts/gen/types.mjs 输出目标（ui/src/rpc/generated）不存在即无从校验。Phase 2b 重建。
 
 # 依赖方向与三条硬断言（R1；import-linter + AST allow-list 双层）
 arch:
@@ -70,18 +54,20 @@ specs:
     uv run python scripts/ci/check_docs.py
 
 # 依赖审计（security.yml 同一条；不放进 check 是因为它要联网、不适合每次提交跑）
+# npm audit 行随 ui/ 退役暂停；Phase 2b 新前端落地时恢复。
 audit:
     uv run pip-audit --skip-editable
-    npm --prefix ui audit --omit=dev
 
 build:
     uv build
 
-# 本地钩子全量跑（CI 同一条）：需先 `just setup` 且 ui 依赖已装（gen-check 钩子依赖它）
+# 本地钩子全量跑（CI 同一条）
 hooks:
     uv run pre-commit run --all-files --color=never
 
-check: lint types test arch specs gen-check types-check desktop-test
+# gen-check/types-check/desktop-test 随 ui/+desktop/ 移出门禁（Phase 0 归档，见上注）；
+# Phase 2b 重建前端时逐项加回，CI parity 测（tests/architecture/test_ci_parity.py）双向盯。
+check: lint types test arch specs
     @echo "just check: all green"
 
 ci: check build

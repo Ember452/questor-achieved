@@ -20,10 +20,4 @@ jobs:
           enable-cache: true
       - run: uv sync
       - run: uv run pip-audit --skip-editable
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
-      - run: npm ci --prefix ui
-      - run: npm --prefix ui audit --omit=dev
+      # npm audit 随 ui/ 退役暂停（ADR-0040/0044）；Phase 2b 新前端落地时恢复。

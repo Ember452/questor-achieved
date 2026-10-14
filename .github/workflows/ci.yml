@@ -33,22 +33,14 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync
-      # node 依赖必须早于钩子：gen-check 是 language: system 的本地钩子，
-      # 依赖 ui/node_modules；装晚了 pre-commit 阶段必炸（B-70）。
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
-      - run: npm ci --prefix ui
+      # node/gen 链已随 ui/、desktop/ 退役暂停（ADR-0040/0044，Phase 0 归档）；
+      # Phase 2b 重建新渲染层时恢复 setup-node + gen-check + typecheck（与 justfile 同批）。
       - run: uv run ruff check src tests evals scripts
       - run: uv run ruff format --check --diff src tests evals scripts
       - run: uv run lint-imports
       - run: uv run pyright
       - run: uv run python scripts/ci/check_specs.py
       - run: uv run python scripts/ci/check_notes.py
-      - run: node scripts/gen/types.mjs --check
-      - run: npm --prefix ui run typecheck
       - run: uv build
       # 锁定钩子与 CI 同源：ruff rev 与 uv.lock 不一致、或钩子规则与门禁不一致，在这里响。
       - run: uv run pre-commit run --all-files --color=never
@@ -81,24 +73,15 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
-      - run: npm ci --prefix ui
       - run: uv run pytest -q -rfE --color=no
-      # 生成物必须在两种 OS 上都可复现：banner 的路径分隔符差异（B-68）
-      # 只有在 windows runner 上也跑 gen:check 才拦得住。
-      - run: node scripts/gen/types.mjs --check
-      - name: Show generated diff on drift
+      # gen 跨 OS 可复现 leg（B-68）随 ui/ 退役暂停；Phase 2b 重建时恢复。
+      - name: Show failure context
         if: failure()
         run: |
           {
-            echo "## 重生成后的差异（应为空；不为空即漂移或生成器不可复现）"
+            echo "## 测试失败上下文"
             echo
             echo '```'
-            git --no-pager diff --stat
-            git --no-pager diff -- ui/src/rpc/generated | head -n 120
+            git status --short
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

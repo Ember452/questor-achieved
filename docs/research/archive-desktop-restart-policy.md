@@ -1,7 +1,12 @@
-# 桌面壳 sidecar 重启与关停策略
+# 桌面壳 sidecar 重启与关停策略（历史归档：知识留存，不得再作实现依据）
 
-日期: 2026-10-13 | 复核于: 2026-10-13
-锚点: `desktop/src/main/child-shutdown.ts`、`desktop/src/main/sidecar.ts`、
+> Phase 0 归档（ADR-0040/0044）：原 `docs/notes/2026-10-13-desktop-restart-policy.md` 锚定的
+> 旧 `desktop/src/main/*.ts` 已随壳废弃移出工作树（快照在 `reference-only-archive` 分支）。
+> 机制结论（等 exit 不等 pipe／三层定时／fail-open／Windows SIGTERM≡SIGKILL 语义）对
+> Phase 2b 新壳重建仍有参考价值，故存此；重建后须按新代码重验才可回到 notes/ 格式。
+
+日期: 2026-10-13 | 归档于: 2026-10-14
+锚点（历史快照内路径）: `desktop/src/main/child-shutdown.ts`、`desktop/src/main/sidecar.ts`、
 `desktop/src/main/index.ts`、`desktop/src/main/sidecar-lock.ts`、
 `docs/plans/2026-10-13-phase-u-ui-and-electron-shell.md`
 
