@@ -142,8 +142,8 @@ class AppServer:
     ) -> Dispatcher:
         self._notify = notify
         dispatcher = Dispatcher(notify=self._publish)
-        for name in self._methods():
-            dispatcher.register(name, self._handler(name))
+        for name, handler in self._handler_registry().items():
+            dispatcher.register(name, handler)
         return dispatcher
 
     def _publish(self, notification: Notification) -> None:
@@ -169,55 +169,19 @@ class AppServer:
 
     # ---- 方法表 ----
 
-    def _methods(self) -> tuple[str, ...]:
-        return (
-            "initialize",
-            "thread/create",
-            "thread/list",
-            "thread/rename",
-            "thread/archive",
-            "thread/delete",
-            "thread/show",
-            "thread/fork",
-            "turn/start",
-            "turn/steer",
-            "turn/queue",
-            "turn/dequeue",
-            "run/stop",
-            "session/control",
-            "review/turn_diff",
-            "files/read",
-            "files/list",
-            "content/read",
-            "workspace/status",
-            "workspace/revision",
-            "sessiontrace/get",
-            # M4 编排与长跑（ADR-0025/0026/0027）
-            "task/create",
-            "task/list",
-            "task/show",
-            "task/plan",
-            "task/start",
-            "task/pause",
-            "task/resume",
-            "task/review",
-            "task/reject",
-            "task/retry",
-            "task/complete",
-            "goal/create",
-            "goal/list",
-            "goal/show",
-            "goal/start",
-            "goal/stop",
-            "schedule/create",
-            "schedule/list",
-            "schedule/enable",
-            "schedule/disable",
-            "evidence/get",
-        )
+    def _handler_registry(self) -> dict[str, Handler]:
+        """方法表的**唯一**来源：键序即 `initialize.methods` 的发布顺序（按域分组）。
 
-    def _handler(self, method: str) -> Handler:
-        handlers: dict[str, Handler] = {
+        曾是 `_methods()` 元组与本字典各写一份名单。两份名单的漂移方向是**静默**的：
+        这里多一行而 `_methods()` 没跟上时，`build_dispatcher` 只按 `_methods()` 遍历，
+        那个 handler 永远不被登记、成为死代码，客户端只看到 `unknown_method`。
+        现在 `_methods()` 由这里的键派生，分叉在结构上不可能（护栏：
+        `tests/architecture/test_serve_names_are_contracted.py::test_method_table_has_single_source`）。
+
+        新增方法只改两处：这里加一行 + 写 handler本体。名字合法性由
+        `test_serve_methods_are_documented` 对着 protocol.md §3 验（R4）。
+        """
+        return {
             "initialize": self.initialize,
             "thread/create": self.thread_create,
             "thread/list": self.thread_list,
@@ -239,6 +203,7 @@ class AppServer:
             "workspace/status": self.workspace_status,
             "workspace/revision": self.workspace_revision,
             "sessiontrace/get": self.sessiontrace_get,
+            # M4 编排与长跑（ADR-0025/0026/0027）
             "task/create": self.task_create,
             "task/list": self.task_list,
             "task/show": self.task_show,
@@ -261,7 +226,14 @@ class AppServer:
             "schedule/disable": self.schedule_disable,
             "evidence/get": self.evidence_get,
         }
-        return handlers[method]
+
+    def _methods(self) -> tuple[str, ...]:
+        """方法表 = 注册表键序（单一真相，不再另写一份名单）。"""
+        return tuple(self._handler_registry())
+
+    def _handler(self, method: str) -> Handler:
+        """按名取 handler（护栏逐项验签名形状用；对外路由由 dispatcher 持表）。"""
+        return self._handler_registry()[method]
 
     async def initialize(self, params: dict[str, Any], ctx: HandlerCtx) -> dict[str, Any]:
         """握手：版本严格相等；`needs_setup` 时连接仍可用（问题列在 issues）。"""
