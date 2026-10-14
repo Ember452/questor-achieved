@@ -32,8 +32,24 @@
   归档 accepted。
 - 坑目录 `docs/specs/pitfalls.md` 追加 B-89..B-93（M2.2 复审遗留修复与 M3 期新坑）；
   B-60/63/64/65/66/67 从 open 转 covered（回填具体测试名）。
+- **Phase U 收口后架构审计的四份决策记录**：`docs/adr/0033`（引擎契约提取列为 M6
+  准入条件）、`0034`（长跑驱动的宿主归属，待裁）、`0035`（Review 的 diff 权威源，待裁）、
+  `0036`（AppServer 拆分时机）；`docs/adr/README.md` 索引同步，`development-plan.md`
+  的 Phase U 新增"收口后审计与待裁项"、M6 新增"准入条件"。
+- 护栏测试两件：`tests/architecture/test_serve_names_are_contracted.py` 加
+  `test_method_table_has_single_source` / `test_initialize_publishes_the_same_method_table`（B-119）；
+  新建 `tests/architecture/test_tool_kind_single_source.py`（B-120，AST 扫定义点）。
+  两条均已附负向验证输出。坑目录追加 B-119..B-121（B-121 为已登记的护栏盲区，open）。
 
 ### Changed
+- **`ToolKind` 定义点唯一化**：曾由 `tools/base.py` 与 `limen/gate.py` 各写一份
+  `Literal["file","shell","process","meta"]`，现下沉到 `schemas/model.py` 作唯一定义点，
+  两侧向下 import（B-120）。选 schemas 而非让 tools 引 limen，因为 tools→limen 被
+  `test_permission_gate_single_entry` 禁着。**行为不变**（`Literal` 是纯类型构造）。
+- **`serve/app_server.py` 方法表收成单一来源**：原 `_methods()` 手写字面量元组（44 项）
+  与 `_handler()` 字典（同样 44 项）合成唯一一份 `_handler_registry()`，`_methods()` 改为
+  其键序派生视图，`build_dispatcher` 直接遍历注册表（B-119）。`initialize.methods`
+  的数组序逐字不变→对外线形无变更（`just gen-check` 绿）。
 - **桌面壳选型改判 Electron；界面/桌面壳主线提前为 Phase U**（ADR-0030，取代 ADR-0006
   壳选型与浏览器面板边界、改判 ADR-0024 排期）：`overview.md` v0.2 §4/§12/§14/§15、
   `structure.md` v0.5 §2/§4/§7/§9/§11、`development-plan.md` v0.4（新 Phase U，E1 并轨）同步；
