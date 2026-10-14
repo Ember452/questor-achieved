@@ -66,6 +66,6 @@ M8 沿用"归还即销毁 + label 清道夫 + 快速失败背压"；M1 仅记录
 
 | 编号 | 归属 | 一句话 | 证据 |
 | --- | --- | --- | --- |
-| B-32 | （M8 执行环境） | 命令超时必须双层：容器内 TERM→KILL + 宿主 grace 兜底，缺一层就有逃逸窗口 | `sandbox/container.py#L64-67,L135,L160` |
+| B-35 | serve/M8 | 命令超时必须双层：容器内 TERM→KILL + 宿主 grace 兜底，缺一层就有逃逸窗口 | `sandbox/container.py#L64-67,L135,L160` |
 | B-36 | （M8 执行环境） | 容器归还即销毁重建防状态串台；池创建统一打 label 供 reaper 清遗留 | `sandbox/pool.py#L32,L62-101`、`sandbox/reaper.py#L43-55` |
-| B-32 | evals | 评测默认温度 0 保可复现；超时失败不回喂（无有效失败信息） | `eval/runner.py#L96-101,L167` |
+| B-37 | evals | 评测默认温度 0 保可复现；超时失败不回喂（无有效失败信息） | `eval/runner.py#L96-101,L167` |
