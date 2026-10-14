@@ -1,5 +1,7 @@
 # Questor 开发计划（development-plan）
 
+> ⚠️ **历史文档 / 已被取代（2026-10-14 母本对齐转向）**：本文的 M0–M8 + Phase U 骨架、"扫描式重写不拷贝代码"、三参照阅读地图**均作废**，不再作实现依据。A 阶段纵向切片见 `phase-a-mvp.md`；总路线见 `docs/plans/` 计划文件 + `docs/research/port-ledger.md`。保留仅作历史执行记录。
+
 版本: v0.4（新 Phase U 界面/桌面壳主线提前、E1 并轨；桌面壳改判 Electron，ADR-0030）| 更新: 2026-10-13 | 状态: 待用户评审
 关联: `overview.md` §12（里程碑交付与出口判据，**不变真相**）、`structure.md`（目标态布局 v0.3）、`AGENTS.md`（工程纪律）、`docs/adr/`
 
@@ -422,6 +424,18 @@ evopanel `src/zcode-ui/app-shell/`（resizable 面板组合）、`src/zcode-ui/s
 3. 内嵌浏览器做到真·同页接管（面板 tab 即 Agent 页面、一点即暂停），且 UI 文案如实描述（不谎称镜像为同页）；
 4. 新面板只能走视图注册表、不改内核（`test_no_hardcoded_panel_case` 绿）；不为界面好看牺牲三柱判据（AGENTS §五）。
 
+**收口后审计与待裁项**（2026-10-13，静态读码 + 全门禁实跑）：
+
+- 已做（本会话）：方法表收成单一来源 `_handler_registry()`（坑目录 B-119）、
+  `ToolKind` 定义点唯一化并下沉 `schemas`（B-120），两条护栏均附负向验证输出；
+- **待用户裁决**：ADR-0034（stdio sidecar 的长跑驱动归属——桌面端 Goal/看板会翻成
+  running 而无轮在驱，且 `issues` 无消费方，现状不符 AGENTS §五）、
+  ADR-0035（Review 的 diff 权威源——`review/diff.py` 明写"不看盘、不看 git"，
+  `run` 工具与外部改动的变更一条都没采到）、ADR-0036（AppServer 1189 行的拆分时机）；
+- **待排期**：ADR-0033 把引擎契约提取定为 M6 准入条件（见下节）；
+- 已登记的护栏盲区：B-121（`protocol.md` §3 声明了 `thread/search` 而方法表无该项，
+  现有的单向子集断言抓不到"文档有、实现无"）。
+
 ---
 
 ## Phase M6 — 外部引擎（engine/adapters）
@@ -443,6 +457,10 @@ evopanel `src/zcode-ui/app-shell/`（resizable 面板组合）、`src/zcode-ui/s
 **前端同步点**：引擎选择/状态 UI（目录四态呈现）。
 
 **出口判据**（§12）：契约测试全引擎同绿。
+
+**准入条件**（ADR-0033，待用户裁）：`engine/contract/` 声明 + `tests/contract/` 参数化套件
+先对**内建引擎**跑绿，未绿不许开始写任何外部适配器。现状复核：`engine/contract/` 不存在、
+`tests/contract/` 只有 README.md 且收集 0 条用例（M1 当时把"建了目录"记成了"落了套件"）。
 
 ---
 
