@@ -15,7 +15,7 @@
   （`{"content", "tool_calls"?, "reasoning"?, "ui"?}`，`persistence/chat_message_content.py#L1,L105-110`）。
 - **流镜像**：`evoflow_chat_stream_mirror` + `_meta` 两表单独承载流断线恢复
   （`persistence/schema.py#L449,461`）。
-- **坑**：B-41（百表单体 vs Questor 的 JSONL 真相源 + 索引分离）、B-42（流镜像独立位）。
+- **坑**：B-46（百表单体 vs Questor 的 JSONL 真相源 + 索引分离）、B-47（流镜像独立位）。
 
 ### Questor 采纳决定
 Questor 契约（overview §7）已定：会话正文 append-only JSONL 是唯一真相源，SQLite 只做
@@ -26,7 +26,7 @@ Questor 契约（overview §7）已定：会话正文 append-only JSONL 是唯�
 
 - **FTS5 中文**：查询词 OR + 引号包裹 + **CJK bigram**——unicode61 分词器会把中文连成
   整串，bigram 拆字才能命中（`memory/store.py#L557` 注释）。
-- **坑**：B-43。
+- **坑**：B-48。
 
 ### Questor 采纳决定
 M7 记忆/代码索引的 SQLite FTS 实现直接沿用该技巧；M1 的搜索索引 schema 预留 CJK
