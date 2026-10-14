@@ -84,6 +84,19 @@ Phase 1 已实测：id 为 `json.RawMessage`（数字/字符串皆可，原样�
 - `tests/contract/`（原仅 README 空壳）：本阶段核心交付，建 wuu golden fixtures + 信封/模型层回放（不经 handler）。
 - `schemas/message.py` 新增；`schemas/app_server/` 新建 pydantic 模型包（取代旧 `app_server/v0-1.json`+生成链路线；该路线原服务已废弃的 ui/，Phase 1 改 pydantic 单一来源）。旧 `schemas/llm.py` 与新 `message.py` 的重合在 Phase 2a 收敛，本阶段记此不静默。
 
+### A 阶段方法类型化覆盖率对账（§1.5 机制 5）
+
+| 族 | 模型 | 回放测 | 状态 |
+| --- | --- | --- | --- |
+| initialize / envelope / error | `envelope` `initialize` | `test_replay_wuu_frames` | 已类型化 + 真实 golden |
+| thread/turn/run/item（对话面） | `entities` `families` | `test_replay_wuu_frames` | 已类型化（run 内部透传 P1-7） |
+| config/activity/process/workspace/user-question（控制面） | `control_plane` | `test_replay_control_plane` | 已类型化（activity.interaction / user-question.questions·answer / config 大 summary 透传，随 handler 收紧） |
+| engine list/update、shutdown、text/polish、usage | — | — | **后置**：属 handler/config/面，Phase 2a/5 物化时补类型化（名字已在 `names.py` 登记） |
+| sessionFolder/*、config 写面 | — | — | **后置**（B 配置面，phase0-table 已标） |
+
+> 未类型化项均为“登记过的后置/透传”，非静默遗漏；`names.py` 保证声明面方法/通知全集先行，
+> handler+类型模型 Phase 2a 同批。旧 `test_serve_names_are_contracted`（TL-1）待 handler 迁 wuu 名后转绿。
+
 ### Phase 1 契约层落地状态（本批）
 
 - 已建（均已测）：`schemas/app_server/{names,envelope,initialize,entities,families}.py` +

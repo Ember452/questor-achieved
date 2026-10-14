@@ -19,6 +19,9 @@
     ThreadItem/Run + 状态枚举；`Turn.items` nil→`[]` 硬语义 P1-3）、`families`（thread/turn/run/item 四族）。
   - `tests/contract/` — wuu 帧回放（真实 golden 取自 `client_calls_test.go:60/:89` + 手写期望帧），
     initialize+四族逐字段一致 + 硬语义 + 负向（camelCase/凭据注入即红）。
+  - `schemas/app_server/control_plane.py` + `tests/contract/test_replay_control_plane.py` — 控制/配置/HITL
+    面（config/read·activity(lease_token)·process(offset 语义)·workspace·user-question）类型化 + 回放，
+    补全 A 阶段“做”方法覆盖（pluginhost/activity/config 内部面透传、登记后置）。
   - `tests/architecture/test_protocol_single_source.py` — `protocol.md` §3/§4/§7 ↔ `names.py` 双向同源
     护栏（B-119/B-121，契约侧即绿）。
 - **Phase 0 欠账修正**：回填曾为 0 字节的 `research/phase0-wuu-protocol-table.md`（方法/通知全枚举
