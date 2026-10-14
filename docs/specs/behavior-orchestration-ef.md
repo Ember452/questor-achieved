@@ -26,7 +26,7 @@ CANCELLED → ∅（终态）
   `can_transition` 对未知状态返回空集（fail closed，`#L102-114`）；
   任务状态 ↔ CollabPhase **双向映射**函数成对存在（`#L147-159`）；
   迁移 Hook 注册表按 `(from, to)` 键注册（`#L177-208`）。
-- **坑**：B-33（Hook 异常只 `print` 吞掉，`#L208-224`）、B-34（`evoflow/plans/` 是模型套餐
+- **坑**：B-38（Hook 异常只 `print` 吞掉，`#L208-224`）、B-39（`evoflow/plans/` 是模型套餐
   目录，与任务 plan 撞名——Questor 禁止重载领域词）。
 
 ### Questor 采纳决定
@@ -51,7 +51,7 @@ CANCELLED → ∅（终态）
   （`#L93-108,L164-193`）；hint 指导模型下一步动作。
 - **边界行为**：非严格 plan 协作线程直接放行（`#L153-154`）；授权判定双路（磁盘
   bound_task_id + 任务存储 `is_task_execution_authorized`，`#L111-138`）。
-- **坑**：B-38（门返回的是**结构化错误载荷**而非异常——模型可读、可重试，Questor 编排门沿用）。
+- **坑**：B-43（门返回的是**结构化错误载荷**而非异常——模型可读、可重试，Questor 编排门沿用）。
 
 ### Questor 采纳决定
 `orchestration` 的破坏性编排门**沿用此模式**：动作清单 frozenset + 门函数返回结构化错误
@@ -67,7 +67,7 @@ CANCELLED → ∅（终态）
   `TOOL_RISK_LEVELS`（≠RISK_AUTO 者）自动派生，不手工维护（`#L20-26`）。
 - **Transcript 规则**：发出 gate ToolMessage 时**立即 persist 固定 seq**，保证用户的
   跟进行（澄清答复/批准）排在它之后（`#L14-16`）。
-- **坑**：B-40（gate 消息先持久化定序）。
+- **坑**：B-45（gate 消息先持久化定序）。
 
 ### Questor 采纳决定
 "人工门 ≠ 取消"的语义区分收进 overview 状态机（waiting 旁态 vs cancelled 终态）；
