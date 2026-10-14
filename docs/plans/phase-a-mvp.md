@@ -1,12 +1,12 @@
 # Questor A 阶段纵向切片计划（phase-a-mvp）
 
 版本: v1.1 | 更新: 2026-10-14 | 状态: Phase 1 已交付并绿（serve 运行编解码/`test_serve_names_are_contracted` 转绿属 Phase 2a；packages/protocol 生成 TS 属 Phase 2b）
-**取代** `development-plan.md` 的 M 系列骨架（M0–M8 + Phase U 作废为历史）；关联总计划 `docs/plans/`（Qoder 计划文件）+ `docs/research/port-ledger.md` + `docs/architecture/{overview,structure,protocol,data-model}.md`（已重写为母本对齐口径）。
+**取代** `development-plan.md` 的 M 系列骨架（M0–M8 + Phase U 作废为历史）。**母计划（总计划）**见 [`2026-10-13-wuu-alignment-master-plan.md`](2026-10-13-wuu-alignment-master-plan.md)——本文即其 Phase 0 产出第 7 项，只写“这一阶段具体做什么”，全局不变量（§0）/复刻五机制（§1.5）/exe 三门槛（§1.6）/扩展缝（§1.7）/缺陷台账（§9）/已否方案（§10）以母计划为准；关联 `docs/research/port-ledger.md` + `docs/architecture/{overview,structure,protocol,data-model}.md`（已重写为母本对齐口径）。
 
 > 本文是 **Phase 1–4（A 阶段=可安装 exe）** 的可开工计划。每波开工前按 `port-ledger` + 计划 §1.5 先扫 wuu、以帧序列等价性为出口。规则冲突：**可用 > 扩展 > 性能**。
 
 ## 0. 开工前必读（每窗口，§12-C 交接协议）
-① 本文对应 Phase；② `docs/research/phase0-wuu-*.md` + `scan-wuu-*.md`；③ `port-ledger.md`（TL-1 契约先于实现的红留待 Phase 2a 转绿；TL-3 版本串已定为 `questor-app-server/v0.1`，见 P1-1）；④ `AGENTS.md` §〇§二§三；⑤ 母本 `wuu-main` 对应源码（**不读将废弃的旧 `src/questor/*`**，禁复用旧码）。
+① 母计划 [`2026-10-13-wuu-alignment-master-plan.md`](2026-10-13-wuu-alignment-master-plan.md) 对应 Phase 小节 + 本文对应 Phase（§12-C 第①条要的是母计划，进度不从中读——它是 2026-10-13 计划态快照）；② `docs/research/phase0-wuu-*.md` + `scan-wuu-*.md`；③ `port-ledger.md`（TL-1 契约先于实现的红留待 Phase 2a 转绿；TL-3 版本串已定为 `questor-app-server/v0.1`，见 P1-1）；④ `AGENTS.md` §〇§二§三；⑤ 母本 `wuu-main` 对应源码（**不读将废弃的旧 `src/questor/*`**，禁复用旧码）。
 
 ## Phase 1 — 接缝安全带（契约层，纯新增不碰旧码）
 - **目标**：把"前端吃 wuu 协议 + Python 后端"这道唯一跨语言接缝用契约钉死。

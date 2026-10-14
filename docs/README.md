@@ -8,6 +8,7 @@
 | 想知道前端怎么摆 | [`architecture/structure.md`](architecture/structure.md) | 渲染层目标态住 `desktop/src/renderer`（ADR-0040，照 wuu 重搭）；旧 `ui/`、`desktop/` 已废弃并移出工作树，快照在 `reference-only-archive` 分支 |
 | 想知道某模块怎么设计 | [`architecture/modules/`](architecture/modules/) | 模块内部设计篇（随模块开工落盘；契约仍以 overview §7 §8 与 data-model/protocol 为准） |
 | 想知道当前阶段怎么做 | [`plans/phase-a-mvp.md`](plans/phase-a-mvp.md) | A 阶段纵向切片计划（Phase 1–4）；旧 M 系列 `development-plan.md` 已标历史，不得作实现依据 |
+| 想知道总计划与阶段提示词原文 | [`plans/2026-10-13-wuu-alignment-master-plan.md`](plans/2026-10-13-wuu-alignment-master-plan.md) | 母计划（自计划缓存区归档入库）：全局不变量 §0、复刻五机制 §1.5、exe 三门槛 §1.6、扩展缝 §1.7、缺陷台账 §9、已否方案 §10、各阶段提示词；**计划态快照，进度以 `phase-a-mvp.md` + `research/port-ledger.md` 为准** |
 | 想搞清一条链路实际怎么跑通 | [`notes/`](notes/README.md) | 机制解释笔记：预测→验证写法，每条带锚点；锚点过期会被 `check_notes` 判红 |
 | 想知道为什么这么定 | [`adr/`](adr/README.md) | 决策记录（编号索引与模板在此） |
 | 想知道工程纪律 | [`../AGENTS.md`](../AGENTS.md) | 复用优先的母本移植纪律、语义唯一来源表、注释与语言标准、护栏测试准入、质量门禁、Git 规矩 |
