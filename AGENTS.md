@@ -92,14 +92,14 @@
 
 1. **wuu 测试即 oracle**：移植前先读对应 `_test.go`，抽“输入→输出→边界”进 `docs/research/behavior-<pkg>.md`（含逐符号对照表）；Python 测试照搬断言场景、不照搬代码。
 2. **帧序列等价 fixtures**：`tests/contract/` 用 wuu 测试 golden/期望帧与手写核对基准回放驱动 Questor，逐帧形状/顺序/终态一致（本机无 Go，不靠实跑；运行期行为标盲区）。
-3. **逐符号 provenance + 差异台账**：每个移植文件头写 `# Ported from wuu@<commit> internal/<pkg>/<file>.go — pitfalls: B-NN ...`；凡与 wuu 不一致处登 `docs/research/port-ledger.md` 一行理由。每个 `B-NN` 必须对应一个真实存在的测试。
+3. **逐符号 provenance + 差异台账**：每个移植文件头写 `# Ported from wuu@2026.10.6 internal/<pkg>/<file>.go — pitfalls: B-NN ...`；凡与 wuu 不一致处登 `docs/research/port-ledger.md` 一行理由。每个 `B-NN` 必须对应一个真实存在的测试。**上游标识用的是 wuu 的 `VERSION` 串、不是 commit SHA**：本机拿到的 `wuu-main` 是源码快照、非 git 工作副本，根本没有 commit（详 NOTICE 与 TL-5）。
 
 ### 可逆性判据（拒绝把母本范围膨胀带进来）
 
 想为"将来"留门时先过三问（`overview.md` §14 有完整门清单）：① 要改的代价是搬运还是重写？② 留门是否只落在边界（数据形状/进程边界/路径单点/能力声明）？③ 是否已有第二个真实使用者？
 
 ```python
-# Ported from wuu@<commit> internal/tools/boundary.go — pitfalls: B-50 B-51 B-52
+# Ported from wuu@2026.10.6 internal/tools/boundary.go — pitfalls: B-50 B-51 B-52
 ```
 
 ---

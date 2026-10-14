@@ -10,6 +10,16 @@
 ## [未发布]
 
 ### Added
+- **Phase 2 开工前置（T0）**：
+  - `NOTICE` + `third_party/THIRD-PARTY-NOTICES`——ADR-0037 的 MIT 署名硬线在 Phase 0/1
+    未曾真移植代码所以**两件都不存**（TL-6）；现逐上游登记，wuu 许可证与 `wuu-main/LICENSE`
+    按行比对 **21/21 EXACT MATCH**（逐字收录，不摘要）。范围如实划定：随 exe 分发的
+    第三方依赖清单留由 ADR-0019 生成器在打包阶段产出。
+  - `provenance` 上游标识改用 `wuu@2026.10.6`（实测 `wuu-main/VERSION`）——本机 `wuu-main` 是
+    源码快照、**非 git 工作副本**（`git rev-parse HEAD` 报 `not a git repository`），旧口径
+    `wuu@<commit>` 写不出真实存在的 SHA（TL-5；AGENTS §二、NOTICE 同批改）。
+  - `scripts/ci/check_docs.py` 补两条机械断言：入口文档（AGENTS.md / docs/README.md）里反引号
+    `.md` 路径必须存在；必读位指作废横幅档且同句未标“作废/不得/历史”即判红（横幅只认前 8 行）。
 - **Phase 1 跨语言接缝契约层**（计划 Phase 1；protocol.md §8、behavior-protocol-wuu §5）：
   - `schemas/message.py` — ChatMessage/Role/Part 判别联合 + FinishReason 归一枚举与映射
     （照 `providers/types.go#L116-146`）；frozen + `extra=forbid` 机械拒凭据（P1-4）；Origin≠Role（P1-5）。
@@ -70,6 +80,20 @@
   两条均已附负向验证输出。坑目录追加 B-119..B-121（B-121 为已登记的护栏盲区，open）。
 
 ### Changed
+- **ADR-0033 / ADR-0034 从 `proposed` 改判，并修正两份“计划说一套、仓里做一套”**：
+  ADR-0033 的“引擎契约后移到 M6”作废——薄契约随 **Phase 2a** 落 `engine/contract.py`
+  （母计划 §1.7 缝 1；且 2a 是循环推倒重建的唯一时机），但其“无第二实现者时不得假绿”与
+  “建了目录不等于落了套件”两条结论保留；原引用的 `development-plan.md` M6 编号换成现行文档。
+  ADR-0034 的 A/B/C 因长任务面后置（ADR-0043）而作废，但“降级必须握手可见”转为 2a 硬约束
+  （`initialize` 如实报能力；未实现方一律 `unknown_method`）。`docs/adr/README.md` 索引两行同步。
+- **port-ledger 处置地图纠偏**：`gesta` 从“保留”拆出并改判为“按 wuu `internal/session` **重写为
+  SQLite 权威库**”（旧实现是 JSONL 真相源 B-46，与 `data-model.md` v2.0 + ADR-0041 硬冲突；
+  标“保留”会让窗口以为无需改动）；`state` 行订正为“旧文件移出时机 ≠ 语义继承时机，新 gesta
+  在 2a 继承 B-71/B-72/B-73/B-76 后旧侧才能移出”。
+- **磁盘残留旧前端产物隔离**：`ui/`（14036 文件，全部是 `dist`/`node_modules`，非跟踪文件 0 个）、
+  `desktop/`（仅剩空目录树与构建输出）、根 `node_modules/`（无根 `package.json`，属旧 workspace
+  遗留）移入 `..\.quarantine\`——它们不在版本库内，但会被 electron-vite 误拾、也会被窗口误读作
+  “旧码可用”（§12-E 防复用机制的实体面）。
 - **母计划（总计划）自编辑器缓存区入库 + 修必读表指向作废文档**（port-ledger TL-4；可追溯纪律见
   ADR-0008）：新增 `docs/plans/2026-10-13-wuu-alignment-master-plan.md`，逐字归档 Qoder 计划缓存区那份
   `Questor_对齐_wuu_重构计划_99f1c707.md`（与原文 `Compare-Object` 比对＝3 行新增、0 行改写），顶部加
@@ -107,6 +131,15 @@
   `Engine.__init__` 加 `inbox: InboxPort | None = None` 参数与 `attach_inbox()` setter。
 
 ### Fixed
+- 坑目录新增并当场闭合两条（B-123、B-124），均带负向验证：
+  - **B-123**（docs，转 covered）——台账/计划里“已修/已 redirect”状态行不做存在性复核就会把
+    “打算修”固化成“已修”（AGENTS §七 必读表实测仍指作废档，TL-2 却早记“已 redirect”）；
+    配对测 `tests/unit/test_check_docs_guards.py`（6 条：真仓必绿 + 三类注真偏离各自判红；
+    旧版脚本对同一注入全返绿，以此留证据）。`pitfalls.md` 里 B-123 归属记为 `docs`，**系
+    `structure.md` §2 清单外首例**，待用户裁是否把文档类加进清单。
+  - **B-124**（ci）——断言子进程中文输出必须显式钉 `PYTHONIOENCODING=utf-8`：Windows 上被
+    pipe 的子进程 stdout 默认跟随控制台代码页（本机 cp936），解码异常落在 `communicate()`
+    的读线程里只被 pytest 记成 warning，结果是“绿得不对、红得不明”的双盲态（实测四条同时失因）。
 - `tools/executor.py::_as_outcome`：`asyncio.CancelledError` 不再被降级为 error 结果，
   改重传（AGENTS §五 异步纪律；B-89；M2.2 复审遗留 M3 修）。
 - `tools/impl/{read,write,edit,search,list}.py`：async execute 里的同步文件 IO 全部沉入

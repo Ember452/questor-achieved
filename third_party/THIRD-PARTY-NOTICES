@@ -1,0 +1,65 @@
+THIRD-PARTY-NOTICES — Questor
+=============================
+
+本文件登记 Questor 所使用的第三方上游作品的许可证与署名。纪律出处：
+`AGENTS.md` §二「MIT 署名硬线」、`ADR-0037`（复用优先的母本移植）、`ADR-0038`
+（wuu 单锚 + 非母本规格处理规则）。
+
+维护规则：
+1. **每移植一个上游文件**，该文件头写 provenance（`# Ported from wuu@2026.10.6
+   internal/<pkg>/<file>.go — pitfalls: B-NN ...`），且上游许可证必须在本文件在册。
+2. 上游许可证**逐字收录**，不改写、不摘要——摘要会丢掉许可条件本身。
+3. 本文件当前覆盖「母本移植与设计参照」两类署名。随 exe 分发的第三方运行时
+   依赖（httpx / pydantic / starlette / uvicorn / pywin32 / keyring 等）的许可证
+   清单，属打包阶段（`ADR-0019` 生成物机械核查）落地时自动生成并核对，此处不
+   预先手写——手写清单与真实依赖必然漂移，那是第二套真相。
+
+--------------------------------------------------------------------------------
+wuu — MIT License
+--------------------------------------------------------------------------------
+上游：wuu（Go agent 内核 + Electron 桌面工作台），版本标识 `VERSION 2026.10.6`。
+交付形态：源码快照（目录 `wuu-main`），**非 git 工作副本，故无 commit SHA**；
+provenance 里的 `wuu@2026.10.6` 用的是上游 VERSION 串，替代 commit，
+此项代换在 `docs/research/port-ledger.md` 登记（见 TL-5）。
+用途：Questor 的 Python 实现按文件逐个翻译其已验证逻辑（边界层与语义规格）。
+
+上游许可证原文如下（逐字收录）：
+
+    MIT License
+
+    Copyright (c) 2026 Andy wu
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+--------------------------------------------------------------------------------
+EvoFlow — PolyForm Noncommercial License 1.0.0（仅设计参照，未取码）
+--------------------------------------------------------------------------------
+用途：长任务 / 编排 / 验收层（Phase 6）的**规格来源**——读设计、围 Questor 自研
+run 模型重写，不复制其源码、不引入其代码结构（`ADR-0038` / `ADR-0043`）。
+因此本文件不收录其许可证全文：本项目不分发其任何代码或实质部分。
+若未来改变该边界（哪怕只搬一段常量表），必须先取回其许可证原文并在此在册，
+并重新确认可用范围。
+
+--------------------------------------------------------------------------------
+FlowCoder / AfterMatter — 已退出的参照项目（无码留存）
+--------------------------------------------------------------------------------
+早期一代实现曾按 FlowCoder（Python）移植逻辑；该纪律已由 `ADR-0037` /
+`ADR-0038` 废止。当前树内不保留其代码。`docs/specs/pitfalls.md` 中形如
+`FlowCoder agent/core.py#L703-721` 的引用是**坑证据**（记录已付过学费的失效
+形状），不是代码复用来源。

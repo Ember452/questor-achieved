@@ -1,8 +1,29 @@
-# ADR-0034 — 长跑驱动的宿主归属：stdio sidecar 挂、http 改 opt-in
+# ADR-0034 — 长跑驱动的宿主归属：后置 Phase 6，但其“降级必须握手可见”结论仍约束 Phase 2a
 
-状态: proposed（待用户裁决，两个选项都可行但交付面不同）
-日期: 2026-10-13 | 关联: `serve/longrun.py`、`serve/http.py`、`serve/stdio.py`、
-`serve/app_server.py`（`goal_waker`）、ADR-0026（vigilia 调度与清扫）、ADR-0030（Electron 壳）
+状态: accepted（部分结论 by ADR-0043 superseded；候选方案 A/B/C 因长任务面后置而作废，
+      见下“改判记录”）
+日期: 2026-10-13 | 改判: 2026-10-14 | 关联: `serve/longrun.py`（Phase 2a 同批移出工作树）、
+`serve/stdio.py`、ADR-0043（长任务层后置 Phase 6）、ADR-0044（旧实现处置地图）、
+`docs/research/port-ledger.md`
+
+## 改判记录（2026-10-14）
+
+三个候选方案（A/B/C）的争点是“长跑驱动该挂在哪个宿主”，而母本对齐转向后这个问题已不存在：
+
+1. **长跑/编排整族后置 Phase 6**（ADR-0043）。`goal/*`、`task/*`、`schedule/*` 不属 A 阶段方法面，
+   `protocol.md` §3 已把“明确不存在”写死；`serve/longrun.py`、`serve/http.py`、`serve/ws.py` 属旧世界，
+   Phase 2a 重写 serve 时同批移出工作树（port-ledger 处置地图）。所以“stdio 宿主挂不挂驱动”
+   在 Phase 2a **无可挂之物**，A/B/C 均不再适用。
+2. **本 ADR 真正要防的那件事仍然有效，并转为 Phase 2a 的硬约束**：一切能力缺失必须
+   **在握手/响应里机器可读**，不得只写在注释里，也不得“返成功但什么都没跑”。具体到 2a：
+   - `initialize` 回包必须如实回报本机能力（`features` / `issues`），未实现的面不得占位成可用；
+   - 未实现的方法一律返 `unknown_method`（进 `protocol.md` §7 错误方言），绝不静默登记状态后
+     返回成功——否则用户看到的是假的完成状态（AGENTS §一 铁律 1 + §五 判据）。
+3. 本 ADR 里关于 `StoreLock` 跨进程语义、“判到点与起轮在锁外”的双触发窗口分析、以及单主归属的
+   必要性，**属 Phase 6 重建长跑层时必须重新读的真实证据**，不随本次改判作废（故本文件不删）。
+
+**触发重评**：Phase 6 开工时若重新引入长跑驱动宿主，本 ADR 的 A/B/C 必须在新拓扑（stdio sidecar
+唯一宿主、无 http 宿主默认开启）下重裁；届时还需一并回答“双主如何互斥”（租约而非 OS 锁）。
 
 ## 问题（先摆实测事实，非推测）
 

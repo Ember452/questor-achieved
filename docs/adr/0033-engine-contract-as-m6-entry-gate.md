@@ -1,8 +1,36 @@
-# ADR-0033 — 引擎契约提取列为 M6 准入条件（不再追认"随 M2 物化"）
+# ADR-0033 — 引擎契约提取：原定“列为 M6 准入”，现改判为随 Phase 2a 落薄契约
 
-状态: proposed（待用户裁决）
-日期: 2026-10-13 | 关联: `docs/plans/development-plan.md` Phase M6、`tests/contract/README.md`、
-`AGENTS.md` §五 出口判据、structure §11 M6 行、overview §11
+状态: accepted（2026-10-14 改判；原状态 proposed 待用户裁决）
+日期: 2026-10-13 | 改判: 2026-10-14 | 关联: 母计划 `docs/plans/2026-10-13-wuu-alignment-master-plan.md`
+§1.7 缝 1、`docs/plans/phase-a-mvp.md` Phase 2a、`tests/contract/README.md`、
+`AGENTS.md` §五 出口判据、`structure.md` §3（原写的 development-plan M6 / structure §11 M6 行已随
+M 系列作废，引用换成现行文档）
+
+## 改判记录（2026-10-14，母本对齐转向后）
+
+**本 ADR 的“后移到 M6”结论作废**，改为：引擎薄契约（`EngineID/TurnInput/EventSink/`
+`ApprovalHandler/TurnResult/Session/Descriptor`）**随 Phase 2a 一起落地**，位置
+`src/questor/engine/contract.py`。
+
+为何改：原结论依据的两条前提在转向后都不成立——
+1. 原怕的是“在第二个引擎存在前抽契约只会复述内建私有形状”。母计划 §1.7 缝 1 要的**不是多引擎**，
+   而是“将来接外部引擎宿主（codex/claude CLI）时无冲突接入”的那条**命名缝**；保住它=不删符号，
+   成本近于零，而“删了再补”是重写。
+2. 原理由里“从 loop 逆向出契约的成本单调上升”恰好指向相反的做法：Phase 2a 正是循环**推倒重建**
+   的唯一时刻，此时先定契约比事后逆向便宜一个数量级。本 ADR 用来否定“先摆 Protocol 骨架再说”
+   这种中间态，而该风险在重建场景下不存在（新旧不同批，并行不会发生）。
+
+**仍然保留的本 ADR 结论**（未被改判推翻）：
+- `tests/contract/` 的参数化套件（拿两个实现当被测对象）仍不得在无第二实现者时假绿——Phase 2a
+  只交“薄契约 + 内建引擎的单实现回放”；参数化套件等第二个引擎宿主出现时再开，否则契约会退化成
+  内置引擎私有行为的复述（那句判据原样有效）。
+- “建了目录不等于落了套件”这条教训有效：本 ADR 因此要求契约声明与配套测试**同批落地**，
+  不得先建空目录再在台账上打勾。
+
+**当时引用的“实测现状”已过期，就地订正（不删原文、只标日期）**：本 ADR 落笔时写的
+`engine/` 只有七文件无 contract、`tests/contract/` 只有一个 README.md 且收集 0 条，属 2026-10-13 状态；
+2026-10-14 Phase 1 已落 `tests/contract/{test_replay_wuu_frames,test_replay_control_plane}.py` +
+两份 wuu 真实 golden（该套件现绿）。engine 侧七文件仍在，契约声明由本改判补上。
 
 ## 结论
 

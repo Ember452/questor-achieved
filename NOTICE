@@ -1,0 +1,52 @@
+NOTICE
+Questor — Copyright (c) 2026 Questor contributors
+
+This project contains code and design translated from upstream open-source
+works. Attribution terms are recorded here and in
+`third_party/THIRD-PARTY-NOTICES`; every translated source file carries a
+provenance header naming its upstream origin.
+
+--------------------------------------------------------------------------------
+1. wuu — MIT License
+--------------------------------------------------------------------------------
+Upstream work : wuu (Go agent kernel + Electron desktop workbench)
+Upstream source : supplied to this repository as a source snapshot (directory
+                  `wuu-main`). The snapshot is not a git working copy, so no
+                  commit SHA is available.
+Upstream version identifier : VERSION 2026.10.6
+License       : MIT (Copyright (c) 2026 Andy wu) — full text in
+                third_party/THIRD-PARTY-NOTICES
+Our use       : Questor's Python implementation translates wuu's verified
+                logic file by file (see AGENTS.md §二 "复用优先的母本移植纪律"
+                and ADR-0037). Derivative works are licensed under MIT as well;
+                the upstream copyright notice and permission notice are
+                retained in every translated file's provenance header and in
+                third_party/THIRD-PARTY-NOTICES.
+
+Provenance header convention (per AGENTS.md §二):
+
+    # Ported from wuu@2026.10.6 internal/<pkg>/<file>.go — pitfalls: B-NN ...
+
+`wuu@2026.10.6` is the upstream VERSION string, used in place of a commit SHA
+because the upstream was supplied as a non-git snapshot; the substitution is
+recorded in docs/research/port-ledger.md so the identifier is never read as a
+commit that does not exist.
+
+--------------------------------------------------------------------------------
+2. EvoFlow — PolyForm Noncommercial License (design reference only)
+--------------------------------------------------------------------------------
+Upstream work : EvoFlow
+Our use       : read-only design reference for the deferred long-run /
+                orchestration layer (Phase 6). NO source code, and no
+                substantial portion of its code, is copied into this
+                repository; only architecture and behavioural ideas are
+                described in documentation, which is not a restricted use
+                under its license. See ADR-0038 / ADR-0043.
+
+--------------------------------------------------------------------------------
+3. FlowCoder / AfterMatter — withdrawn reference projects
+--------------------------------------------------------------------------------
+An earlier generation of this project translated logic from FlowCoder (Python).
+That discipline was retired by ADR-0037/ADR-0038: no FlowCoder code remains in
+the tree. Historical pitfall entries still cite its paths as evidence of bugs
+already paid for; those citations are documentation references, not code reuse.

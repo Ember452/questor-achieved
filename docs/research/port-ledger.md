@@ -10,7 +10,9 @@
 | TL-1 | `protocol.md` 词表取齐 wuu（`thread/start`/`run/updated` 等），但 `serve/app_server.py` 仍注册旧名（`thread/create`/`run/stop`/`delta`） | **transition-red** | 护栏 `test_serve_methods_are_documented`、`test_serve_notification_families_are_documented` 现红 2 条 = 契约先行、实现待迁移的**正确信号**；**Phase 1/2 重写 serve 后转绿**。不作废护栏、不改测试迁就。 |
 | TL-2 | `overview.md`/`structure.md`/`protocol.md`/`data-model.md` 已改母本对齐口径；`modules/*.md`、`development-plan.md`、`phase-u-*` 仍是旧 M 系列/FlowCoder 口径 | 待收口 | 各 `modules/X.md` 在对应 Phase 移植前重写；`development-plan.md`/`phase-u-*` 加历史横幅（见下"文档处置"）。窗口在重写前以本台账 + 转向 ADR 为准（AGENTS §七 必读已 redirect）。**末句长期不实**：§七 必读表实测仍指 `development-plan.md`，2026-10-14 才真改到位（见下行 TL-4 与 B-123）。 |
 | TL-3 | 协议版本串 `questor-app-server/v0.1` vs wuu `wuu-app-server/v0.1` | **已定（见 P1-1）** | 用户拍板取 `questor-app-server/v0.1`；initialize 仍严格相等不降级（B-60），Phase 2b 重建前端时其常量对齐。复用 wuu 前端需两端版本串一致：要么保留 `wuu-app-server/v0.1`，要么 patch 前端 `packages/protocol`。Phase 1 接缝实测时定，记此不静默。 |
-| TL-4 | 母计划（总计划）只存于 Qoder 计划缓存区 `cache/plans/Questor_对齐_wuu_重构计划_99f1c707.md`，未进版本库；而仓库内 10+ 处按「计划 §1.5 机制 N / §12-A~E / §13 C0–C21 / §14」编号引用它（`docs/specs/README.md`、`tests/contract/README.md`、`schemas/app_server/initialize.py`、`behavior-protocol-wuu.md`、`modules/habena.md`、本台账等） | **已收口** | 2026-10-14 原文**逐字**入库为 `docs/plans/2026-10-13-wuu-alignment-master-plan.md`，顶部加“计划态快照、进度以 phase-a-mvp + 本台账为准”横幅；母计划 §13（仍写“ADR 待写”）与 §12-B（`ui/`、旧 `desktop/` 已移出）的滞后**不改写原文**，现状由本台账“冲突消解收口”与“处置地图”承载。同批修 `AGENTS.md` §七 必读表（原指向已作废的 `development-plan.md`）。本坑已登记 `pitfalls.md` **B-123**（open）：`check_docs.py` 只校 md 相对链接存在性，反引号路径与“作废档居必读位”仍是机械盲区——文档类收口项须用 grep 断言旧指向已消失，不能只在台账上挨行打勾。 |
+| TL-4 | 母计划（总计划）只存于 Qoder 计划缓存区 `cache/plans/Questor_对齐_wuu_重构计划_99f1c707.md`，未进版本库；而仓库内 10+ 处按「计划 §1.5 机制 N / §12-A~E / §13 C0–C21 / §14」编号引用它（`docs/specs/README.md`、`tests/contract/README.md`、`schemas/app_server/initialize.py`、`behavior-protocol-wuu.md`、`modules/habena.md`、本台账等） | **已收口** | 2026-10-14 原文**逐字**入库为 `docs/plans/2026-10-13-wuu-alignment-master-plan.md`，顶部加“计划态快照、进度以 phase-a-mvp + 本台账为准”横幅；母计划 §13（仍写“ADR 待写”）与 §12-B（`ui/`、旧 `desktop/` 已移出）的滞后**不改写原文**，现状由本台账“冲突消解收口”与“处置地图”承载。同批修 `AGENTS.md` §七 必读表（原指向已作废的 `development-plan.md`）。本坑已登记 `pitfalls.md` **B-123**（现转 covered：`check_docs.py` 已加两条机械断言 + `tests/unit/test_check_docs_guards.py` 六条用例含负向注入）。 |
+| TL-5 | 上游标识写不了 commit SHA：本机 `wuu-main` 是源码快照、**非 git 工作副本**（实测 `git -C wuu-main rev-parse HEAD` 报 `not a git repository`），而 AGENTS §二 与母计划 §1.5 机制 3 都要求 provenance 写 `wuu@<commit>` | **已收口（Phase 2 开工前置）** | provenance 统一改用上游 `VERSION` 串：`# Ported from wuu@2026.10.6 internal/<pkg>/<file>.go`（实测 `wuu-main/VERSION` = `2026.10.6`；`LICENSE` 为 `Copyright (c) 2026 Andy wu`）。AGENTS §二、`NOTICE`、`third_party/THIRD-PARTY-NOTICES` 同批改；记此行以防日后把它误读成一个不存在的 commit。若将来拿到带历史的 wuu git 仓库，需回到 commit SHA 口径并在此登基线。 |
+| TL-6 | MIT 署名件缺失：ADR-0037 要求 `NOTICE` + `third_party/THIRD-PARTY-NOTICES`，但 Phase 0/1 未曾真移植代码，两件均不存在（实查 `Test-Path` 皆 False） | **已落地（Phase 2 开工前置）** | 新建 `NOTICE`（逐上游登记 + provenance 口径）与 `third_party/THIRD-PARTY-NOTICES`（wuu MIT **逐字收录**，与 `wuu-main/LICENSE` 按行比对 21/21 EXACT MATCH；比对命令与结果记入本批 commit 正文）。范围如实界定：随 exe 分发的第三方依赖许可证清单留由 ADR-0019 生成器在打包阶段产出，手写必与真实依赖漂移。 |
 
 ### 文档处置（回答"删什么/会不会影响开发"）
 > 判据：会不会被开窗口当"现状/实现依据"读错。多数是**标历史/改写中**，不是删；仅无保留价值者删。
@@ -40,9 +42,10 @@
 | `desktop/`（旧 Electron 壳） | 废弃重写（知识存 `archive-desktop-restart-policy.md`） | **已物理移出** + desktop.yml 删 | 已完成 |
 | `serve` `tools` `limen` `sessiontrace` `review` `cli` `context` | 按 wuu 蓝本重写 | 过渡期保留（被保留侧依赖闭包） | Phase 2a 新内核替换同批 |
 | `engine`（除 `model.py`） `providers` | 按 wuu 蓝本重写（FinishReason 归一等语义重验） | 过渡期保留（testenv/providers 依赖） | Phase 2a/2b 替换同批 |
-| `state` | 按 wuu 蓝本重写（→ SQLite 权威 C3） | 过渡期保留（config/gesta/secrets/workspaces/worktree 依赖 atomic/paths/locks） | 新存储层落地同批（Phase 3/4） |
+| `state` | 按 wuu 蓝本重写（→ SQLite 权威 C3） | 过渡期保留（config/gesta/secrets/workspaces/worktree 依赖 atomic/paths/locks） | 新存储层落地同批。**订正（2026-10-14）**：新 gesta SQLite 层在 **Phase 2a** 落地，其已验证 Windows 语义（B-71/B-72/B-73/B-76）由新侧继承后旧 `state` 才能移出；本行“Phase 3/4”仅指旧文件本身的物理移出时机 |
 | `orchestration` `vigilia` `evidence` | 后置 Phase 6 | 保留不动 | Phase 6 重建时 |
 | `gesta` `schemas` `config` `secrets` `version` `workspaces` `worktree` `capability` `prompts` `habena` `testenv` | 保留（知识/外围/接缝） | 保留 | — |
+| `gesta`（**从上行拆出，2026-10-14 改判**） | 按 wuu `internal/session` **重写为 SQLite 权威库**——旧实现是 append-only JSONL 真相源（B-46），与 `data-model.md` v2.0 + ADR-0041（SQLite 权威、JSONL 降为镜像）硬冲突；标“保留”会误导窗口以为无需改动 | Phase 1 已落契约模型知识；存储层重写属 Phase 2a | Phase 2a 新库落地同批（旧 `gesta/{writer,transitions}.py` 与其旧立场测试移出） |
 
 | 尾注 | 登记 |
 | --- | --- |

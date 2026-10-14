@@ -61,8 +61,8 @@
 | [0030](0030-desktop-shell-electron-and-ui-track.md) | 桌面壳改判 Electron；界面/桌面壳主线提前为 Phase U（取代 0006 壳选型/浏览器面板边界、改判 0024 排期） | accepted |
 | [0031](0031-ui-diff-renderer-and-vitest.md) | Review 面板 diff 渲染器与前端测试面依赖引入（@pierre/diffs + vitest + happy-dom） | accepted |
 | [0032](0032-electron-shell-and-toolchain.md) | Electron 桌面壳工具链依赖引入（electron + electron-vite + electron-builder；`desktop/` 与 `ui/` 各自一份 lockfile） | accepted |
-| [0033](0033-engine-contract-as-m6-entry-gate.md) | 引擎契约提取列为 M6 准入条件 | 仍有效；落地在 Phase 2（engine 按 wuu `agentengine` 移植时） |
-| [0034](0034-longrun-driver-host-ownership.md) | 长跑驱动的宿主归属 | 部分改判：长任务面后置见 [0043]；可见柱缺口（ui 不消费 issues/needs_setup）独立跟 |
+| [0033](0033-engine-contract-as-m6-entry-gate.md) | 引擎契约提取：原定“列为 M6 准入”→现改判为随 Phase 2a 落薄契约 | accepted（2026-10-14 改判；参数化套件仍等第二实现者） |
+| [0034](0034-longrun-driver-host-ownership.md) | 长跑驱动的宿主归属 | accepted（A/B/C 因长任务面后置 by [0043] 作废；“降级必须握手可见”转为 Phase 2a 硬约束） |
 | [0035](0035-review-diff-authoritative-source.md) | Review 的 diff 权威源 | **superseded by [0045]**（照 wuu 双源，采集点在壳侧） |
 | [0036](0036-app-server-split-timing.md) | AppServer 拆分时机 | **withdrawn by [0037]**（重写时按域分文件 + 方法表单一来源） |
 | [0037](0037-reuse-first-over-rewrite.md) | 复用优先取代全量重写（母本 wuu 逐文件移植 + MIT 署名） | accepted |
