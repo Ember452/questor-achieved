@@ -38,6 +38,16 @@ class PermissionMode(StrEnum):
     UNCONFINED = "unconfined"
 
 
+#: 工具类别（limen 判定输入与 tools 声明面的共用词表）。
+#:
+#: 定义点唯一放在 schemas：`tools`（第 7 层）声明自己属于哪档、`limen`（第 9 层）据此判定，
+#: 而 tools→limen 的 import 被架构测试禁着（权限判定无绕过路径）——能同时服务两处的
+#: 只有底层 schemas。曾在两处各写一份 `Literal[...]`：`typing` 按参数元组缓存 `Literal`
+#: 特化，两份平行定义运行时是同一个对象，连 `is` 比都看不出来；漂移后 pyright 各自都绿，
+#: 代价是新类别在门里永远判不到。护栏：`tests/architecture/test_tool_kind_single_source.py`。
+ToolKind = Literal["file", "shell", "process", "meta"]
+
+
 class RunStatus(StrEnum):
     """运行状态（data-model §3.1）；迁移白名单唯一入口在 questor.gesta.transitions。"""
 
