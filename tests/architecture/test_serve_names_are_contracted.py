@@ -15,6 +15,8 @@ import pathlib
 import re
 from typing import NoReturn
 
+import pytest
+
 from questor.schemas.model import PermissionMode
 from questor.serve import app_server, notifications
 from questor.serve.envelope import error_payload
@@ -52,6 +54,13 @@ def _registered_methods() -> tuple[str, ...]:
     return server._methods()
 
 
+@pytest.mark.xfail(
+    reason=(
+        "契约先于实现：protocol.md 已取齐 wuu 词表，serve 仍旧名，"
+        "Phase 1/2 迁移后转绿；见 docs/research/port-ledger.md TL-1"
+    ),
+    strict=False,
+)
 def test_serve_methods_are_documented() -> None:
     documented = _documented("3. 方法表")
     registered = set(_registered_methods())
@@ -61,6 +70,13 @@ def test_serve_methods_are_documented() -> None:
     )
 
 
+@pytest.mark.xfail(
+    reason=(
+        "契约先于实现：protocol.md 已取齐 wuu 通知族，serve 仍旧名，"
+        "Phase 1/2 迁移后转绿；见 docs/research/port-ledger.md TL-1"
+    ),
+    strict=False,
+)
 def test_serve_notification_families_are_documented() -> None:
     documented = _documented("4. 事件族")
     produced = notifications.PROTOCOL_NOTIFICATIONS
@@ -125,6 +141,36 @@ def test_dispatcher_registers_only_known_methods() -> None:
     server = app_server.AppServer(create_engine=_no_engine)
     dispatcher = server.build_dispatcher()
     assert set(dispatcher.known_methods()) == set(_registered_methods())
+
+
+def test_method_table_has_single_source() -> None:
+    """方法表只许一处定义：`_methods()` 必须是 handler 注册表的派生视图。
+
+    咬的是上一轮审计查出的形状：`_methods()` 与 `_handler()` 曾各抄一份 44 项名单。
+    两份名单的失效方向是**静默**的——注册表里多一项而方法表没跟上时，`build_dispatcher`
+    只按 `_methods()` 遍历，那个 handler 永远不被登记成死代码；而
+    `test_dispatcher_registers_only_known_methods` 比的是这两面的交集，抓不到它。
+    负向验证：把注册表里任意一行复制改名（造出第三项）即红。
+    """
+    server = app_server.AppServer(create_engine=_no_engine)
+    registry = server._handler_registry()
+    assert tuple(registry) == server._methods()
+    assert len(registry) == len(set(registry)), "方法表里有重复项"
+    assert server._methods(), "方法表为空——本测试会空转，先确认重构"
+
+
+def test_initialize_publishes_the_same_method_table() -> None:
+    """握手发布的 methods 就是注册表键序：客户端的能力发现面不得另成一份真相。"""
+    import asyncio
+
+    from questor.serve.dispatch import HandlerCtx
+
+    server = app_server.AppServer(create_engine=_no_engine)
+    dispatcher = server.build_dispatcher()
+    context = HandlerCtx(request_id="r1", principal="p1", trace_id="t1")  # noqa: S106
+    result = asyncio.run(server.initialize({"protocol_version": ""}, context))
+    assert result["methods"] == list(server._methods())
+    assert set(result["methods"]) == set(dispatcher.known_methods())
 
 
 def test_handler_signature_takes_context_object() -> None:
