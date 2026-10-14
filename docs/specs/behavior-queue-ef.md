@@ -14,7 +14,7 @@ Questor 模块归属：`vigilia`（值守长跑、调度、清扫）。
 - **重入防护**：per-task `asyncio.Lock` 字典 + 守卫锁（`unattended_task_pipeline.py#L40-41`
   的 `_advance_locks` / `_advance_locks_guard`，`#L211-217` 的 `_advance_lock_for`）——
   同一任务不会被并发推进。
-- **坑**：B-33（per-task 锁字典模式）。
+- **坑**：B-49（per-task 锁字典模式）。
 
 ### Questor 采纳决定
 tick + 并发上限 + per-task 锁沿用；tick 间隔与并发上限进 vigilia 常量表。
@@ -27,7 +27,7 @@ tick + 并发上限 + per-task 锁沿用；tick 间隔与并发上限进 vigilia
   （`#L33`）——休眠/时钟漂移的敏感性由调用方知晓。
 - **边界行为**：automation_name 等字段截断 120 字符入库（`#L622,L644`）——入库前统一
   截断防超长。
-- **坑**：B-36（本地时钟敏感 + 去重单闸）、B-37（once_fired 幂等标记）。
+- **坑**：B-41（本地时钟敏感 + 去重单闸）、B-42（once_fired 幂等标记）。
 
 ### Questor 采纳决定
 once 幂等标记沿用；"错过不重放"写进 vigilia 调度语义（overview §5 已定）；本地时钟
@@ -41,7 +41,7 @@ once 幂等标记沿用；"错过不重放"写进 vigilia 调度语义（overvie
   当 sticky running 会话 ≥ batch 时可每 0.5s 紧密空转——现版"一次 interval 一批，
   剩余下轮再收"。
 - **边界行为**：可用环境变量整体关闭（`EVOFLOW_ZOMBIE_SWEEPER=0`，`#L47-48`）。
-- **坑**：B-35（清扫必须分批游标）、B-34（状态真值在运行时侧，重启必有 stale——
+- **坑**：B-40（清扫必须分批游标）、B-44（状态真值在运行时侧，重启必有 stale——
   启动 + 周期双 reconcile，清扫的存在本身就是补救）。
 
 ### Questor 采纳决定
