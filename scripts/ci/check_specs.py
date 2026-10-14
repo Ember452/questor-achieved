@@ -36,6 +36,9 @@ REF_ROOTS = {
 }
 BACKTICK = re.compile(r"`([^`]+)`")
 VALID_STATUS = ("open", "covered", "moot")
+SPECS_DIR = REPO / "docs" / "specs"
+_BID = re.compile(r"B-\d+")
+_ROW_ID = re.compile(r"^\| (B-\d+) \|")
 
 
 def _check_evidence(cells: list[str]) -> str | None:
@@ -73,6 +76,8 @@ def main() -> int:
         problems.append(f"有效条目数 {len(active)}（不计 moot）< {args.min}")
     if numbers != list(range(1, len(numbers) + 1)):
         problems.append("编号不连续或有跳号（moot 条目仍应占号，不回收）")
+    if len(set(numbers)) != len(numbers):
+        problems.append("pitfalls.md 存在重复编号（全局须唯一）")
     for num, module, desc in rows:
         if not module or module.startswith("-"):
             problems.append(f"{num}: 缺归属模块")
@@ -89,6 +94,20 @@ def main() -> int:
                 problems.append(f"{num}: 状态列非法 {cells[6]!r}（只允许 open/covered/moot）")
             if cells[6] == "covered" and cells[5] in ("", "待落"):
                 problems.append(f"{num}: 状态 covered 但未回填对应测试")
+
+    # 跨文档一致性：behavior-*.md 只能引用 pitfalls.md 已存在的坑号；
+    # 其“本区域坑条目”表内编号不得重复（防 limen 九条塌成 B-50、sandbox 撞 B-32 那类）。
+    # 语义归属正确性由 port-ledger 人工对账保证，本机械断言只拦“引用不存在”与“表内重复”。
+    valid_ids = {r[0] for r in rows}
+    for spec in sorted(SPECS_DIR.glob("behavior-*.md")):
+        text = spec.read_text(encoding="utf-8")
+        for ref in sorted(set(_BID.findall(text))):
+            if ref not in valid_ids:
+                problems.append(f"{spec.name}: 引用了 pitfalls.md 不存在的坑号 {ref}")
+        tail_ids = [m.group(1) for m in (_ROW_ID.match(line) for line in text.splitlines()) if m]
+        dups = sorted({x for x in tail_ids if tail_ids.count(x) > 1})
+        if dups:
+            problems.append(f"{spec.name}: 本区域坑表内编号重复 {dups}（每条须唯一，勿塌成同号）")
 
     if problems:
         print("check_specs FAILED:")
