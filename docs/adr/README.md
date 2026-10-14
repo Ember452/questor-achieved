@@ -30,7 +30,7 @@
 | 编号 | 标题 | 状态 |
 | --- | --- | --- |
 | [0001](0001-naming-and-availability.md) | 项目命名、拼写裁决与占用核查 | accepted |
-| 0002 | 全量重写策略与 provenance 纪律 | planned（已由 `overview.md` §3 承载内容） |
+| 0002 | 全量重写策略与 provenance 纪律 | **superseded by [0037]**（转向复用优先；provenance 纪律并入 0037） |
 | 0003 | 仓库边界与依赖拓扑（不依赖参照项目代码） | planned |
 | 0004 | 语义唯一来源与 adapter 位置 | planned |
 | [0005](0005-workspace-revision.md) | 工作区修订号与 turn↔revision 绑定 | accepted（M3d 归档） |
@@ -61,3 +61,16 @@
 | [0030](0030-desktop-shell-electron-and-ui-track.md) | 桌面壳改判 Electron；界面/桌面壳主线提前为 Phase U（取代 0006 壳选型/浏览器面板边界、改判 0024 排期） | accepted |
 | [0031](0031-ui-diff-renderer-and-vitest.md) | Review 面板 diff 渲染器与前端测试面依赖引入（@pierre/diffs + vitest + happy-dom） | accepted |
 | [0032](0032-electron-shell-and-toolchain.md) | Electron 桌面壳工具链依赖引入（electron + electron-vite + electron-builder；`desktop/` 与 `ui/` 各自一份 lockfile） | accepted |
+| [0033](0033-engine-contract-as-m6-entry-gate.md) | 引擎契约提取列为 M6 准入条件 | 仍有效；落地在 Phase 2（engine 按 wuu `agentengine` 移植时） |
+| [0034](0034-longrun-driver-host-ownership.md) | 长跑驱动的宿主归属 | 部分改判：长任务面后置见 [0043]；可见柱缺口（ui 不消费 issues/needs_setup）独立跟 |
+| [0035](0035-review-diff-authoritative-source.md) | Review 的 diff 权威源 | **superseded by [0045]**（照 wuu 双源，采集点在壳侧） |
+| [0036](0036-app-server-split-timing.md) | AppServer 拆分时机 | **withdrawn by [0037]**（重写时按域分文件 + 方法表单一来源） |
+| [0037](0037-reuse-first-over-rewrite.md) | 复用优先取代全量重写（母本 wuu 逐文件移植 + MIT 署名） | accepted |
+| [0038](0038-wuu-single-anchor.md) | wuu 单锚；EvoFlow 降后期规格；FlowCoder 退出 | accepted |
+| [0039](0039-appcontainer-windows-upgrade.md) | AppContainer 列为 Windows 写隔离后期升级路径（改判 0007） | accepted |
+| [0040](0040-frontend-in-desktop-renderer.md) | 前端归属改判：渲染层回归 desktop/src/renderer，废弃 ui/ | accepted |
+| [0041](0041-session-sqlite-authority.md) | 会话存储权威源 = SQLite 库（改判 JSONL 唯一真相源） | accepted |
+| [0042](0042-protocol-vocabulary-align-wuu.md) | 协议词表取齐 wuu app-server | accepted |
+| [0043](0043-longtask-layer-deferred.md) | 长任务/编排/验收层后置为 Phase 6 | accepted |
+| [0044](0044-disposition-map-and-adversarial-rule.md) | 现有实现处置地图 + 对抗套件与代码废弃相容规则 | accepted |
+| [0045](0045-review-diff-dual-source.md) | Review/diff 双源归属：盘态真相归壳侧 GitService | accepted |
