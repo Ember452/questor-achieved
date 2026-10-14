@@ -1,404 +1,64 @@
-# Questor 设计总览（overview）
+# Questor 架构总览（overview）
 
-版本: v0.2（§4/§12/§14/§15 桌面壳改判 Electron、界面/桌面壳主线提前为 Phase U，ADR-0030）| 更新: 2026-10-13 | 状态: 待用户评审
-关联: `AGENTS.md`（工程纪律）、`docs/adr/0001`（命名）、`README.md`（对外定位）、`docs/architecture/structure.md`（物理布局、import 矩阵、目录物化节奏）
+版本: v1.0（母本对齐转向：wuu 单锚、复用优先、交付可安装 exe）| 更新: 2026-10-14 | 状态: 待用户评审
+关联: `AGENTS.md`（纪律）、`docs/adr/0037~0045`（转向裁决）、`structure.md`（物理布局）、`data-model.md`（数据契约真相源）、`protocol.md`（协议真相源）、`docs/plans/`（波次计划）
 
-本文是唯一的架构入口。**它不含实现，只含已定的设计决定与显式未决项**。
-改数据模型、状态机或消息协议时：先改本文与对应契约篇，代码跟随，顺序不可反。
+> **本文只讲语义与约束**；物理布局看 `structure.md`，数据/协议契约各看其真相源文件。任一方越界复述对方内容，评审打回。
+> **一句话定位**：Questor 是以 wuu 为母本重做的**可审计个人 AI Agent 工作站**，交付一个双击安装的 Windows 桌面应用；过程全摊开、随时能插手、跑完能验收。
 
----
+## 1. 三柱与优先级（不变）
 
-## 1. 定位与三柱
+**可见 → 可干预 → 可验证**。冲突时按此序让位；透明度恒为最大，分级的是写域。新功能服务不了任一柱就不做。
 
-Questor 是**跑在自己电脑上的可审计 AI Agent 工作站**：Agent 在本地项目上长活，
-过程全部摊开、随时能插手、跑完能验收。三柱优先级固定，冲突时按序让位：
+**不是什么**（防 scope 漂移，逐项登记、不移植=决定非遗漏）：多用户 SaaS / 组织排班·岗位值班 / 给别人二开的 Agent 框架 / LLM tracing 大盘 / 模型评测榜单。**长任务编排与验收看板属后期 Phase 6**（ADR-0043）。
 
-| 柱 | 承诺 | 判据（能问出答案才算做到） |
-| --- | --- | --- |
-| **可见 Visible** | 读了哪些文件、跑了哪些命令、改了哪几行，全在眼前 | 磁盘真实 diff、命令真实输出、Agent 正在用的终端与页面 |
-| **可干预 Intervenable** | 运行中能改方向、能接管、能中止、能分叉 | 插话何时被消费、接管后任务是否真的停、分叉后文件从哪一版起 |
-| **可验证 Verifiable** | "它说做完了"必须能指回证据 | 声称通过的验证命令可与当时记录的真实输出并排核对；记录可事后审计 |
+## 2. 母本与复用（本次转向核心）
 
-**透明度恒为最大，分级的是写域**：权限三档只限制"能碰什么"，绝不用于少显示。
-任何"为了界面简洁而隐藏过程"的设计直接打回（`AGENTS.md` §一 铁律 3）。
+唯一母本 = **wuu**（MIT）；**复用优先**：逐文件把 wuu 已验证逻辑翻译/移植进 Python，以 wuu 测试当验收 oracle（ADR-0037）。EvoFlow 仅 Phase 6 长任务层的**规格来源**（读设计不搬码，ADR-0038/0043）；FlowCoder/AfterMatter 退出参照系。**现有 questor 代码全部废弃**，只带走坑与决策作知识；禁复用旧码（AGENTS §〇 硬红线 + import 护栏）。
 
-### 不是什么
-
-- ❌ LLM tracing / observability 大盘（红海，明确放弃）
-- ❌ 供他人二开的 Agent 框架
-- ❌ 多用户 SaaS、组织排班、岗位值班（属可选平台能力，不进核心路径）
-- ❌ 模型能力评测榜单
-
----
-
-## 2. 参照来源与可借边界
-
-**总策略：不照搬任何代码，全部重新实现。** 参照项目的价值在于"已经付过的学费"，
-本文把它拆成可执行资产（§3），而不是把代码搬进来。
-
-| 项目 | 语言 | 在本机的可运行性 | 可借 | 明确不可借 |
-| --- | --- | --- | --- | --- |
-| **wuu** | Go | 桌面预览仅 macOS 发布；但 Go 核心 CI 级支持 Windows 编译（Makefile `GOOS=windows`），CLI 层面 Windows 可跑（OS 沙箱不可用）。**M1 扫描必须包含其 Windows 专属坑** | 纯规格：协议形状、权限三档语义、工具输出规则、会话操作语义 | 任何代码。Go→Python 不存在"迁移"，只有重实现 |
-| **EvoFlow** | Python | 可运行（用户判断，本文不重复断言） | 编排与验收的行为规格、边界层的已知失败模式、桌面壳工程骨架 | 代码；以及它对 LangGraph 的底座依赖（§4 决定不用框架持有循环） |
-| **FlowCoder** | Python | 可运行 | 循环/工具/权限/沙箱/压缩的行为规格；**对照评测基线**（§11） | 代码；不作为运行时依赖（引擎必须归本项目所有） |
-| **AfterMatter** | Python | 可运行，但**本轮明确不借鉴**（2026-10-11 决定） | 无——见下方"排除说明" | 全部：不引入其复跑核验、验证空洞与纵向统计；不作运行时依赖，也不对接事件出口 |
-
-**排除说明（AfterMatter 本轮不借鉴）**：第三柱"可验证"不依赖它的机制，改由本项目自有
-的两件事承担——① 声称通过的验证命令与当时记录的真实输出**并排核对**（wuu 已有此语义：
-"compare the agent's reported checks with their actual command results"）；② 任务总结 →
-确认／打回的验收闭环（EvoFlow 语义）。`claimed_ok → replay_ok` 沙箱复跑、验证空洞
-（影响面 × 测试覆盖）、bootstrap 置信区间与 CUSUM 变点检验**均不进入本期设计**；
-将来若要引入，走单独 ADR，并说明许可、耦合深度与进程边界。
-
-被拒绝的替代方案：**把 FlowCoder 当引擎库依赖**。
-理由：① 产品叙事需要独立内核，否则"我做了工作站"实际是"我接了别人的引擎"；
-② 跨仓库依赖会把 FlowCoder 的事件流变成对外 API，本项目要长期为它的重构买单。
-代价明确接受：**边界层的学费重新付一次**，靠 §3 的坑目录 + 护栏测试 + §11 的对照评测压缩，不取消。
-
----
-
-## 3. 复用三分法与扫描三资产
-
-| 类别 | 内容 | 处置 |
-| --- | --- | --- |
-| **(a) 边界层** | 进程与 PTY、Git 与 diff、容器与沙箱、会话持久化与迁移、MCP 客户端、SSE/NDJSON 扇出、重试与限流、token 计量 | **不重新发明策略，只重新实现**：先抽坑清单，每条坑对应一个必写测试 |
-| **(b) 语义与契约** | 会话数据模型、事件 schema、权限门判定、验收状态机、工作区修订号 | 必须新写（三个参照项目在这层互不兼容） |
-| **(c) UI 与工程** | 桌面壳、面板骨架、样式、路由 | 搬设计与状态表，代码新写 |
-
-扫描产出三类资产，开工前必须落盘（`AGENTS.md` §二）：
-
-1. `docs/specs/behavior-*.md` 行为规格表：输入 → 输出 → 边界行为。
-2. `docs/specs/pitfalls.md` 坑目录：条目 `B-NN`，附来源（异常分支／平台后缀文件／
-   remediation 清单／测试名／fix 记录）。
-3. `docs/specs/cases-*.md` 用例清单：把参照项目的测试当"失败场景目录"读，搬场景不搬断言原文。
-
-已确认应进入坑目录的高价值条目（示例，非穷举，正式清单在 `pitfalls.md`）：
-
-- wuu：超时后进程**移交后台管理器**并回报 PID，"这不是验证通过、也不是已停止的证据"；
-  取消调用轮时前台命令**直接停止而不转后台**；`grep` 翻页必须同时回传 `offset` 与
-  `expected_revision`，不匹配即拒绝；`edit_file` 匹配缺失或有歧义时**文件不动并返回候选位置**；
-  后台日志完成时压缩到 8 MiB 尾部，故返回的字节偏移可能先于保留内容；
-  停止进程树前先**校验进程身份防 PID 复用**；stdout/stderr 各保头尾，测试摘要不被截断；
-  ANSI 色与进度条重绘剥离；64 MiB 行缓冲上限；`config/error` 时旧 provider 清单仍可用于显示
-  但不用于执行校验。
-- EvoFlow：自愈清扫绑定在框架 runs API 上（`sweep_langgraph_runs_until_idle`、`langgraph_cancel`、
-  `_SWEEP_MAX_WAIT_S`），换底座即失效，**必须自建状态机清扫**；记忆写入用临时文件 + rename 原子化
-  且按线程去重防抖（默认 30 秒）；容器池 `replicas` 默认 3，**超出时淘汰最久未用者**。
-- FlowCoder：四维预算（token／轮次／时间／成本）超限时**总结并收敛而非硬杀**；
-  容器与命令采用默认断网 + 只读根 + tmpfs 白名单 + 双层超时。
-
----
-
-## 4. 架构分层与依赖方向
+## 3. 分层
 
 ```
-UI 一套（`ui/`）两宿主：Electron 桌面壳（stdio NDJSON 起 Python sidecar）· 浏览器（经网关 WS/SSE）
-   │  REST / SSE / WebSocket（仅呈现与交互，不含业务判断）
-网关 Gateway（Python，FastAPI）
-   │  进程内调用
-引擎抽象层 Engine contract
-   ├─ 内置引擎（自研循环：本项目所有）
-   └─ 外部引擎适配器（subprocess + stdio／ACP，仅转发与映射，不做二次裁决）
-        │
-执行核 Core：tools / limen（权限门）/ review（diff 与工作区修订）/ gesta（会话记录）
-        / habena（插话与接管）/ vigilia（值守）/ evidence（验收证据）
-        │
-能力服务：orchestration（Plan/Goal/看板/验收）/ providers / extensions（mcp·skills·hooks·code_index）
+CLI / Electron 壳(desktop/src/renderer)
+        │  app-server 协议（词表照 wuu，ADR-0042；传输 stdio JSONL）
+serve（分发/租约/反向RPC） → engine（手写循环/turn/run/item 事件）
+        ├ tools（注册表+执行+结果）→ limen（唯一权限门）
+        ├ context（压缩）  ├ gesta（SQLite 会话权威 ADR-0041）  ├ habena（插话/接管）
+        └ providers（模型客户端）
+横切：state/config/secrets/schemas/capability/worktree/workspaces
+后置 Phase 6：orchestration/vigilia/evidence
 ```
 
-**层的物理位置**：图中的"网关 Gateway"对应 `src/questor/serve/`（单包内的最上层组装点），
-执行核与能力服务同在 `src/questor/` 下——因此 R1 不靠包边界，而靠 `structure.md` §3 的
-**import 允许矩阵**机械强制。
+## 4. 语义唯一来源（详见 AGENTS §三）
 
-**硬规则（由 `tests/architecture/` 强制，违规即打回）**
+循环/事件=**来源 wuu、所有权本项目手写**；权限门=wuu boundary；会话存储=**SQLite 权威**；协议词表=**wuu app-server**；Review/diff=**双源（内核 tool-time + 壳侧 GitService）**；编排/验收=后置、规格 EvoFlow。交叉处只允许 adapter，禁两套真相。
 
-- **R1** 执行核与能力服务不得 import 网关与壳；需要上层能力时，在内核定义 port（Protocol），
-  上层启动时注册 adapter——唯一允许的桥。
-- **R2** **循环的裁决权不得交给框架**：模型→工具→结果→下一步由本项目代码决定；
-  框架只可用于无裁决权的辅助结构。理由：三个参照项目在循环归属上的分歧（自研 loop vs
-  `create_agent` + 中间件链）不可同时保留，否则"下一步谁决定"出现两套真相。
-- **R3** 权限判定只有一处入口（`limen`），且**只能被收紧、不能被任何上层提权**；
-  外部引擎映射出的模式只是转发，不构成第二套边界。
-- **R4** 跨进程边界只有一个真相源：协议文档 + schema 目录（§8），前端类型由 schema 生成，
-  **禁止手写 DTO**。
-- **R5** 每个新增顶层包必须在本文 §6 登记一行职责，否则评审打回。
+## 5. 权限模型（照 wuu 语义）
 
-**技术选型**：全 Python（≥3.12 下界，开发机 3.13），不引入 Go。
-模型调用用官方 SDK，MCP 用官方 Python SDK，桌面壳 Electron（Node/TS，ADR-0030）。
-核心依赖保持极简（pydantic v2 起步），**新增任何第三方依赖须先落 ADR**。
+单一权威门 `limen`：**从可达性推导、绝不从信任推导**；三档 `read_only / standard / unconfined`（限"能碰什么"，不限"显示多少"）；审批只能收紧不能提权；敏感路径守卫三档全开（unconfined 也不解除）；脱敏独立于逃生阀恒开；fail-closed。**Windows 无 OS 写隔离**：standard 档 = 路径门 + Job Object 进程树 + 敏感守卫，**如实标注**（ADR-0007）；AppContainer 列为后期升级（ADR-0039）。
 
-**已知的依赖风险（尚未验证，进 M1 坑目录前需先跑原型）**：EvoFlow 的代码索引层把
-`tree-sitter` 钉在 `>=0.21.3,<0.22`、并依赖已停维的 `tree-sitter-languages>=1.10.2`；
-该组合在本项目的解释器下界上能否安装，必须先实测再决定“自建索引”还是
-“换用后继打包方案”。本条是待验证风险，不是结论。
+## 6. 模块职责登记
 
-**桌面壳已决（ADR-0030 改判，2026-10-13）**：选 **Electron**（此前 ADR-0006 选 Tauri，其壳选型
-与浏览器面板边界两项已被 ADR-0030 取代）。Electron 自带 Chromium，故 `Browser` 面板可做**真·同页
-接管**——"面板里那个 tab 就是 Agent 正在用的页面、地址栏真驱动、popup 保留 opener 链、一点即暂停"。
-代价（+约 200 MB / Chromium 升级维护面 / 打包链）由用户显式接受，换取复刻 wuu 桌面壳体验形态。
-浏览器面板随界面主线（`development-plan.md` Phase U）进入交付，不再按 L4 延后。
+以 `structure.md §2`「模块 ↔ wuu/Evo 源 ↔ 波次」表为准；新增模块先在此 + structure 登记一行再建目录（R5）。
 
----
+## 7. 数据契约 / 协议契约
 
-## 5. 功能地图
+- 数据模型真相源 = `data-model.md`（Run⊃Turn/Item 层级、SQLite 权威库、状态机、append-only、revision、UTF-16 选中定位）。
+- 协议真相源 = `protocol.md`（wuu app-server 方法/通知词表、stdio JSONL、64MiB 帧、反向 RPC、`initialize`）。
+- 二者是「契约三件」之二，**先于当期波次定稿**（AGENTS §七首要）；改动先改文档并递增版本，代码跟随。
 
-### L1 核心体验（主要工作量）
+## 8. 扩展接缝（§1.7，只留边界不投机）
 
-会话（重命名／置顶／归档／永久删除并拒绝删除活跃者）、跨项目搜索并定位到具体消息、
-运行中插话与排队下一条、从任意历史消息分叉（同目录或新 worktree）、侧聊（不进主线程）、
-选中回复文本引用与批注、Files 预览与"只改这一段"、Review 逐文件真实 diff、
-Terminal（用户自己的 shell，权限是 OS 权限）、交付物内联与快照。
-工具集：`read`（行范围与分页）/ `edit`（精确替换，歧义返回候选）/ `write` /
-`search`（快照分页）/ `list` / `run`（超时、截断、退出码、后台移交）/ `process`
-（读／写 stdin／停／列／改唤醒周期）/ `todo`。**八工具于 M2.2 全量物化**
-（"改唤醒周期"子能力随 M4 vigilia）；todo 的会话内清单在 M2.2 为内存态。
+6 条必保缝：agentengine 薄契约 / tools 注册表+Surface+ToolExposure / 传输无关协议 / 声明式加性演进(ADR-0028) / limen 单门+ToolKind / run·turn·item 数据形状。留门只落边界（数据形状/进程边界/路径单点/能力声明），**禁**为"将来"提前建 registry/基类/config 开关。多租户等"后期可能加"项：保留边界字段（session `owner/visibility`）+ 作用域单点解析，**不焊死也不现在搭**。
 
-### L2 长任务与编排
+## 9. 交付与波次
 
-Plan（先澄清→可修订计划→定稿才执行）、Goal（后台自驱长跑）、任务看板（进度、子任务、DAG、
-**任务总结 → 确认／打回**、另存为可复用流程、再跑一次、批量启停）、自动化（cron 与一次性，
-错过的不重放）、多 Agent（子 Agent 并发上限与超时、写工具跨参与者串行化）。
+目标物 = **可安装 Windows exe**（`electron-builder` NSIS + 冻结 Python sidecar，计划 §1.6）。波次：Phase 0 文档/契约重立基 → P1 接缝安全带 → P2 可跑竖切(2a headless/2b 前端+exe门槛1) → P3 补齐 → P4 可验证+Windows硬化+exe门槛3 → P5 优化 → P6 长任务层。**每阶段先扫母本、以 wuu 帧序列等价性为出口判据**（AGENTS §五）。
 
-### L3 资产与上下文
+## 10. 风险与诚实
 
-会话记录 append-only + 可重建索引、上下文预算与自适应压缩（写压缩边界以便干净恢复）、
-超大工具结果落盘只回预览、长期记忆与经验沉淀、工作空间与代码检索。
+wuu Windows 无沙箱/无 PTY（后端）→ 逻辑边界 + Electron 侧 node-pty；`securefs` 0o600 在 Win 假安全 → ACL/DPAPI；`credentialstore` 硬编码 macOS-only → 放开走 wincred；协议无代码生成 → 由 `schemas` 生成 TS 修正；本机无 Go → oracle 软模式（读 wuu 测试断言，运行期行为标盲区）。逐条见计划 §9 缺陷台账 + `port-ledger`。
 
-### L4 可选平台能力（feature flag 默认关）
+## 11. 未决项（转向后仍开）
 
-外部引擎、MCP、skills、hooks、插件、**网页自托管宿主（对外暴露必带鉴权与账号模型）**、
-IM 渠道、远程与移动端、多账号与费用治理、
-容器与远程执行环境。
-
-### 明确不做（写死防范围失控）
-
-组织排班与岗位值班、企业 SSO 与多租户、资源市场、模型评测榜单、
-把 Agent 改造成 IDE 插件、公网多用户服务。
-
----
-
-## 6. 模块清单
-
-本表是**职责登记**（R5 的唯一落点）；物理布局、内部分块、对应参照包与物化时机见
-`structure.md` §2–§4，两边不得互相复述。
-
-| 目录（= commit scope） | 职责 | 依赖 | 参照来源 |
-| --- | --- | --- | --- |
-| `engine` | 循环、turn 生命周期、事件流、引擎注册表与契约 | `tools` `limen` `gesta` | wuu `agentengine`（形状）＋ FlowCoder（行为） |
-| `tools` | 工具登记、schema、执行与结果封装 | `limen` | wuu `internal/tools`、FlowCoder |
-| `limen` | **唯一权威权限门**：三档、可达性推导、敏感路径守卫 | 无业务依赖 | wuu `boundary.go` 规格 |
-| `gesta` | 会话记录与验收导出（事件与实体形状经 `schemas` 承载，对 engine 无感知） | `schemas` `state` `config` | wuu session 语义 |
-| `review` | 工作区修订号、真实 diff、turn↔revision 绑定 | `schemas` `state` `gesta`（只读 fold 投影） | wuu Review 语义 |
-| `habena` | 插话收件箱、排队、接管与暂停、取消传播 | `engine` | wuu `session/inbox`、`held_user_work` |
-| `vigilia` | 值守长跑、调度、唤醒检查点、僵尸运行清扫 | `engine` | EvoFlow scheduler＋自建状态机 |
-| `evidence` | "声称的检查"与真实记录输出的并排核对、验收证据出口 | `review` `tools` | wuu Review 语义 + EvoFlow 任务总结 |
-| `orchestration` | Plan／Goal／看板／验收与打回 | `engine` `vigilia` | EvoFlow |
-| `providers` | 模型客户端、用量与能力声明（自建 wire 层 over httpx，不接厂商 SDK——ADR-0016） | `schemas` `state` | FlowCoder（行为对照，形状不照搬） |
-| `serve` | 网关、协议服务、SSE／WS | 全部上层 | wuu app-server（形状） |
-| `cli` | 命令行入口 | `serve` 或直连内核 | wuu exec |
-| `prompts` | 运行时提示词与指令资产（随包发布，禁止内联在代码里）与分块装配（ADR-0018） | `schemas`（只取类型，不取业务） | wuu `prompts/`、EvoFlow `prompt_blocks_*` |
-| `extensions` | 插件宿主与能力扩展（`mcp` `skills` `hooks` `code_index` 在其下）；内核不得反向 import 它 | `schemas` + 公开扩展接口 | wuu `internal/pluginhost`、EvoFlow `plugins/skills` |
-| `context` | 上下文预算、自适应压缩、压缩边界记录、超预算结果落盘与回读 | `gesta` `providers`（仅用量结构） | wuu `context`、`contextbudget`、`compact` |
-| `schemas` | 协议与数据契约 schema（纯 JSON Schema，真相源） | 无 | wuu `packages/protocol` |
-| `config` | 类型化配置加载与作用域合并、热改错误通知 | `state` | wuu `internal/config`、`runtimeconfig` |
-| `state` | 路径单点解析、原子写、跨进程文件锁、存储编码 | 标准库 | wuu `statepath`、`securefs`、`storelock`、`storagecodec`、`shellpath` |
-| `secrets` | 凭据存储（OS keyring 优先）与守卫 | `state` | wuu `credentialstore`、`authstorage` |
-| `capability` | feature flag 与能力开关（L4 渐进启用的机制；配置值由上层组装注入，本模块不读 config） | `schemas` | wuu `capability`、`harness` |
-| `workspaces` | 工作区注册与路径可见性 | `state` | wuu `workspaces` |
-| `worktree` | Git worktree 生命周期与隔离 | `workspaces` | wuu `worktree` |
-| `sessiontrace` | 会话轨迹回放（不重跑工具、不联系模型） | `gesta` | wuu `sessiontrace` |
-| `version` | 版本单点与构建标识（`VERSION` 文件为唯一来源） | 无 | wuu `internal/version` + `VERSION` |
-| `testenv` | 测试基建：fake home / provider / git / 时钟；**生产代码禁止 import** | 任何模块 | wuu `internal/testenv` |
-
-`mcp` / `skills` / `hooks` / `code_index` 为 L4 能力服务（feature flag 默认关），
-建包前按 R5 在本表补行登记；§4 图中提前点名不构成本表的登记。
-目录级物理布局与各部分内部分块见 `structure.md`；职责登记以本表为准。
-
----
-
-## 7. 核心数据契约（草案，正式版进 `data-model.md`）
-
-- **实体**：`Workspace`（根路径集合 + 修订历史）→ `Thread`（会话）→ `Turn`（一问一答的
-  一次循环）→ `Run`（一次引擎执行，可取消可恢复）→ `Item`（消息／工具调用／工具结果／
-  引用／批注／交付物）→ `Event`（对外推送）。
-- **运行状态机**：`queued → running → (steered | waiting | completed | failed | cancelled)`，
-  其中 `steered` 与 `waiting` 是 `running` 的**旁态而非终态**：插话在下一个工具边界被消费后
-  回到 `running`；终态只有 `completed | failed | cancelled`。**状态迁移只允许状态机驱动**，
-  旁路写入视为契约破坏。
-- **验收状态机**：`proposed → accepted_by_user → executing → reported → verified | regressed`，
-  需求改版递增 `requirement_revision` 并**自动作废既有验收**。
-- **工作区修订号**：每次可能改变磁盘状态的动作产生新修订；`search` 分页、Review 的
-  "某一轮 diff"、选中文字的源定位都绑定修订号；不匹配一律拒绝而不是给过期结果。
-- **存储**：会话正文 **append-only JSONL**（唯一真相源，`~/.questor/sessions/<id>.jsonl`），
-  SQLite 只作可丢弃可重建的搜索索引；编排实体（Task/Plan/Goal/Evidence）住**独立** append-only
-  JSONL（`~/.questor/orchestration/tasks.jsonl`，ADR-0025，不写进线程正文）；工作文件（粘贴长文本、图片）带过期，
-  清理与历史快照分离。**不引入消息队列、不依赖云。**
-
----
-
-## 8. 协议与跨进程边界
-
-参照 wuu 的形状（NDJSON over stdio，版本严格匹配），本项目自有命名 `qst-app-server/v0.1`：
-
-- 单行 JSON，请求带 `id`／`method`／可选 `params`，响应回显 `id`；错误用**字符串码**，不假装 JSON-RPC。
-- `initialize` 返回构建标识、运行时主机、工作区与模型摘要、权限、扩展清单、feature flags、有效并发上限；
-  配置有问题时返回 `needs_setup` 加 `issues`，连接仍可用。
-- **大内容延迟取**：客户端可声明 `deferred_content` 能力，快照与终局通知里用引用替代大块正文，
-  身份、顺序、成员与状态保持完整。
-- **一套会话层协议、两种传输**：桌面与 CLI 走 stdio NDJSON，网页与多端走网关 WS（M3b-3）；
-  方法名、事件形状与错误语义完全同源，**禁止为网页另立契约或开私有端点**（§14 的逃生门）。
-  SSE 推 M8（ADR-0023），与 IM 渠道/webhook 同批。
-- 客户端必须按 `id` 关联，并**在请求未决期间持续读通知**；不得假设每行都是最近请求的响应。
-- 行缓冲有上限，超限时命令输出走全量日志引用；stdout 必须干净（禁 banner 与调试日志）。
-- 内核**反向请求**（审批、浏览器宿主）走 server-initiated requests，超时或取消即动作不执行。
-- 协议版本不匹配直接拒绝执行，不做降级兼容。
-
----
-
-## 9. 权限与安全
-
-- **唯一门**：每个工具调用只回答一个问题——"这个动作准不准"，**从可达性推导，绝不从信任推导**；
-  拒绝时返回模型读得懂的理由；没有 per-tool 信任策略。
-- **三档**：`read_only`（读范围不变，写调用一律拒）／`standard`（注册根内可写，命令进沙箱）／
-  `unconfined`（去路径边界与进程沙箱，**敏感路径守卫仍在**）。
-- **审批只能收紧**：`approve` 选项把命令交模型先审（allow／deny／悬而未决交回用户），
-  不能提权、不能扩边界、不能解除敏感守卫；**本项目不提供 per-command 弹窗**（与 wuu 同调）。
-- **沙箱分层且 fail closed**：OS 级沙箱缺失或只部分生效 → **执行失败，绝不静默退回无沙箱**；
-  容器与远程环境是另一层，与会话档位相互独立。
-- 明确边界声明：沙箱限写与创建删除，**不限读取、网络、进程可见性、继承的环境变量**——
-  "只读 ≠ 不会泄密"，插件、MCP、hooks、外部引擎、用户手敲终端都在沙箱之外。
-- **敏感路径**：环境文件、凭据库、SSH 私钥、凭据类 JSON 拒绝读写；按结构化判断而非文件名含
-  secret（源码文件可改，凭据文件不可）；聊天审批不解除守卫。日志返回前脱敏，但声明不可完全识别。
-- **Windows 沙箱（已决，ADR-0007）**：`standard` 档在 Windows 上＝limen 路径门 +
-  Job Object 进程树管理 + 敏感路径守卫（三档全开），**无 OS 级写隔离**——会话创建时
-  显式标注并要求一次性确认，界面不得出现"已沙箱化"表述；受限令牌/全盘 ACL 的自研
-  OS 沙箱**不做**；Docker 与远程执行环境是 L4 可选强隔离层，与会话档位相互独立。
-  fail-closed 保留：路径门无法施加于某次执行（如外部引擎不可包装）即拒绝执行。
-  理由、被否决项与失效条件见 `docs/adr/0007-windows-sandbox.md`。
-
----
-
-## 10. 错误处理与恢复
-
-- **循环止损三重**：最大轮次、连续无工具产出续答上限、成本／时间预算超限时"总结并收敛"
-  而非硬杀（参照 FlowCoder 的四维预算）。坏掉的兼容端点不得造成无限计费循环。
-- **超时 ≠ 完成**：命令超时移交后台并报 PID，明确标注这不是验证通过；调用轮取消则前台命令停止。
-- **断流不重放**：传输中断时，被中断的工具**绝不重放**（结果可能未知）；后续调用可重连到保存的 worker。
-- **取消传播**：取消 → 停止进程树（先校验身份防 PID 复用）→ 已落盘改动不丢 → 记录 `cancelled` 终态。
-- **恢复**：重启后按 `run` 状态机清扫僵尸运行与孤儿；持久化派发用同一 client identity 重试，
-  已见终局结果不重复执行；**无终局证据的执行变成待查阻塞项，不默认成功**。
-- **配置热改失败**：保留旧清单供显示、拒绝用于执行，修复后由变更通知刷新，未知字段仍判非法。
-- **过期与清理**：会话工作文件带过期时间与定期维护，但不删历史快照与工作区内文件。
-
----
-
-## 11. 测试策略与出口判据
-
-| 层 | 内容 |
-| --- | --- |
-| 单元 | 纯逻辑（判定、状态机、编码解码），**先枚举失败方式再写实现** |
-| 契约 | **所有引擎跑同一套行为契约测试**（内置与外部引擎对同批断言） |
-| 集成 | 协议往返、会话恢复、diff 与修订号绑定、审批收紧不可提权 |
-| 架构 | 依赖方向（R1）、append-only 不可改写、状态迁移唯一入口 |
-| 对抗 | `tests/adversarial/` **只增不减**；靠改用例变绿视为作弊 |
-| 端到端 | 真实任务上跑通"转后台 → 出任务总结 → 打回 → 重做 → diff 可回看"整条链 |
-
-**出口判据（不达标不得进下一里程碑）**：新实现在与参照实现**相同的 N 个真实任务**上
-失败率不高于参照；该模块坑目录覆盖率 100%；每条护栏测试附负向验证输出。
-对照基线就是参照项目本身跑同一批任务——**用基准对比代替"代码看起来一样"作为可信证据**。
-基线只取**可运行**的参照：**FlowCoder 为主基线**（同任务集、同模型、同预算），EvoFlow 按任务类型可选；
-**wuu 不作基线**（本机跑不起来，见 §2），否则出口条件会变成无法执行的承诺。
-
----
-
-## 12. 里程碑与砍单预案
-
-阶段级执行顺序、参照项目阅读地图与文档产出时点见 `docs/plans/development-plan.md`；本节只定义交付与出口判据。
-
-| 里程碑 | 交付 | 出口 |
-| --- | --- | --- |
-| M0 | 仓库骨架、门禁、ADR-0001 | **已完成**（`1778ac1`、`e7aef72`） |
-| M1 | 扫描三资产落盘 + 契约文档与 schema + 契约测试骨架 | 坑目录 ≥50 条且各有归属模块；schema 能生成前端类型 |
-| M2 | 单轮能跑：内置引擎 + 8 工具 + `limen` + 会话落盘 + CLI（**已完成 2026-10-12**：M2.1/M2.2/M2.3 全部勾销，见 development-plan 的 M2.3 实际结果） | 一个真实小任务完整跑通并落盘可回放（已真机验证：`questor exec` 写文件→读回，会话 last_seq=22 可回放） |
-| M3 | 工作台数据面：`review` 修订号与 turn↔revision + `habena` 插话与接管 + `sessiontrace` 回放 + `worktree` 分叉 + `ui/` 视图注册表与 Review/Files 面板 + WS 传输与 `serve http` 子命令（**桌面壳推 M4/M5，SSE 推 M8** — ADR-0023/0024）（**已完成 2026-10-12**：M3a-1 schema 方法族 / M3a-2 review + diff 写时算 / M3a-3 habena + Fanout + Engine 消费点 / M3b-1 thread 四操作 + sessiontrace / M3b-2 worktree / M3b-3 WS + serve http / M3c UI 真接 + 注册表 / M3d evals 适配层，均已完成） | 面板显示真实 diff（`test_review_turn_diff` 钉住）；插话在下一个工具边界被消费（`test_habena_steer` 钉住）；接管即停（`test_habena_control` 钉住）；网页只绑 `127.0.0.1` 且无第二套契约（`test_serve_http_ws` 钉住）；evals N=12 首跑记录已发布（ADR-0021） |
-| M4 | 长跑与编排：`vigilia`（调度/清扫/唤醒检查点）+ `orchestration`（Plan/Goal/看板/验收打回）+ `evidence` 最小版 + `tests/e2e/` + `docs.yml`（ADR-0025/0026/0027；看板 DAG 推 E1，桌面壳推 M5）（**已完成 2026-10-12**：M4a 契约先行 / M4b vigilia / M4c orchestration / M4d evidence / M4e 接口面+UI+e2e+docs.yml 均已完成） | 端到端链跑通（转后台→任务总结→打回→重做→diff 可回看，`tests/e2e/test_longrun_board_chain.py` 钉住）；状态机无旁路写入（`test_orchestration_transition_single_entry.py` 钉住） |
-| M5 | 验收闭环：任务总结 → 确认／打回，并把"声称的检查"与真实记录输出并排核对（**已完成 2026-10-12**：M5a 契约/ADR-0029 / M5b 验收状态机强制 / M5c evidence 生产写入点 + 声称采集 / M5d schedule task 派发 / M5e 前端证据卡 / M5f evals 三柱扩充；**复跑核验不做；桌面壳与浏览器面板归 Phase U（ADR-0030）**） | 任一验收结论都能指向具体记录条目（`test_report_verified_when_recorded_ok` 钉住）；没有复跑也不轻信（`test_report_regressed_on_mismatch_and_missing_record` 钉住）；验收态单点入口（`test_update_task_cannot_change_acceptance_status` 钉住） |
-| U | **界面 / 动效 / 桌面壳主线**（ADR-0030 提前，紧接 M5 之后）：Electron 桌面壳（sidecar 拉起 + 窗口 + 能力声明 + 打包）、四面板复刻 wuu（Review / Files / Terminal / 内嵌浏览器真接管）、动效体系与主题 token、视图注册表铺满；**E1 并入本相** | 能双击运行的 Electron 壳跑通（`questor serve stdio` 被壳拉起）；可见柱（Review 真 diff）与可干预柱（插话/接管）各有一个 wuu 级还原度的可演示面板；新面板只能走注册表、不改内核（护栏 `test_no_hardcoded_panel_case` 仍绿） |
-| M6 | 外部引擎：ACP／Claude／Codex 适配器 + 权限映射表 | 契约测试全引擎同绿 |
-| M7 | 扩展面：skills／MCP／hooks／插件 | 关插件即停产品行为 |
-| M8 | 可选平台：执行环境、**网页自托管**、IM、远程 | 各自 feature flag 默认关；网页对外暴露前需先过鉴权 ADR（浏览器面板已随 Phase U 进入交付，ADR-0030） |
-| E | 界面面与生态加料（**E1 界面面已并入 Phase U**；剩 E2 引擎矩阵随 M6、E3 插件生态随 M7，细则见 `plans/development-plan.md`） | 引擎 5+；内置插件 6–8 且关掉即停产品行为 |
-
-**砍单预案**：M3 起若受阻，先砍 Terminal 与交付物预览，保 diff 与修订号；
-M6 受阻则整体延后外部引擎（它是最容易吞掉时间的部分）；
-**任何阶段都不许为了面板好看而牺牲 §1 的三柱判据。**
-
----
-
-## 13. 未决项（需用户裁决，不自行选边）
-
-1. **协议方法与字段命名**是否沿用 wuu 的具体词表（`thread/*`、`turn/*` 等）。
-   wuu 是 MIT，结构可借鉴并注明出处；但沿用词表会让"兼容 wuu 桌面壳"成为隐性承诺。
-2. **M1 的坑目录范围**：只收 Python 可执行的失败模式，还是也收语义坑。
-3. **是否将来引入沙箱复跑核验与纵向统计**（本轮明确不借鉴 AfterMatter；若要引入需单独 ADR，见 §2 排除说明）。
-4. **是否申请 GitHub 组织名 `questor`**（影响仓库 URL；当前历史只有几个 commit，搬家成本最低，
-   越晚越贵）。组/用户名占用尚未核查。
-5. **网页宿主对外暴露的形态**：只本地（`127.0.0.1`，无鉴权）还是允许局域网自托管（必须登录 +
-   会话归属 + 与权限档位正交）。本项目不预先选定；对外暴露需单独 ADR，
-   不得以"只是局域网"为由略过鉴权（wuu 的教训：配对即授予控制权，不是只读视图）。
-
----
-
-## 14. 可逆性优先：不把路走窄（判据与已留的门）
-
-**判据（三问，任一命中才花成本留门）**
-
-1. 这个决定将来要改，代价是**搬运**还是**重写**？只是搬运→不留门，改就是了。
-2. 留门的方式是否只落在**边界**上（数据形状、进程边界、路径单点、能力声明）？
-   落在"抽象层／注册表／配置项"上的一律拒绝。
-3. 是否已有**第二个真实使用者**？没有就不加接口、基类、可插拔点。
-
-所以"留门"只允许四种形态：**清晰边界 + 单点解析 + 声明式数据 + 不分枝的接口**；
-不得以"灵活性"为由引入抽象基类、registry 或一堆 config（`AGENTS.md` §二）。
-
-**已经留下的门**
-
-| 门 | 现在做的事 | 将来挡住哪种"路窄" |
-| --- | --- | --- |
-| 跨模块数据只走 `schemas` | 模块间传数据一律用 schema 类型，不共享私有 dataclass / 裸 dict | 想把 engine/tools 拆成独立发布包时变成重写 |
-| schema 用纯 JSON Schema | 不嵌 Python 专有语法，pydantic 只做绑定 | 做 TS 客户端／远程端／第三方集成时要反推契约 |
-| GUI 能力必须经协议可达 | 不存在"只有桌面壳能调"的私有端点 | 换壳（Electron／移动／远程）或做遥控时重做内核（**本次 ADR-0030 即经此门换 Electron，内核一行未动**） |
-| 路径单点解析 + `QUESTOR_HOME` | 禁止散写 `~/.questor` 字面量 | 多 profile、便携模式、远程宿主时需全局改 |
-| loop 不按 provider 名分支 | 差异写进 `providers/capabilities` 声明 | 接第 N 家模型时循环里塞满 if，且扩展者无法替换实现 |
-| 扩展与内置同契约 | `mcp`／`skills`／`hooks` 与第三方插件走同一套公开接口，无特权捷径 | 内置能力成为不可替换的黑箱，扩展 API 永远长不全 |
-| 任务集覆盖三柱 | `evals` 不只挑"能写完代码"，也挑插话／接管／核对任务 | 评测只优化编码能力，把可干预与可验证练成摆设 |
-| `just` 只是便利层 | CI 直接调用同一批命令，不依赖 just 存在 | 换 nox／make／纯脚本时门禁语义漂移 |
-| `evidence` 出口是接口 | 本轮只做"声称 vs 实测"核对，但 `export` 形状已定 | 将来接复跑核验或统计时需改事件契约 |
-| 协议加性演进 | 版本号只标记破坏性变化，加性方法/通知靠 `initialize` 的 `methods`/`notification_families` 发现（ADR-0028） | 后续不断加方法（引擎/插件/渠道）时不必全网改协议版本 |
-
-**明确不留的门**（现在不做，将来按 ADR 再开）：多租户与鉴权体系、消息队列与服务发现、
-插件市场、K8s／云沙箱、抽象基类与提前 registry。
-理由：每一项都会把目录、配置与测试面撑大一圈，而今天没有第二个真实使用者。
-（注：原列于此的"GUI 内嵌 Chromium"已由 ADR-0030 按本行"将来按 ADR 再开"的规则正式开——
-桌面壳改判 Electron，Chromium 随壳进入。）
-
----
-
-## 15. 风险清单
-
-| 风险 | 影响 | 缓解 |
-| --- | --- | --- |
-| 全量重写导致边界层学费重付 | 前数月稳定性低于参照 | 坑目录 + 护栏 + 对照评测（§3、§11）；参照项目别停 |
-| 三柱同时推进 | 哪个都做不透 | 里程碑按柱分层交付，M3 只做可见与干预 |
-| 外部引擎适配吞时间 | 长期维护各家协议差异 | 延后到 M6，且映射表不承诺等价保护 |
-| 面板工程量误判 | 桌面端比内核更耗时（wuu desktop 241k 行 ≈ internal 的 70%） | Electron 壳沿用 wuu 主进程 TS 模式；界面主线（Phase U）纵向切片先行，先跑通一个高保真面板再横向铺 |
-| 权限模型与审批混为一谈 | 出现两套真相、提权漏洞 | R3 + 契约测试"审批不能提权" |
-| 用写文档代替交付 | 里程碑空转 | `AGENTS.md` 文档视距冻结 + 出口判据只认运行输出 |
-
----
-
-## 16. 命名与仓库规范
-
-见 `docs/adr/0001-naming-and-availability.md`：品牌体 **Questor**，技术标识符一律小写
-`questor`，CLI `questor`（别名 `qst`），内部模块名与对外包名分两层治理，
-抽包发布前必须重新核查占用。
+1. ~~协议词表取齐~~ 已定 ADR-0042；2. ~~会话权威源~~ 已定 ADR-0041；3. provider 是否要接 Codex 订阅/OAuth（现 MVP 收敛 2 家，Phase 6 前重评）；4. web 宿主何时做（Phase 5 按 wuu renderer-reuse 评估）；5. `c19` `approval/request` 收紧型 vs per-command 弹窗待 Phase 1 实测对表。
