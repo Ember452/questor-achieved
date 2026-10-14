@@ -70,6 +70,21 @@
   两条均已附负向验证输出。坑目录追加 B-119..B-121（B-121 为已登记的护栏盲区，open）。
 
 ### Changed
+- **母计划（总计划）自编辑器缓存区入库 + 修必读表指向作废文档**（port-ledger TL-4；可追溯纪律见
+  ADR-0008）：新增 `docs/plans/2026-10-13-wuu-alignment-master-plan.md`，逐字归档 Qoder 计划缓存区那份
+  `Questor_对齐_wuu_重构计划_99f1c707.md`（与原文 `Compare-Object` 比对＝3 行新增、0 行改写），顶部加
+  “计划态快照、不含执行进度”横幅——此前仓库内 10+ 处按「计划 §1.5 机制 N / §12-A~E / §13 C0–C21 / §14」
+  编号引用它、而仓库内查无出处（`docs/specs/README.md`、`tests/contract/README.md`、
+  `schemas/app_server/initialize.py`、`behavior-protocol-wuu.md`、`modules/habena.md`、port-ledger 本身）；
+  `phase-a-mvp.md` §0 必读第①条与 `docs/README.md` 文档地图同批改指。
+- **同批修两处“文档声称与文档态两张皮”**（铁律 1）：`AGENTS.md` §七 必读表原指向已标作废的
+  `development-plan.md`（port-ledger TL-2 曾记“已 redirect”，实际未改），现改指 `phase-a-mvp.md` 并
+  显式标旧档不得作实现依据；文首状态行“承重 ADR 待随 Phase 0 补齐”按 0037–0045 全落库改写；
+  TL-3 版本串状态按 P1-1 实况（`questor-app-server/v0.1`）收敛；TL-2 那句“必读已 redirect”就地标为长期不实。
+  坑目录追加 **B-123**（open）：文档类收口项必须用 grep 断言旧指向已消失——`check_docs.py` 只校链接存在性、
+  不校反引号路径与作废标记（本次两处均为其盲区）；B-123 归属模块记为 `docs`，**系 `structure.md` §2 清单外首例**，
+  待用户裁是否把文档类加进清单。**未动代码/契约/schema**（
+  `just check` 全绿：611 passed / 5 skipped / 3 xfailed；`check_docs` 52→57 条链接均可解析）。
 - **`ToolKind` 定义点唯一化**：曾由 `tools/base.py` 与 `limen/gate.py` 各写一份
   `Literal["file","shell","process","meta"]`，现下沉到 `schemas/model.py` 作唯一定义点，
   两侧向下 import（B-120）。选 schemas 而非让 tools 引 limen，因为 tools→limen 被

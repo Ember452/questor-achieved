@@ -8,8 +8,9 @@
 | # | 项 | 状态 | 说明 / 何时收口 |
 | --- | --- | --- | --- |
 | TL-1 | `protocol.md` 词表取齐 wuu（`thread/start`/`run/updated` 等），但 `serve/app_server.py` 仍注册旧名（`thread/create`/`run/stop`/`delta`） | **transition-red** | 护栏 `test_serve_methods_are_documented`、`test_serve_notification_families_are_documented` 现红 2 条 = 契约先行、实现待迁移的**正确信号**；**Phase 1/2 重写 serve 后转绿**。不作废护栏、不改测试迁就。 |
-| TL-2 | `overview.md`/`structure.md`/`protocol.md`/`data-model.md` 已改母本对齐口径；`modules/*.md`、`development-plan.md`、`phase-u-*` 仍是旧 M 系列/FlowCoder 口径 | 待收口 | 各 `modules/X.md` 在对应 Phase 移植前重写；`development-plan.md`/`phase-u-*` 加历史横幅（见下"文档处置"）。窗口在重写前以本台账 + 转向 ADR 为准（AGENTS §七 必读已 redirect）。 |
-| TL-3 | 协议版本串 `questor-app-server/v0.1` vs wuu `wuu-app-server/v0.1` | 待 Phase 1 定 | 复用 wuu 前端需两端版本串一致：要么保留 `wuu-app-server/v0.1`，要么 patch 前端 `packages/protocol`。Phase 1 接缝实测时定，记此不静默。 |
+| TL-2 | `overview.md`/`structure.md`/`protocol.md`/`data-model.md` 已改母本对齐口径；`modules/*.md`、`development-plan.md`、`phase-u-*` 仍是旧 M 系列/FlowCoder 口径 | 待收口 | 各 `modules/X.md` 在对应 Phase 移植前重写；`development-plan.md`/`phase-u-*` 加历史横幅（见下"文档处置"）。窗口在重写前以本台账 + 转向 ADR 为准（AGENTS §七 必读已 redirect）。**末句长期不实**：§七 必读表实测仍指 `development-plan.md`，2026-10-14 才真改到位（见下行 TL-4 与 B-123）。 |
+| TL-3 | 协议版本串 `questor-app-server/v0.1` vs wuu `wuu-app-server/v0.1` | **已定（见 P1-1）** | 用户拍板取 `questor-app-server/v0.1`；initialize 仍严格相等不降级（B-60），Phase 2b 重建前端时其常量对齐。复用 wuu 前端需两端版本串一致：要么保留 `wuu-app-server/v0.1`，要么 patch 前端 `packages/protocol`。Phase 1 接缝实测时定，记此不静默。 |
+| TL-4 | 母计划（总计划）只存于 Qoder 计划缓存区 `cache/plans/Questor_对齐_wuu_重构计划_99f1c707.md`，未进版本库；而仓库内 10+ 处按「计划 §1.5 机制 N / §12-A~E / §13 C0–C21 / §14」编号引用它（`docs/specs/README.md`、`tests/contract/README.md`、`schemas/app_server/initialize.py`、`behavior-protocol-wuu.md`、`modules/habena.md`、本台账等） | **已收口** | 2026-10-14 原文**逐字**入库为 `docs/plans/2026-10-13-wuu-alignment-master-plan.md`，顶部加“计划态快照、进度以 phase-a-mvp + 本台账为准”横幅；母计划 §13（仍写“ADR 待写”）与 §12-B（`ui/`、旧 `desktop/` 已移出）的滞后**不改写原文**，现状由本台账“冲突消解收口”与“处置地图”承载。同批修 `AGENTS.md` §七 必读表（原指向已作废的 `development-plan.md`）。本坑已登记 `pitfalls.md` **B-123**（open）：`check_docs.py` 只校 md 相对链接存在性，反引号路径与“作废档居必读位”仍是机械盲区——文档类收口项须用 grep 断言旧指向已消失，不能只在台账上挨行打勾。 |
 
 ### 文档处置（回答"删什么/会不会影响开发"）
 > 判据：会不会被开窗口当"现状/实现依据"读错。多数是**标历史/改写中**，不是删；仅无保留价值者删。
@@ -17,6 +18,7 @@
 | 文档 | 处置 | 会误导开发? |
 | --- | --- | --- |
 | `docs/plans/development-plan.md`（M 系列 + "已完成"勾销） | 加"已被 `phase-a-mvp.md` 取代、M 系列作废"横幅；`phase-a-mvp` 未写前不得据此开工 | 🔴 会（必读）→ 必须标 |
+| `docs/plans/2026-10-13-wuu-alignment-master-plan.md`（母计划，2026-10-14 自编辑器缓存区逐字入库） | 加“计划态快照、不含执行进度”横幅 + 在 `docs/README.md`、`phase-a-mvp.md`、`AGENTS.md` §七 三处指向它作 §1.5/§12/§13 的出处；§13/§12-B 旧状态由本台账承载，不就地重写 | 🟡 会（“待写/待做”易被当现状）→ 已标 |
 | `docs/plans/2026-10-13-phase-u-*.md`（3327 行已做完 + completion） | 加"历史执行记录，不得再作实现依据"横幅 + 撤销 pending（代码废弃后 pending 全废）；**不删**（B-108~118 唯一出处） | 🔴 会 → 必须标 |
 | `docs/architecture/modules/*.md`（tools/providers/context/engine/serve 挂 FlowCoder provenance + 旧内核假设） | 各在其 Phase 移植前重写为"照 wuu X 移植"；重写前窗口**只读 wuu 源码 + 本台账**，不信 modules/*.md 旧结论 | 🟠 局部会 → 该模块开工前重写 |
 | `ui/README.md` | 重写/标注：ADR-0040 已废弃 `ui/`，改 `desktop/src/renderer` | 🟠 会 |
