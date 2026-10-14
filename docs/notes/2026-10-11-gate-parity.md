@@ -1,7 +1,7 @@
 # 门禁是怎么从"看着一致"变成"真的一致"的
 
 日期: 2026-10-11
-复核于: 2026-10-13
+复核于: 2026-10-14
 锚点: justfile, .github/workflows/ci.yml, tests/architecture/test_ci_parity.py,
       scripts/ci/check_specs.py, .pre-commit-config.yaml
 
@@ -51,6 +51,12 @@ split 3/3 的 commit body。同一次里 `.node-version` 仓库根新增一个�
 一个工具层面的观察：Windows 上 pytest 的 `__pycache__` 与 vitest 的 transform
 cache 都有 mtime 精度丢失（与 B-68 里的跨平台漂移同一族现象），负向验证时
 必须先清缓存或 sleep 跨过秒精度边界，否则“测仍绿”会被误读成“护栏没咬人”。
+
+## 2026-10-14 复核（母本对齐 Phase 0）
+
+本轮 `scripts/ci/check_specs.py` 加入坑编号唯一性与 spec 引用存在性断言（Phase 0 地基），
+属新增检查项、已同步进 justfile/CI 门禁集合；本条所述 **justfile ↔ CI 逐字一致** 机制未变，
+test_ci_parity 断言照旧。复核结论不变。
 
 ## 可迁移的结论
 
