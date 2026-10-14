@@ -1,139 +1,89 @@
-# Questor 跨进程协议（protocol）
+# Questor app-server 协议（protocol）——跨进程契约真相源
 
-版本: v1.1 | 更新: 2026-10-12 | 状态: accepted（M1 定稿；v1.1 补编排方法族/通知族与协议加性演进规则，见 ADR-0028）
-关联: `overview.md` §8（草案出处）、`data-model.md`（实体契约）、
-`src/questor/schemas/app_server/`（本协议的 JSON Schema 物化）、
-`docs/specs/behavior-protocol-wuu.md`（协议形状参照）
+版本: v2.0（词表取齐 wuu app-server，ADR-0042）| 更新: 2026-10-14 | 状态: 待用户评审
+关联: `ADR-0042`（词表同源）、`ADR-0045`（无 review/turn_diff）、`ADR-0028`（加性演进）、`docs/research/phase0-wuu-protocol-table.md`（全量事实源）、`AGENTS.md` §三
 
-**本文件是跨进程边界的唯一真相源**（R4）。改动先改本文并递增版本号。
+> 本文件是「协议」契约三件之一，**改方法/通知/字段先改本文件并递增版本，代码跟随**。
+> **单一来源纪律**：本表首列 ↔ `src/questor/schemas/app_server/` ↔ `serve` handler 注册表 ↔ `phase0-wuu-protocol-table.md` 四处同源；护栏 `test_serve_names_are_contracted` 解析 §3/§4 表首列 + §7 错误方言，断言「实现面 ⊆ 契约面」（B-119/B-121）。
+> 词表**取齐 wuu 实测**（snake_case）；旧自研命名（`thread/create`、`run/stop`、`review/turn_diff`）作废。§3/§4 列 **A 阶段目标词表**；`serve` 尚未按此重写时，护栏红 = 契约先于实现的**正确信号**，Phase 1/2 移植 serve 后转绿（ADR-0044）。
 
----
+## 1. 传输与信封（照 wuu）
 
-## 1. 传输与信封
+- **单一传输**：stdio NDJSON；**无服务端监听 WebSocket**（`websocket` 只属 provider 流式与不做的 remote）。桌面 stdio；web 宿主后期按「同 renderer 换传输」评估。
+- **协议版本**：`questor-app-server/v0.1`（对齐 wuu 串值），`initialize` 严格相等、不降级（B-60）。
+- **单帧上限**：`64 * 1024 * 1024`（两端同值，base64 附件内嵌）。
+- **信封**：请求 `{id,method,params}`；响应 `{id,result}` / `{id,error:{code,message}}`；通知 `{method,params}`（无 id）；反向（server→client）id 带 `srv-` 前缀。
+- 命名 snake_case；路径字段按 Windows 原生生成。
 
-- 协议名 `qst-app-server/v0.1`；**版本严格相等，不做降级兼容**（B-60）。
-- **版本号只标记破坏性变化**（ADR-0028）：新增方法族/通知族、追加可选字段属**加性变化，
-  不升版本**——客户端经 `initialize` 的 `methods` / `notification_families` 发现能力，
-  并按 §2 容忍未知通知；删改方法、改变字段语义/类型/必需集合才升 `v0.x`。
-- 两种传输、**同一会话层**（Web 宿主不得拥有第二套契约或私有端点）：
-  - 桌面（Electron sidecar）：**stdio 上的 NDJSON**；
-  - 网页（本地）：Gateway 的 **WS/SSE**，默认只绑 `127.0.0.1`。
-- 单行 JSON 上限 64 MiB；超限的命令输出走全量日志引用（deferred content）。
-- 信封：
-  - 请求 `{"id":"...","method":"...","params":{...}}`
-  - 响应 `{"id":"...","result":{...}}` / `{"id":"...","error":{"code":"...","message":"..."}}`
-  - 通知 `{"method":"...","params":{...}}`（无 id）
-- **错误码是字符串**，不假装 JSON-RPC 数值码；业务错误载荷可带
-  `error_kind` / `reason` / `model_next_action`（limen 方言，`boundary_denied` 等）。
-- stdout 必须干净（禁 banner 与调试日志）；行缓冲有上限。
+## 2. initialize 握手
 
-## 2. 客户端义务
+`InitializeParams{protocol_version, client{name,version}, capabilities{reverse_rpc.methods[], deferred_notification_content}}` → `InitializeResult{status, issues, protocol_version, core, provider, model, effort, variant, max_parallel, runtime_host, workspace_root, permissions, model_profile, tool_surface, model_roles, model_aliases, providers, advanced_settings, general_settings, features{browser, safe_mode, project_agent}}`。插件/二开面字段裁剪或退化（port-ledger 记）。
 
-- 按 `id` 关联响应，**请求未决期间持续读通知**，不得假设每行都是最近请求的响应
-  （反向请求响应先路由给等待者，B-59）；
-- 慢发现/维护由服务端后台化，客户端不得假设方法串行完成（B-62）；
-- 未决期间收到的通知必须缓冲处理，不得丢弃。
+## 3. 方法表
 
-## 3. 方法表（v0.1）
+| 方法 | 域 | 说明 |
+| --- | --- | --- |
+| `initialize` `shutdown` | 握手 | 生命周期 |
+| `thread/start` | 会话 | 建会话（旧 `thread/create` 作废） |
+| `thread/resume` | 会话 | 恢复（旧 `thread/show`） |
+| `thread/fork` `thread/archive` `thread/delete` | 会话 | 分叉/归档/删除（删除需 idle） |
+| `thread/list` `thread/listAll` `thread/listArchived` `thread/search` | 会话 | 列表与跨会话搜索 |
+| `thread/pin` `thread/rename` `thread/preview` `thread/regenerate-title` `thread/edit-message` | 会话 | 元数据 |
+| `thread/compact/start` `thread/context-composition` | 会话 | 显式压缩 / 上下文构成（可见） |
+| `turn/start` `turn/interrupt` | 执行 | 起一轮 / 中断 |
+| `turn/steer` `turn/unsteer` `turn/queue` `turn/dequeue` `turn/requeue` `turn/update-queued` | 执行 | **可干预柱本体**（steer=改道、queue=排队；`client_id` 幂等） |
+| `run/start` `run/interrupt` | 执行 | run 控制/观测边界 |
+| `process/list` `process/read` `process/write` `process/resize` `process/stop` | 终端 | 后端 worker 进程面（Windows ConPTY 或让位前端 node-pty） |
+| `activity/list` `activity/takeover` `activity/release` `activity/stop` | 接管 | 控制权仲裁（租约+takeoverVersion） |
+| `user-question/hold` `user-question/respond` `user-question/list` `user-question/cancel` | HITL | agent 反向提问 |
+| `config/read` `config/model/update` `config/advanced/update` `config/general/update` `config/provider/remove` `config/model-catalog/refresh` `config/model-catalog/providers` | 配置 | 分层配置（permission_mode 不可由项目层设定） |
+| `usage/overview` `settings/usage` | 用量 | 最小读数（insight 大盘不做） |
+| `git/commit-message` `text/polish` | 杂项 | 轻量 |
+| `workspace/list` `workspace/state/cleanup` | 工作区 | 注册与清理 |
+| `sessionFolder/create` `sessionFolder/update` `sessionFolder/reorder` `sessionFolder/delete` | 会话 | 文件夹 |
+| `browser/cdp` `browser/screenshot` `browser/open_tab` `browser/close_tab` `browser/set_visibility` `browser/list_tabs` `browser/turn_ended` `browser/finalize` | 反向 | core→client server-initiated，不注册进 handleLine；`tab_id` core 侧 mint |
 
-### 会话与线程
+**不做族（登记非遗漏）**：`plugin/*` `extension/*` `mcp/*` `sideThread/*` `participant` `project/*` `sessionOrganization/*` `skill/*` `device/*`。**明确不存在**：`review/*` `diff/*` `task/*` `goal/*` `schedule/*` `evidence/*`（盘态 diff 归壳侧 ADR-0045；编排/验收族 Phase 6）。
 
-| 方法 | 说明 |
-| --- | --- |
-| `initialize` | 握手（见 §5） |
-| `thread/create` / `thread/list` / `thread/rename` / `thread/archive` / `thread/delete` / `thread/show` | 会话管理；删除需 idle（运行中、活跃侧聊拒绝）；归档运行中拒；`thread/show` 返回 Thread + 历史 fold |
-| `thread/search` | 跨会话搜索，命中带上下文定位到具体消息 |
-| `thread/fork` | `{thread_id, turn_seq, mode: local\|worktree}`；三级历史回退 + live 分叉 |
-
-### 执行
-
-| 方法 | 说明 |
-| --- | --- |
-| `turn/start` | 发起用户输入，返回 `turn_id` + `run_id` |
-| `turn/steer` | 运行中插话；`expected_turn_id` 空=兼容放行、非空不匹配=拒绝（B-64）；`client_id` 幂等（B-63） |
-| `turn/queue` | 排队下一条（与 steer 可互转，held work 双 origin，B-65） |
-| `turn/dequeue` | 撤回未决 |
-| `run/stop` | 取消（传播到进程树，终态 `cancelled`） |
-| `session/control` | 接管/暂停/释放（CAS + revision 栅栏；stale 进程不能撤销人的接管） |
-
-### 工作区与工作台
-
-| 方法 | 说明 |
-| --- | --- |
-| `workspace/status` / `workspace/revision` | 修订号查询（data-model §4） |
-| `sessiontrace/get` | 会话轨迹回放（`{thread_id, turn_id?}` → 按 turn 投影 items/events；不重跑工具不联系模型） |
-| `review/turn_diff` | 某一 turn 的逐文件真实 diff（写时刻持久化的结构化 diff） |
-| `files/read` / `files/list` | 读取绑定修订号；不匹配拒绝 |
-| `content/read` / `attachment/read` | **deferred content**：大内容按引用延迟取 |
-| `selection/annotate` | 选中文字→批注/侧聊/只改这段（源定位 = 修订号 + 字节 offset） |
-
-### 编排与长跑（v1.1；ADR-0025/0026/0027）
-
-| 方法 | 说明 |
-| --- | --- |
-| `task/create` / `task/list` / `task/show` | 看板任务；`task/create` 须先过编排门（无 Plan → `need_plan_first`） |
-| `task/plan` | 写入/修订计划（Plan）；`requirement_revision` 递增即作废既有验收 |
-| `task/start` / `task/pause` / `task/resume` | 执行控制；`task/start` 须用户「开始执行」授权（`need_execution_authorization`） |
-| `task/review` | 提交待审（`executing → reviewed`）——任务总结卡/验收入口（v1.1 加性补登） |
-| `task/reject` / `task/retry` / `task/complete` | 验收打回（`reviewed → executing`）/ 重做 / 通过（`reviewed → completed`） |
-| `goal/create` / `goal/list` / `goal/show` | 后台自驱长跑目标 |
-| `goal/start` / `goal/stop` | 起跑/停止 Goal 长跑循环 |
-| `schedule/create` / `schedule/list` / `schedule/enable` / `schedule/disable` | 值守调度（`once`/`interval`/`cron`，vigilia）；目标二选一：`task_id`（到点派发任务执行，M5）或 `thread_id`+`prompt`（到点起一轮）。`create` 参数加性补登 `task_id`（`v1.1`/ADR-0028） |
-| `evidence/get` | 按 subject（run/task/turn）取证据核对结果（声称 vs 录得）；证据由模型经 `task` 工具 `report` 动作上报并核对后生产写入（M5，ADR-0029），非协议方法 |
-
-### 能力与配置
-
-| 方法 | 说明 |
-| --- | --- |
-| `engine/list` | 引擎目录（四态：unsupported/error/empty/ready；探测零副作用） |
-| `config/get` / `config/update` | 分层配置；**permission_mode 等用户专属字段不可由项目层设定** |
-| `extensions/list` / `extensions/enable` / `extensions/disable` | M7；关插件即停产品行为 |
-
-## 4. 事件族（服务端 → 客户端通知）
+## 4. 事件族
 
 | 通知 | 说明 |
 | --- | --- |
-| `turn/queued` `turn/steered` `turn/held` | turn 生命周期旁态（data-model §3.1）；M3a-3 实装 `turn/steered`，`turn/queued` / `turn/held` 随 M4 一并定 |
-| `turn/usage` | 用量（限流推送，前端自行算速率） |
-| `item/started` `item/completed` `item/removed` | Item 生命周期（tool_call/tool_result 含写时刻 diff） |
-| `delta` / `replace` | 流式文本双通道 |
-| `run/status` | 状态机迁移（含旁态与终态） |
-| `notice/compact` | 压缩通知（started/success/noop/失败） |
-| `task/status` / `plan/updated` | 编排：任务状态迁移与计划修订（v1.1，ADR-0025） |
-| `goal/status` | 长跑目标状态迁移（v1.1，ADR-0025） |
-| `evidence/reported` | 证据核对结论（含 `recorded_output_ref`，v1.1，ADR-0027） |
-| `notice/schedule` | 值守调度事件（触发/跳过，v1.1，ADR-0026） |
+| `thread/started` `thread/resumed` `thread/updated` | 线程生命周期 |
+| `turn/started` `turn/queued` `turn/dequeued` `turn/steered` `turn/unsteered` `turn/held` `turn/event` `turn/error` `turn/completed` | 回合（含可干预旁态） |
+| `run/started` `run/updated` | run 状态（旧 `run/status` 作废） |
+| `item/started` `item/completed` `item/removed` | Item 生命周期 |
+| `item/agentMessage/delta` `item/agentMessage/replace` `item/reasoning/delta` `item/reasoning/replace` `item/toolCall/delta` `item/toolCall/outputDelta` | **流式增量（可见柱核心）** |
+| `turn/usage` | 用量（后端按秒节流，前端算 tokens/s） |
+| `activity/started` `activity/updated` `activity/control_changed` `activity/stopped` | 接管/控制权 |
+| `browser/turn_started` `browser/request_cancelled` | 浏览器面板反向通知 |
+| `user-question/requested` `user-question/resolved` | HITL |
+| `config/changed` `config/error` | 配置 |
 
-## 5. `initialize`
+**不做通知**：`sideThread/event`、`agent/updated`、`agent/mailbox`、`mcp/status/updated`、`plugin/inventory/changed`。
 
-- 请求：`{client_version, capabilities:{reverse_rpc:{methods[]}, deferred_notification_content}}`
-  ——能力 **opt-in**，不声明不启用（B-61）。
-- 响应：
-  `{protocol_version:"qst-app-server/v0.1", status:"ready"|"needs_setup", issues:[],
-    build:{version, commit}, host:{os, arch}, workspaces:[...], permissions:{mode, sandboxed},
-    engines:[...], feature_flags:{...}, max_concurrency:N}`
-  ——`needs_setup` 时连接仍可用（配置问题列在 `issues`，修复后由变更通知刷新）。
+## 5. 反向请求与能力协商
 
-## 6. 服务端反向请求（server-initiated）
+反向 browser 8 方法（§3）经 `callClient` 单桥、30s 超时、单 stdin scanner 串行；客户端不回则 `features.browser=false` 降级。审批走 wuu 收紧型 `approve_for_me`（非 per-command 弹窗，C19 待 Phase 1 实测对表）。
 
-| 方法 | 说明 |
-| --- | --- |
-| `approval/request` | 收紧型审批（habena）：payload 只带用户可读的中立字段；五态结果
- allow/deny/unsure/failed/cancelled（unsure/failed 不是安全判定，B-56/B-57 同族）；**超时或
- 取消即动作不执行** |
-| `browser/host` | M8 延后（ADR-0006） |
+## 6. 客户端义务
 
-- 客户端能力白名单之外的反向请求直接失败（opt-in 协商）。
+按 `id` 关联响应；未决期间持续读通知；反向响应先路由给 pending 等待者再进 method switch（B-59）；慢发现后台化不卡分发（B-62）。
 
 ## 7. 错误方言
 
-| error_kind | 场景 | model_next_action 示例 |
+| error_kind / code | 场景 | model_next_action 示例 |
 | --- | --- | --- |
 | `boundary_denied` | limen 拒绝 | "use read-only tools, or tell the user..." |
-| `need_execution_authorization` | 编排门（M4 启用） | "待用户「开始执行」后重试" |
-| `need_plan_first` | 编排门（M4 启用） | "先调用 plan 落库计划" |
+| `authorization_denied` | Authorizer fail-closed | 无（终止本轮该动作） |
+| `review_blocked` | 可选复核不得默认变隐式信任 | "await explicit user approval" |
 | `stale_revision` | 修订号不匹配 | "re-read the file at the new revision" |
 | `protocol_version_mismatch` | 握手失败 | 无（终止） |
-| `unknown_method` / `invalid_params` | 信封层 | — |
+| `unknown_method` `invalid_params` `internal_error` | 信封/技术层 | — |
 
-- 拒绝时返回模型读得懂的理由 + 下一步动作；**审批不得解除硬拒**（B-56）。
+- 拒绝带模型读得懂的理由 + 下一步；审批不得解除硬拒（B-56）。字符串错误码不自造，须落本表或 app_server schema `code.enum`。
+
+## 8. 演进与校验
+
+- **加性演进**（ADR-0028）：新增方法/通知族不升版本；破坏性改动才升；族级停用显式登记。
+- **契约测试**：`tests/contract/` 用 wuu 测试 golden / 手写期望帧回放驱动 Python，逐帧形状/顺序/终态一致（本机无 Go → 软模式，运行期行为标盲区）——「无代码生成」缺陷的唯一防线。
