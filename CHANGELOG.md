@@ -10,6 +10,18 @@
 ## [未发布]
 
 ### Added
+- **Phase 2a 批次 1：gesta 落成 SQLite 会话权威库**（母计划 §1.5 机制 1/4；ADR-0041、
+  `data-model.md` v2.0；行为规格 `docs/specs/behavior-gesta-wuu.md` 已整体重写）：
+  - 新增 `gesta/{schema,session_store,inbox,held_work,records,errors}.py`，逐函数对位 wuu
+    `internal/session/{session.go,inbox.go,held_user_work.go}`（PRAGMA 取值、`BEGIN IMMEDIATE`
+    代 `_txlock=immediate`、seq 事务内单点分配、inbox 幂等与送达判据、held_work 整表替换）。
+  - 新测试 **41 条**（unit 4 个文件 + `tests/adversarial/test_gesta_concurrent_write.py`），
+    其中 3 条护栏已做负向验证（去 append-only 触发器→DID NOT RAISE 红；去 ADD COLUMN 竞态容忍→
+    报 `duplicate column name: work_version`；改成“入队即送达”→两条当场红）。
+  - 坑目录新增并当场闭合 **B-125…B-129**（其中 B-128 按实测口径记为“母本防御性语义”，
+    本机把两段取负换成朴素 `position-1` **测不出红**，不得写成已观测故障）。
+  - append-only 比母本加严（两触发器）；旧 JSONL 路径（`gesta/{store,writer,transitions}.py`）
+    按延迟清理策略仍存，**批次 5 与旧 serve 同批移出**并把 B-46 改 `moot`（port-ledger G-11）。
 - **Phase 2 开工前置（T0）**：
   - `NOTICE` + `third_party/THIRD-PARTY-NOTICES`——ADR-0037 的 MIT 署名硬线在 Phase 0/1
     未曾真移植代码所以**两件都不存**（TL-6）；现逐上游登记，wuu 许可证与 `wuu-main/LICENSE`

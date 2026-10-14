@@ -123,3 +123,32 @@ Phase 1 已实测：id 为 `json.RawMessage`（数字/字符串皆可，原样�
   渲染层 + AppState.ts 事件 reducer + 189 个 `wuu:` preload 通道；sqlite-schema 实测 session.go:1214-1470
   全部 CREATE/PRAGMA(WAL/_txlock=immediate/busy_timeout) + inbox 幂等 SQL + held_user_work 整表替换事务。
   Phase 0 “三表逐符号可复核”出口判据至此**真正达成**（不再建在流沙上）。
+
+## Phase 2a · 内核移植（进行中）
+
+### 批次 1：gesta（SQLite 会话权威库，2026-10-14）
+
+蓝本已从旧记的 `internal/agentthread/store.go`（属不做面、且旧行为规格把它当成 gesta 母本）
+改指 `internal/session/*`；`docs/specs/behavior-gesta-wuu.md` 已整体重写。
+
+| # | 项 | wuu 事实（结论锁在哪个函数） | Questor 做法与理由 | 收口时机 |
+| --- | --- | --- | --- | --- |
+| G-1 | 写事务取锁 | DSN 带 `_txlock=immediate`（`session.go#L1225`） | Python `sqlite3` 不认 `_pragma`/`_txlock` 查询串：改用 `isolation_level=None` + `write_txn()` 显式 `BEGIN IMMEDIATE`；PRAGMA 全部连上后逐条执行（照 `configureDB` 取值与顺序） | 已定 |
+| G-2 | 进程内写串行 | `storeWriteMu`（全局互斥锁）+ 每次调用 `openStore(dir)` 开关连接 | 每个 store 一个**专用写线程 + 任务队列**：因 `sqlite3` 连接不得在不同线程间使用（实测 `ProgrammingError`），而 engine 会从多个 `to_thread` 工作线程写同一库；读走线程局部连接（WAL 允许读者与写者并存），不进队列 | 已定 |
+| G-3 | `session_inbox` 列集 | CREATE 只 8 列，`controls_json/work_id/work_revision/work_version` 由 `addColumnIfMissing` 追加（L2005-2018） | 基线 CREATE 直接含全列（新库无需爬），**同时保留 `ensure_column` 追加路径**与并发竞态容忍（B-125）；实现过程中真以 `KeyError: 'delivered_at'` 撞过一次“拿写入列单去 SELECT”（B-126），已拆 `_WRITE_COLUMNS`/`_READ_COLUMNS` | 已定 |
+| G-4 | seq 分配 | `appendHistoryRecordTx` 事务内 `COALESCE(MAX(seq),0)+1` | 一致；额外新增 `SequenceRejected`：调用方自带 seq 直接拒（wuu 无此入口，无对应错误可照搬）——防“两个写者各算各的”（B-45） | 已定 |
+| G-5 | append-only 表达 | wuu 靠约定（只有 PK 单调），**无触发器** | 比母本加严：两个触发器——禁 `UPDATE OF content/display_content/seq/role/session_id`；禁“所属会话仍在时删单行”，用 `WHEN EXISTS(SELECT 1 FROM sessions ...)` 区分级联删除（`thread/delete` 是 protocol.md §3 在册方法，不加 WHEN 会把会话删除一起挡死）——`data-model.md` §4 立场 | 已定 |
+| G-6 | 送达判据 | `PendingInbox` 的 `UPDATE ... WHERE EXISTS(session_messages.client_id = session_inbox.client_id)`（L92-94） | 逐字对齐（B-127）；负向已实测：改成“入队即写 delivered_at”→ 两条用例当场红 | 已定 |
+| G-7 | 控制栅栏 | `validateInboxControls` 同时查 `project_work` 与 `session_controls`（L175-235） | **只移植 `session_controls` 那一半**（manager/revision/state 全等才放行，B-129）；`project_work`/`cause=project` 分支属不做的多-agent 编排面（scan-wuu-kernel §8）——登记为决定非遗漏 | 已定 |
+| G-8 | held_work 校验位置 | 事务内逐条校验（失败靠 deferred rollback，L44-55） | 前置到写入之前：可观测结果一致（失败则整表原样），少一次无谓 DELETE；两段取负压缩照搬，**诚实标注**：本机把其换成朴素 `position-1` **测不出红**（SQLite 不保证 UPDATE 扫描序），故 B-128 只记为“母本防御性语义”而非已观测故障 | 已定 |
+| G-9 | 不做/后置表 | `participants`/`participant_runs`/`project_work*`/`plugin_turn_lifecycle*`/`inference_journal_runtimes`/`session_folders` | 一律**不建**（`test_migrate_creates_authority_tables` 反向断言它们不在）；`session_driver_checkpoints`/`session_model_input_receipts` 本轮也不建（Phase 6 与审计阶段再评估） | Phase 6 / 审计批次 |
+| G-10 | 已建未接写路径 | `session_history_{retractions,checkpoints}`、`session_compaction_notes`（L1390-1425） | 表已建、**尚无写入者**：历史改写（`LoopResult.history_rewritten`）随批次 4 engine、压缩笔记随批次 3b context 接入；登记以免“有表”被误读成“已实现” | 批次 3b/4 |
+| G-11 | 旧 JSONL 世界 | 不适用（旧 questor 实现，非母本） | `gesta/{store,writer,transitions}.py` 仍在工作树（被旧 engine/serve 依赖，延迟清理策略）；批次 5 重写 serve 时同批移出，**并把 `pitfalls.md` 的 B-46（JSONL 唯一真相源）改 `moot`**、按 ADR-0044 ② 逐条登记其对抗用例的作废/替代理由 | 批次 5 |
+| G-12 | `thread/delete` 的“需 idle” | appserver 侧按 run 状态拒删活跃会话 | 本轮 `delete_session` 只保证“会话存在才删”；`SessionBusy` 错型已定义但**无调用者**（run 状态面属批次 4/5）——不得假装已拦 | 批次 4/5 |
+| G-13 | 时间列 | `timeText` UTC 文本 | `schema.now_text()` 单点 UTC ISO8601（创建序/送达判定/updated_at 排序共用一把尺） | 已定 |
+
+### 批次 1–5 的替换节律（防“新旧双真相”）
+
+每批次一个 commit：**新实现 + 新测试 + 旧实现同批移出**；例外只在“旧实现仍是被保留侧的生产依赖”时发生
+（gesta 的旧 JSONL 与旧 engine/serve 同命运，故本批并存至批次 5）。并存期间新代码一律只用新门面，
+旧门面不再添新功能；各批收口前过一遍清单：`grep` 确认无新代码 import 旧路径。
