@@ -1,5 +1,7 @@
 # Phase U 实施计划 — Review 面板 wuu 级还原 + Electron 桌面壳
 
+> ⚠️ **历史执行记录（2026-10-14 转向）：不得再作实现依据。** 本文"`ui/` 构建产物原封搬进 renderer""后端零改动""Option A 唯一"等前提随 ADR-0040（废弃 `ui/`、渲染层照 wuu 重搭）作废。前端重搭看 `phase-a-mvp.md` Phase 2b + `docs/research/phase0-wuu-renderer-assembly.md`。保留因它是 B-108~B-118 出处与"从 wuu 借鉴清单"范式先例。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把 Phase U 拆成可勾选、可独立回滚的任务序列——Track A 先在浏览器宿主里把 Review 面板做到 wuu 级还原度（真 diff、逐文件展开、已阅态、动效与主题）；Track B 再把整套 `ui/` 构建产物包进 Electron 壳、主进程用 `child_process` 以 stdio 管道拉起 `questor serve stdio` sidecar，交付"双击能开 + 真 sidecar 通信 + 真 diff 呈现"的产品形态。
