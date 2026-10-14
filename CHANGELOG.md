@@ -24,8 +24,10 @@
     补全 A 阶段“做”方法覆盖（pluginhost/activity/config 内部面透传、登记后置）。
   - `tests/architecture/test_protocol_single_source.py` — `protocol.md` §3/§4/§7 ↔ `names.py` 双向同源
     护栏（B-119/B-121，契约侧即绿）。
-- **Phase 0 欠账修正**：回填曾为 0 字节的 `research/phase0-wuu-protocol-table.md`（方法/通知全枚举
-  + A 阶段处置）；`port-ledger` 标 `renderer-assembly`/`sqlite-schema` 两份仍空、需各自开工前补齐。
+- **Phase 0 欠账闭合**：回填曾为 0 字节的三份前置扫描表——`research/phase0-wuu-protocol-table.md`
+  （方法/通知全枚举 + A 阶段处置）、`phase0-wuu-renderer-assembly.md`（实测 wuu 648 文件渲染层
+  装配/AppState.ts 事件 reducer/189 个 `wuu:` IPC 通道）、`phase0-wuu-sqlite-schema.md`（实测
+  session.go 全建表/PRAGMA·WAL/inbox 幂等/held_user_work 整表替换事务）；Phase 0 “三表可复核”出口判据真正达成。
 - **Phase 0 收口（知识抢救 + 契约重立基，计划 §12-B/§12-E）**：新渲染层设
   计篇 `docs/architecture/modules/{review,habena}.md`；壳侧知识归档
   `docs/research/archive-desktop-restart-policy.md`（原 notes 锚定的 `desktop/src/main/*` 已移出）；

@@ -105,7 +105,8 @@ Phase 1 已实测：id 为 `json.RawMessage`（数字/字符串皆可，原样�
 - 不透明透传（**登记过的后置**，非遗漏）：`run` 内部（P1-7）、`InitializeResult` 各大 summary
   （permissions/providers/model_profile/… 属 config 面）、`images`/`files` base64 形状——均以
   `dict[str, Any]` 占位，随 Phase 2a/2b 逐字段收紧（届时补类型化模型 + 回放断言）。
-- **Phase 0 诚实更正**：上表所称“六份扫描已归档”中，`phase0-wuu-{renderer-assembly,sqlite-schema}.md`
-  **仍为 0 字节空文件**（本轮发现；之前误按文件存在判“齐”）。protocol-table 已在 Phase 1 回填；
-  另两份分属 Phase 2b/Phase 3 依赖，**需在其各自开工前补齐真实扫描**方可进该阶段（属 Phase 0 欠账，现挂此。
-  不影响 Phase 1 已交付的协议接缝完整性）。
+- **Phase 0 欠账已闭合**：三份 `phase0-wuu-{protocol-table,renderer-assembly,sqlite-schema}.md` 均于 2026-10-14
+  Phase 1 期间**回填真实扫描**（之前均为 0 字节空文件、误按“齐”判）。renderer-assembly 实测 wuu 648 文件
+  渲染层 + AppState.ts 事件 reducer + 189 个 `wuu:` preload 通道；sqlite-schema 实测 session.go:1214-1470
+  全部 CREATE/PRAGMA(WAL/_txlock=immediate/busy_timeout) + inbox 幂等 SQL + held_user_work 整表替换事务。
+  Phase 0 “三表逐符号可复核”出口判据至此**真正达成**（不再建在流沙上）。
