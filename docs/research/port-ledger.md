@@ -57,3 +57,29 @@
 
 - **已关（ADR 落定 + 契约文档同步）**：C0→ADR-0045・`behavior-review-fidelity-wuu`§0；C1→ADR-0037・AGENTS §二；C2→ADR-0040・structure・ui/ 已移出；C3→ADR-0041・data-model；C4→ADR-0042・protocol；C5/C6→data-model 重写（Run⊃Turn、状态集、UTF-16）；C7→ADR-0016（自建 wire、与 wuu 同形）；C8→ADR-0042/0030；C9→ADR-0043（后置 P6）；C10→ADR-0039；C12→ADR-0037・specs/README+docs/README 悬空引用已清；C13→structure 重写；C14→AGENTS §六；C15→dependabot 实查无 cargo、`/ui` npm ecosystem 已移；C17→AGENTS §四/ADR-0009；C18→ADR-0037/0038；C20→ADR-0011・justfile/workflow 同步；C21→ADR-0001。
 - **后置含登记（非遗漏）**：C11/C16（id 正则/大小写）、C19（approval/request 收紧 vs per-command）——均待 Phase 1 逐字段实测 wuu `protocol.go`/`stdio.go` 定夺（本台账上行 + overview §13 未决项 #5）。
+
+## Phase 1 · 跨语言接缝契约重立基
+
+### 硬语义差异登记（wuu ↔ Questor，逐行有理由）
+
+| # | 项 | wuu 事实（锚点） | Questor 差异与理由 | 收口时机 |
+| --- | --- | --- | --- | --- |
+| P1-1 | 协议版本串 | `wuu-app-server/v0.1`（protocol.go:26） | **改 `questor-app-server/v0.1`**（用户拍板 TL-3）：项目自命名，Phase 2b 重建前端时其常量同步对齐；initialize 仍严格相等不降级（B-60） | 已定 |
+| P1-2 | `Request.ID` 类型 | `json.RawMessage`，允许数字或字符串（protocol.go:224/230） | 旧 questor envelope 强制字符串 id；Phase 1 重写容纳两种、响应 id 逐字节回显请求 id | Phase 1 |
+| P1-3 | `Turn.items` nil→`[]` | 自定义 `MarshalJSON` 令空 items 输出 `[]` 非 `null`（protocol.go:2457-2464） | Questor 模型必须复刻（前端 `for` 遍历不得收 null）；`model_serializer` 保证 | Phase 1 |
+| P1-4 | Provider 凭据 | `InitializeResult.provider/model` 仅活动选择串，无 api_key | Questor 模型 `extra="forbid"` 拒未知键，防凭据误上线（B-57 同源） | Phase 1 |
+| P1-5 | `Origin` ≠ `Role` | ChatMessage.Role(provider 角色) 与 .Origin(产品出处) 分离（types.go:313/321） | `schemas/message.py` 保留两独立字段，不得合并 | Phase 1 |
+| P1-6 | FinishReason 归一 | `NormalizeFinishReason` 七值表（types.go:116-146） | `message.py` 照语义重写映射（不拷代码），各家停止信号归一 | Phase 1 |
+| P1-7 | `run` 内部形状 | `Run = execution.Run` 别名（protocol.go:2004） | Phase 1 只固定 `run` 作为不透明对象上线；内部字段随 Phase 2a 移植 `execution` 逐符号补，不凭猜写死 | Phase 2a |
+| P1-8 | item delta/replace | 两态通知（protocol.go:2591-2617） | 契约层分别建模、fixture 断言两态 | Phase 1 |
+| P1-9 | 64MiB/`srv-`/NDJSON | stdio.go:16 / client_calls.go:50 / stdio.go:18-32 | 与 wuu 同形，保留 | Phase 1 |
+
+### C11/C16 收口
+
+Phase 1 已实测：id 为 `json.RawMessage`（数字/字符串皆可，原样回显），无固定正则强约束；小写 snake_case 为字段命名主调（逐字段见 protocol.go tag）。C11/C16 从「待实测」转「已实测入表」（P1-2）。
+
+### Phase 1 代码层处置（用户拍「彻底重写不继承」）
+
+- 旧 `serve/{envelope,stdio,app_server,dispatch}.py` + 旧名测试：不拷行重写；旧 `serve/` 仍按 Phase 0 处置地图「过渡期保留」到 Phase 2a 新内核同批推倒（因 Phase 1 不写 handler，旧 app_server.py 与其绿测本阶段不动，新契约层并行立住、由 tests/contract 驱动）。
+- `tests/contract/`（原仅 README 空壳）：本阶段核心交付，建 wuu golden fixtures + 信封/模型层回放（不经 handler）。
+- `schemas/message.py` 新增；`schemas/app_server/` 新建 pydantic 模型包（取代旧 `app_server/v0-1.json`+生成链路线；该路线原服务已废弃的 ui/，Phase 1 改 pydantic 单一来源）。旧 `schemas/llm.py` 与新 `message.py` 的重合在 Phase 2a 收敛，本阶段记此不静默。
