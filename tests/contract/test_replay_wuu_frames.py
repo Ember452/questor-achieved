@@ -20,7 +20,7 @@ from pydantic import ValidationError
 from questor.schemas.app_server import entities as ent
 from questor.schemas.app_server import families, initialize
 from questor.schemas.app_server.envelope import Request, ResponseError, ReverseResponse
-from questor.schemas.app_server.names import PROTOCOL_VERSION
+from questor.schemas.app_server.names import MAX_FRAME_BYTES, PROTOCOL_VERSION
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -155,6 +155,73 @@ def test_item_started_and_delta() -> None:
         {"thread_id": "t1", "turn_id": "u1", "item_id": "i1", "delta": "more"}
     )
     assert delta.delta == "more"
+
+
+# ---------- 硬语义：replace 态 / 数字 id / 64MiB ----------
+
+
+def test_delta_and_replace_two_states() -> None:
+    """P1-8 硬语义：`item/*` 有 delta（追加）与 replace（覆盖）两态，分别可还原。"""
+    delta = families.AgentMessageDeltaNotification.model_validate(
+        {"thread_id": "t1", "turn_id": "u1", "item_id": "i1", "delta": "chunk"}
+    )
+    replace = families.AgentMessageReplaceNotification.model_validate(
+        {"thread_id": "t1", "turn_id": "u1", "item_id": "i1", "text": "full text"}
+    )
+    assert delta.delta == "chunk"
+    assert replace.text == "full text"
+    # reasoning 同具 delta/replace 两态
+    assert (
+        families.ReasoningReplaceNotification.model_validate(
+            {"thread_id": "t", "turn_id": "u", "item_id": "i", "text": "r"}
+        ).text
+        == "r"
+    )
+
+
+def test_run_and_thread_lifecycle_notifications() -> None:
+    """thread/resumed / turn/held / run/started|updated 通知已建模且可回放。"""
+    thread = {
+        "id": "t1",
+        "preview": "p",
+        "status": "idle",
+        "model_provider": "x",
+        "model": "m",
+        "model_variant": "",
+        "model_effort": "",
+        "permission_mode": "default",
+        "cwd": "D:\\r",
+        "created_at": "2026-10-14T00:00:00Z",
+        "updated_at": "2026-10-14T00:00:00Z",
+        "turns": [],
+    }
+    resumed = families.ThreadResumedNotification.model_validate(
+        {"thread": thread, "held_user_messages": [{"id": "h1", "origin": "queue"}]}
+    )
+    assert resumed.held_user_messages == [{"id": "h1", "origin": "queue"}]
+    held = families.TurnHeldNotification.model_validate(
+        {"thread_id": "t1", "messages": [{"id": "m1"}], "error": "admission failed"}
+    )
+    assert held.error == "admission failed"
+    run_started = families.RunStartedNotification.model_validate({"run": {"id": "r1"}})
+    assert run_started.run.id == "r1"
+
+
+def test_numeric_id_preserved_byte_for_byte() -> None:
+    """P1-2 硬语义：id 可为数字（wuu 测试用 json.RawMessage 数字 id），响应原样回显。"""
+    req = Request.model_validate({"id": 42, "method": "shutdown", "params": {}})
+    assert req.id == 42 and isinstance(req.id, int)
+    # 字符串 id 也容纳
+    req_str = Request.model_validate({"id": "7", "method": "shutdown", "params": {}})
+    assert req_str.id == "7"
+
+
+def test_max_frame_constant_is_64mib() -> None:
+    """硬语义：契约侧帧上限常量 = 64 MiB（锚 stdio.go:16）。
+
+    超限拒绝属运行编解码（serve/envelope，Phase 2a）。
+    """
+    assert MAX_FRAME_BYTES == 64 * 1024 * 1024
 
 
 # ---------- 反向响应 ----------

@@ -148,18 +148,20 @@ habena 的 inbox 表照此设计：client_id 主键幂等 + 送达即 settle + E
 
 ## 6. 硬语义清单（Phase 1 逐条挂 port-ledger + 测试）
 
-| 硬语义 | wuu 锚 | Phase 1 落点 | 测试族 |
+> “契约侧已测”= 本 Phase 的 models/常量/归一函数可断言；“运行侧后置 2a”= 需 codec/handler（旧 `serve/` 推倒重写时）才能断言。
+
+| 硬语义 | wuu 锚 | 契约侧落点（已测） | 运行侧落点（后置 2a） |
 | --- | --- | --- | --- |
-| 64 MiB 单帧上限 | `stdio.go#L16` | `envelope.MAX_LINE_BYTES` | 超限帧红 |
-| NDJSON·TrimSpace 跳空行 | `stdio.go#L18-32` | `stdio.run_stdio` | 空行不产生帧 |
-| `srv-<seq>` 反向 id | `client_calls.go#L50` | `dispatch` pending 表 | 反向请求 id 前缀断言 |
-| 响应 id 原样回显（可数字） | `protocol.go#L230` RawMessage | `envelope` | 数字 id 回放 |
-| 版本严格相等不降级 | `config_handlers.go#L50-51` | `handle_initialize` | 错版本回 error（B-60） |
-| Provider 凭据不上线 | `InitializeResult` 无 key 字段 | schemas `extra=forbid` | 注入 api_key 键被拒 |
-| Origin ≠ Role | `types.go#L313,L321` | `message.ChatMessage` | 断言两字段独立 |
-| FinishReason 归一 | `types.go#L116-146` | `message.normalize_finish_reason` | 逐入参表测 |
-| Turn.items nil→[] | `protocol.go#L2457-2464` | `app_server` Turn 模型 serializer | 空 items 序列化为 `[]` |
-| item delta/replace 两态 | `#L2591-2617` | `app_server` 通知模型 | 两态形状断言 |
+| 64 MiB 单帧上限 | `stdio.go#L16` | `names.MAX_FRAME_BYTES`==64MiB（`test_max_frame_constant_is_64mib`） | `serve/envelope.py`（旧名 `MAX_LINE_BYTES`）超限帧拒 · 2a |
+| NDJSON·TrimSpace 跳空行 | `stdio.go#L18-32` | —（纯运行语义） | `stdio.run_stdio` 空行不产生帧 · 2a |
+| `srv-<seq>` 反向 id | `client_calls.go#L50` | `names.REVERSE_ID_PREFIX`==`srv-` | `dispatch` pending 表路由 · 2a |
+| 响应 id 原样回显（可数字） | `protocol.go#L230` RawMessage | `envelope.Request` int/str id（`test_numeric_id_preserved_byte_for_byte`） | 逐字节回显于 codec · 2a |
+| 版本严格相等不降级 | `config_handlers.go#L50-51` | `InitializeParams.version_error()`（真实 wuu 串被判 mismatch） | `handle_initialize` 回 error · 2a |
+| Provider 凭据不上线 | `InitializeResult` 无 key 字段 | `extra=forbid` 拒 api_key（已测） | — |
+| Origin ≠ Role | `types.go#L313,L321` | `message.ChatMessage` 两独立字段（已测） | — |
+| FinishReason 归一 | `types.go#L116-146` | `message.normalize_finish_reason` 逐入参表（已测） | — |
+| Turn.items nil→[] | `protocol.go#L2457-2464` | `entities.Turn.model_dump_wire`（已测） | — |
+| item delta/replace 两态 | `#L2591-2617` | `families.*` delta+replace 均建模且回放（`test_delta_and_replace_two_states`） | 逐帧到达序·终态属 handler · 2a |
 
 ---
 

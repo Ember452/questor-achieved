@@ -45,6 +45,15 @@ __all__ = [
     "TurnStartParams",
     "TurnStartResult",
     "TurnUsageNotification",
+    # 补齐对话面通知（names.py 声明的 thread/resumed、turn/held、run/started|updated、
+    # item/reasoning/*、item/toolCall/delta）——消除"声明了但无模型"的子集缺口。
+    "ReasoningDeltaNotification",
+    "ReasoningReplaceNotification",
+    "ToolCallDeltaNotification",
+    "ThreadResumedNotification",
+    "TurnHeldNotification",
+    "RunStartedNotification",
+    "RunUpdatedNotification",
 ]
 
 
@@ -226,3 +235,58 @@ class ToolCallOutputNotification(_Notif):
     item_id: str
     delta: str
     tool_result_detail: dict[str, Any] | None = None
+
+
+class ReasoningDeltaNotification(_Notif):
+    """锚 protocol.go#L2605 —— 推理增量（追加态，与 agentMessage/delta 同形）。"""
+
+    thread_id: str
+    turn_id: str
+    item_id: str
+    delta: str
+
+
+class ReasoningReplaceNotification(_Notif):
+    """锚 protocol.go#L2612 —— 推理整体替换态（P1-8 两态之覆盖）。"""
+
+    thread_id: str
+    turn_id: str
+    item_id: str
+    text: str
+
+
+class ToolCallDeltaNotification(_Notif):
+    """锚 protocol.go#L2619 —— 工具入参流（args 逐段追加）。"""
+
+    thread_id: str
+    turn_id: str
+    item_id: str
+    delta: str
+
+
+class ThreadResumedNotification(_Notif):
+    """锚 protocol.go#L2149 —— thread/resumed 携未决/待投输入（HeldUserMessage 内部透传）。"""
+
+    thread: Thread
+    held_user_messages: list[dict[str, Any]] | None = None
+    pending_user_messages: list[dict[str, Any]] | None = None
+
+
+class TurnHeldNotification(_Notif):
+    """锚 protocol.go#L2203 —— 排队输入因 admission 失败被持留；error 非空=持留原因。"""
+
+    thread_id: str
+    messages: list[dict[str, Any]]
+    error: str | None = None
+
+
+class RunStartedNotification(_Notif):
+    """锚 protocol.go#L2035。"""
+
+    run: Run
+
+
+class RunUpdatedNotification(_Notif):
+    """锚 protocol.go#L2039 —— 节流通知（非逐 token）。"""
+
+    run: Run
