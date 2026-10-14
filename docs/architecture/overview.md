@@ -61,4 +61,4 @@ wuu Windows 无沙箱/无 PTY（后端）→ 逻辑边界 + Electron 侧 node-pt
 
 ## 11. 未决项（转向后仍开）
 
-1. ~~协议词表取齐~~ 已定 ADR-0042；2. ~~会话权威源~~ 已定 ADR-0041；3. provider 是否要接 Codex 订阅/OAuth（现 MVP 收敛 2 家，Phase 6 前重评）；4. web 宿主何时做（Phase 5 按 wuu renderer-reuse 评估）；5. `c19` `approval/request` 收紧型 vs per-command 弹窗待 Phase 1 实测对表。
+1. ~~协议词表取齐~~ 已定 ADR-0042；2. ~~会话权威源~~ 已定 ADR-0041；3. provider 是否要接 Codex 订阅/OAuth（现 MVP 收敛 2 家，Phase 6 前重评）；4. web 宿主何时做（Phase 5 按 wuu renderer-reuse 评估）；5. ~~C19 approval/request~~ **已定（Phase 1 实测）**：采**收紧型** `approve_for_me`（模型审阅的 turn-scoped 审批，`internal/appserver/approve_for_me.go` + `internal/approvefor/review.go:13-18`），Decision 五态 `allow/deny/unsure/failed/cancelled`（=B-56），`HardDenyReason` 先判、超时/失败 **fail-closed**，**非 per-command 逐个弹窗**。

@@ -56,7 +56,8 @@
 > 仓库侧证据（主计划在编辑器缓存区不可写，此处为可复核的落点记录）：
 
 - **已关（ADR 落定 + 契约文档同步）**：C0→ADR-0045・`behavior-review-fidelity-wuu`§0；C1→ADR-0037・AGENTS §二；C2→ADR-0040・structure・ui/ 已移出；C3→ADR-0041・data-model；C4→ADR-0042・protocol；C5/C6→data-model 重写（Run⊃Turn、状态集、UTF-16）；C7→ADR-0016（自建 wire、与 wuu 同形）；C8→ADR-0042/0030；C9→ADR-0043（后置 P6）；C10→ADR-0039；C12→ADR-0037・specs/README+docs/README 悬空引用已清；C13→structure 重写；C14→AGENTS §六；C15→dependabot 实查无 cargo、`/ui` npm ecosystem 已移；C17→AGENTS §四/ADR-0009；C18→ADR-0037/0038；C20→ADR-0011・justfile/workflow 同步；C21→ADR-0001。
-- **后置含登记（非遗漏）**：C11/C16（id 正则/大小写）、C19（approval/request 收紧 vs per-command）——均待 Phase 1 逐字段实测 wuu `protocol.go`/`stdio.go` 定夺（本台账上行 + overview §13 未决项 #5）。
+- **Phase 1 实测后新闭**：C11/C16（id 形状：实测为 `json.RawMessage`、数字/字符串皆可、原样回显，见 P1-2）；C19（approval/request：实测 `internal/approvefor/review.go:13-18` **收紧型** `approve_for_me`、五态 allow/deny/unsure/failed/cancelled=B-56、HardDeny 先判、超时/失败 fail-closed，非 per-command 弹窗 → 回写 protocol §5 + overview §11）。
+- **C0–C21 至此全部落定**（已关或 Phase 1 实测闭）；无遗留“待 Phase 1”挂账。
 
 ## Phase 1 · 跨语言接缝契约重立基
 
@@ -80,9 +81,16 @@ Phase 1 已实测：id 为 `json.RawMessage`（数字/字符串皆可，原样�
 
 ### Phase 1 代码层处置（用户拍「彻底重写不继承」）
 
-- 旧 `serve/{envelope,stdio,app_server,dispatch}.py` + 旧名测试：不拷行重写；旧 `serve/` 仍按 Phase 0 处置地图「过渡期保留」到 Phase 2a 新内核同批推倒（因 Phase 1 不写 handler，旧 app_server.py 与其绿测本阶段不动，新契约层并行立住、由 tests/contract 驱动）。
+- **旧协议世界（过渡期保留，未取代）**：`serve/{envelope,stdio,app_server,dispatch}.py` +
+  `schemas/app_server/v0-1.json`（旧词表 `thread/create` 等，**仍在包内 44KB**）+
+  `tests/architecture/test_schemas_method_families.py`（按 v0-1.json 与旧 serve 自洽跑**绿**）。
+  它们构成一个**自洽的旧世界**；新世界 `schemas/app_server/*.py`(pydantic)+`names.py`+`protocol.md`
+  是**目标单一来源**。二者**并行、非同一系统双真相**（§1.5 机制 5 禁的是同一系统两套真相，此处是新旧两世界待合一）；
+  旧世界随 **Phase 2a handler 重写同批推倒/合一**（届时 `test_serve_names_are_contracted` TL-1 转绿、
+  v0-1.json 与旧 serve 一同移出）。旧 `serve/` 不拷行重写；Phase 1 不写 handler，旧 app_server.py 与其绿测本阶段不动。
 - `tests/contract/`（原仅 README 空壳）：本阶段核心交付，建 wuu golden fixtures + 信封/模型层回放（不经 handler）。
-- `schemas/message.py` 新增；`schemas/app_server/` 新建 pydantic 模型包（取代旧 `app_server/v0-1.json`+生成链路线；该路线原服务已废弃的 ui/，Phase 1 改 pydantic 单一来源）。旧 `schemas/llm.py` 与新 `message.py` 的重合在 Phase 2a 收敛，本阶段记此不静默。
+- `schemas/message.py` 新增；`schemas/app_server/` 新建 pydantic 模型包，是 A 阶段线契约的**目标**单一来源
+  （旧 `app_server/v0-1.json`+`scripts/gen` 生成链原服务已废弃的 ui/，随旧世界 Phase 2a 同批推倒——**非“已取代”**，见上行）。旧 `schemas/llm.py` 与新 `message.py` 的重合在 Phase 2a 收敛，本阶段记此不静默。
 
 ### A 阶段方法类型化覆盖率对账（§1.5 机制 5）
 

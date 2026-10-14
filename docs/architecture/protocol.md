@@ -64,7 +64,7 @@
 
 ## 5. 反向请求与能力协商
 
-反向 browser 8 方法（§3）经 `callClient` 单桥、30s 超时、单 stdin scanner 串行；客户端不回则 `features.browser=false` 降级。审批走 wuu 收紧型 `approve_for_me`（非 per-command 弹窗，C19 待 Phase 1 实测对表）。
+反向 browser 8 方法（§3）经 `callClient` 单桥、30s 超时、单 stdin scanner 串行；客户端不回则 `features.browser=false` 降级。审批走 wuu **收紧型** `approve_for_me`（非 per-command 弹窗；C19 已定，Phase 1 实测 `internal/approvefor/review.go:13-18`：Outcome 五态 `allow/deny/unsure/failed/cancelled`=B-56，`HardDenyReason` 先判，超时/失败 fail-closed；`engine_approvals` 路由与 limen 判定实现属 Phase 2a）。
 
 ## 6. 客户端义务
 

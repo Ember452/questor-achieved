@@ -24,6 +24,11 @@
     补全 A 阶段“做”方法覆盖（pluginhost/activity/config 内部面透传、登记后置）。
   - `tests/architecture/test_protocol_single_source.py` — `protocol.md` §3/§4/§7 ↔ `names.py` 双向同源
     护栏（B-119/B-121，契约侧即绿）。
+- **Phase 1 审计收口**（用户核码发现 4 项，已逐项修）：① 双真相源——旧 `app_server/v0-1.json` 仍 44KB
+  在包内且 `test_schemas_method_families` 绿，措辞由“取代”改“并行过渡·Phase 2a 同批推倒”（schemas/__init__
+  口径同步收窄）；② C19 据 `internal/approvefor/review.go` 实测关定（收紧型 approve_for_me、五态、fail-closed）
+  回写 protocol §5 + overview §11；③ 补齐对话面遗漏的通知模型 + replace/64MiB/数字 id 回放测（见上）；
+  ④ 回写 `phase-a-mvp.md` Phase 1 交付/出口为实际改判（serve→2a、TS 生成→2b）。
 - **Phase 0 欠账闭合**：回填曾为 0 字节的三份前置扫描表——`research/phase0-wuu-protocol-table.md`
   （方法/通知全枚举 + A 阶段处置）、`phase0-wuu-renderer-assembly.md`（实测 wuu 648 文件渲染层
   装配/AppState.ts 事件 reducer/189 个 `wuu:` IPC 通道）、`phase0-wuu-sqlite-schema.md`（实测
