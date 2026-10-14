@@ -1,254 +1,57 @@
-# Questor 核心数据契约（data-model）
+# Questor 数据模型（data-model）——会话与运行契约真相源
 
-版本: v1.4 | 更新: 2026-10-12 | 状态: accepted（M1 定稿；v1.1 补 queued→cancelled，见 ADR-0014；
-v1.2 补上下文工程记录，见 ADR-0017；v1.3 补编排域 Task/Plan/Goal/Evidence 与 Run 的编排绑定，见 ADR-0025/0027；
-v1.4 收敛验收状态机 `AcceptanceStatus` 为强制枚举并接通 evidence 生产写入点，见 ADR-0029）
-关联: `overview.md` §7（草案出处）、`protocol.md`（跨进程边界）、`docs/specs/`（行为规格）、
-`src/questor/schemas/model/` 与 `src/questor/schemas/orchestration/`（本契约的 JSON Schema 物化）
+版本: v2.0（会话存储改判 SQLite 权威，ADR-0041；diff 双源，ADR-0045；对齐 wuu 层级/状态集）| 更新: 2026-10-14 | 状态: 待用户评审
+关联: `ADR-0041`（SQLite 权威）、`ADR-0045`（diff 双源）、`ADR-0005`（revision）、`ADR-0014`（运行状态迁移）、`docs/research/phase0-wuu-sqlite-schema.md`（表清单事实源）、`protocol.md`
 
-**本文件是数据模型的唯一真相源**。改动必须先改本文并递增版本号，代码与 schema 跟随。
-schema 为纯 JSON Schema（Python pydantic 只做绑定，前端类型由生成而来，禁止手写 DTO）。
+> 本文件是「数据模型」契约三件之一，改动先改本文并递增版本。表级/字段级细节以 `phase0-wuu-sqlite-schema.md` 为准，本文定实体、状态机、权威源、不可改写约束。
 
----
-
-## 1. 通用约定
-
-- 所有 id 为小写字母数字与连字符（`^[a-z0-9][a-z0-9-]*$`），由服务端生成；
-- 时间戳一律 UTC ISO-8601 字符串（`2026-10-11T08:30:00Z`）；
-- 所有实体带 `created_at`；可变实体带 `updated_at`；
-- 枚举值用小写字符串；跨进程字段命名 snake_case；
-- 会话正文 append-only：**任何字段一旦写入不得改写**，修订只追加新记录
-  （需求改版 = 新修订，验收作废 = 追加作废记录）。
-
-## 2. 实体与层级
+## 1. 四层实体（照 wuu，别混层）
 
 ```
-Workspace (1) ──< Thread (N) ──< Turn (N) ──< Run (N) ──< Item (N)
-                                    │
-                                    └──< Event（对外推送，只追加）
-
-编排域（v1.3，独立 store，见 §5；不写进线程正文——ADR-0025）
-Goal (1) ──< Task (N) ──< Task（子任务，DAG 依赖）
-              │
-              └── Plan (N) ── Task（由定稿 Plan 的步骤同步派生）
+Thread  一个会话（绑一个引擎 + 一个工作区；永不静默换引擎）
+ Run    一次 agent 调用的"控制与观测边界"（引用而非复制下面的 Turn）
+  Turn  一次用户输入引发的一轮对话（开始时定死 model/provider；携 Kind）
+   Step  一轮 model 往返（循环内部概念，不对外暴露）
+    Item 一个可见产物单元（文字/推理/工具调用，带 delta/replace 流式增量）
 ```
+> 常见错误：把 Run 当"一次 model 往返"（错，那是 Step）；把 turn 与 run 混一层。移植时按此对齐持久化 seq 与 `LoopResult`。
 
-### Workspace
+## 2. 会话存储权威源 = SQLite（ADR-0041）
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | string | 工作区 id |
-| `name` | string | 显示名 |
-| `root_paths` | string[] | 注册根路径集合（可达性推导的输入，`limen` 消费） |
-| `revision` | integer | 工作区修订号（§4），单调递增 |
-| `created_at` | string | |
-
-### Thread
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | string | |
-| `workspace_id` | string | |
-| `title` | string? | 可重命名 |
-| `pinned` / `archived` | bool | 归档运行中拒绝（wuu 语义） |
-| `engine_id` | string | 创建时绑定，**不静默切换**（未知引擎显式报错） |
-| `permission_mode` | string | `read_only` / `standard` / `unconfined`；来自用户配置，仓库配置不可设定（B-58） |
-| `created_at` / `updated_at` | string | |
-
-### Turn
-
-一次用户输入触发的完整交互单元。
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | string | |
-| `thread_id` | string | |
-| `seq` | integer | 会话内序号（gate 消息先持久化定序，B-45） |
-| `origin` | string | `user` / `steer`（steered 消息挂原 turn，不新开） |
-| `fork_from` | object? | `{thread_id, turn_seq, mode: local\|worktree}`（分叉溯源） |
-
-### Run
-
-一次引擎执行。
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | string | |
-| `turn_id` | string | |
-| `engine_id` | string | 冗余记录执行引擎 |
-| `permission_mode` | string | 执行时快照 |
-| `workspace_revision_start` / `_end` | integer? | 修订号绑定（§4） |
-| `status` | string | 状态机见 §3 |
-| `usage` | object? | `{input_tokens, output_tokens, cost_usd?}` 累计 |
-| `task_id` / `goal_id` | string? | 编排绑定（v1.3）：本 run 所属的 Task / Goal；独立会话直接发起的 run 两者皆空（加性字段，见 ADR-0025） |
-
-### Item
-
-Run 产出的最小可审计单元。
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | string | |
-| `run_id` | string | |
-| `kind` | string | `message` / `tool_call` / `tool_result` / `citation` / `annotation` / `deliverable` |
-| `payload` | object | 按 kind 定义；tool_result 含**写时刻 diff**（B-66） |
-| `evidence` | object? | 可验证柱：声称的检查与当时录得输出的绑定 |
-
-### Event
-
-对外推送（SSE/WS/NDJSON 通知的统一形状），只追加不可改写。
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `seq` | integer | 会话内全局递增（重连续传锚点） |
-| `type` | string | 见 protocol.md §4 事件族 |
-| `run_id` / `turn_id` | string | 归属 |
-| `payload` | object | |
-| `created_at` | string | |
-
-### 编排实体（v1.3，ADR-0025）
-
-编排实体住**独立 append-only store**（§5），id 与时间戳沿用 §1 通用约定。
-
-**Plan** —— 先澄清→可修订→定稿才执行的可修订计划。
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | string | |
-| `thread_id` | string? | 来源会话（模型提议计划时所在线程） |
-| `goal_id` | string? | 归属长跑目标 |
-| `requirement_revision` | integer | 需求修订号（≥1）；**递增即自动作废既有验收**（追加作废记录，不改写） |
-| `status` | string | `drafting` / `proposed` / `finalized` / `superseded` |
-| `steps` | object[] | 有序步骤 `{id, title, status, task_id?}`；定稿后可同步派生 Task |
-| `created_at` / `updated_at` | string | |
-
-**Task** —— 看板任务单元。
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | string | |
-| `thread_id` | string? | 执行该任务的会话 |
-| `goal_id` | string? | 归属长跑目标 |
-| `plan_id` | string? | 由哪份计划派生 |
-| `title` | string | |
-| `status` | string | 状态机见 §3.3 |
-| `parent_task_id` | string? | 子任务树 |
-| `depends_on` | string[] | DAG 依赖边（前置任务 id） |
-| `acceptance` | object | `{status: 验收状态（§3.2，v1.4 起为 `AcceptanceStatus` 枚举）, requirement_revision, evidence_ids: []}` |
-| `run_id` | string? | 绑定的一次引擎执行 |
-| `created_at` / `updated_at` | string | |
-
-**Goal** —— 后台自驱长跑目标。
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | string | |
-| `thread_id` | string | 承载会话 |
-| `objective` | string | 目标的一句话描述 |
-| `status` | string | `idle` / `running` / `paused` / `completed` / `failed` / `cancelled` |
-| `max_rounds` | integer? | 轮次上限（长跑止损） |
-| `round_count` | integer | 已跑轮次 |
-| `deadline` | string? | 时长上限（UTC ISO-8601） |
-| `created_at` / `updated_at` | string | |
-
-**Evidence** —— 声称的检查与当时录得的真实输出（§3.4，ADR-0027）。
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | string | |
-| `subject_type` | string | `run` / `task` / `turn` |
-| `subject_id` | string | |
-| `claimed` | string | 声称做的检查（模型/工具报告） |
-| `recorded_output_ref` | string | 指向具体记录条目（Item/Event id 或 spill 回链）——**核对结论必须可追溯** |
-| `verdict` | string | `verified` / `mismatch` / `unverified`（无记录即 `unverified`，不臆断） |
-| `created_at` | string | |
+**SQLite 为会话权威库**（`sessions` / `session_messages` / `session_controls` / `session_inbox` / `held_user_work` / `session_history_{retractions,checkpoints}` / `session_driver_checkpoints` / `session_compaction_notes` / `inference_journal_runtimes`；完整建表见 `phase0-wuu-sqlite-schema.md`）。**JSONL 降为可选导出镜像**，不再是真相源。
+- 驱动 `modernc.org/sqlite`(Go) → Python `sqlite3`/`aiosqlite` 1:1 移植 schema/事务/WAL/自定义函数（`create_function` 复刻 `wuu_history_content`）。
+- 权限位由 POSIX 0600 改 **NTFS ACL**（Windows，port-ledger 记）。
 
 ## 3. 状态机
 
-### 3.1 运行状态机
+### 3.1 turn / run（可干预）
+- **held_user_work**：`origin ∈ {queue, steer}`——steer=运行中改道、queue=排队；对应协议 `turn/steer|unsteer|queue|dequeue|requeue|update-queued`。
+- **run 状态**（照 wuu 集，补 ADR-0014）：`accepted / running / completed / failed / interrupted / timed_out / cancelled`；`queued→cancelled` 迁移补录。取消/中断**仍结算**（不受取消影响的落账，否则丢工具结果，B-89）。
+- **inbox 幂等**（`session_inbox.client_id` + `INSERT OR IGNORE`）：delivered 判据 = client_id 已落入目标持久历史；重启可重试不重复注入（B-63）。
 
-```
-queued → running → completed | failed | cancelled
-   │        │
-   │        ├── steered（旁态：插话在下一个工具边界被消费后回 running）
-   │        └── waiting（旁态：等插话/审批；恢复后回 running）
-   └── cancelled（尚未起跑的运行可被取消，不经 running）
-```
+### 3.2 编排/验收（**Phase 6 后置**，ADR-0043）
+TaskStatus / CollabPhase 双状态机、迁移留痕、验收打回、evidence——A 阶段不建，此处仅占位指向 Phase 6 规格（EvoFlow 读设计、围自研 run 重写）。
 
-- 终态仅 `completed | failed | cancelled`；`steered` / `waiting` 是 `running` 的**旁态**，
-  旁态间迁移必须经由 running；queued 可直接取消（v1.1，ADR-0014）——不得伪造 running
-  起点再取消；
-- **状态迁移只允许状态机驱动**，旁路写入视为契约破坏（架构测试强制）；
-- 取消 → 停进程树（先校验身份防 PID 复用，B-16 同族）→ 已落盘改动不丢 → `cancelled` 终态。
+## 4. append-only 与不可改写（可验证柱）
 
-### 3.2 验收状态机
+- `session_messages (session_id, seq)` 主键、append-only；"不可改写历史"用**表约束 + 触发器禁 UPDATE/DELETE content** 表达（替代旧"JSONL 文件不可变"立场）。
+- 需求改版/验收作废 → 只追加新修订，不改写；`HistoryRewritten=true` 时走 `session_history_retractions/checkpoints` 的替换区间记录，不物理删。
+- 原始会话/prompt 全文/真实绝对路径永不进出机数据与 fixture（AGENTS §四 红线）。
 
-```
-proposed → accepted_by_user → executing → reported → verified | regressed
-```
+## 5. revision 与 diff 双源（ADR-0045 / ADR-0005）
 
-- v1.4（ADR-0029）起 `TaskAcceptance.status` 为 `AcceptanceStatus` **枚举**，迁移**只允许
-  状态机驱动**（单点入口 `orchestration/acceptance.py`，形态同 §3.3），旁路写入视为契约破坏
-  （架构测试强制）；
-- `accepted_by_user` = 用户授予"开始执行"（编排门 `need_execution_authorization` 的通过态）；
-- `reported` 的结论必须能指向具体 Item/Event 证据（`evidence` 字段）——由模型经 `task` 工具
-  `report` 动作**显式提交声称并绑定 `tool_use_id`**，核对器只读消费当时录得的 tool_result；
-- **`verified` / `regressed` 由证据 verdict 驱动**：`reported` 时全部声称 `verified` 才进
-  `verified`，任一 `mismatch`/`unverified` 即进 `regressed`（"没有复跑也不轻信"）；
-- 需求改版递增 `requirement_revision` 并**自动作废**既有验收（`plan.revise_plan` 驱动
-  `invalidate_acceptances`，追加作废记录不改写），作废后验收态重置为 `proposed`。
+- **工作区修订号** `session_controls.revision`：单点递增，绑定读/写快照。
+- **diff 双源分工**：① 内核在写/编辑工具结果内嵌 **tool-time diff**（`tools/diff.go` 形状）；② Review 面板的**工作区盘态真相由 Electron 主进程 GitService 跑 `git diff`**（含 untracked）。**内核不新增 `review/turn_diff`**。协议对象携 `dirty` / `changed_files`（wuu 已有形状），Review 面板据此呈现。
 
-### 3.3 编排任务状态机（v1.3，ADR-0025）
+## 6. 选中/批注定位
 
-```
-inbox    → pending / completed(用户自勾) / cancelled
-pending  → planning / planned / executing(直跑) / cancelled
-planning → planned / failed(规划失败) / cancelled
-planned  → planning(重新规划) / executing / cancelled
-executing→ paused / completed(免审) / reviewed(完成待审) / failed / cancelled
-paused   → executing(恢复) / cancelled
-reviewed → completed(审核通过) / executing(打回重做) / cancelled
-completed→ ∅（终态）
-failed   → executing(重试)
-cancelled→ ∅（终态）
-```
+源定位 = **UTF-16 code units in rendered DOM**（照 wuu，跨端一致）+ 修订号绑定；**不再用"字节 offset"**（wuu 明确 UTF-16，混用会两端互操作错位）。
 
-- 白名单**表驱动**、未知状态 fail closed，单点入口在 `orchestration/transitions.py`
-  （形态同 §3.1 的运行状态机）；`reviewed → executing` 即"打回重做"，与 §3.2 验收状态机在编排侧对应；
-- 破坏性编排动作（建任务、派发执行）须先过**编排门**：先有落库 Plan（`need_plan_first`）、
-  先有用户"开始执行"授权（`need_execution_authorization`）；门返回结构化错误载荷而非异常（B-43）；
-- **状态迁移只允许状态机驱动**，旁路写入视为契约破坏（架构测试强制）。
+## 7. 上下文记录（transcript 事实）
 
-### 3.4 证据核对（v1.3，ADR-0027；v1.4 接线生产写入点，ADR-0029）
+上下文工程事实（压缩边界、大结果落盘引用、discovered_tools 已加载态等）作为 append-only 记录进会话库（`content_parts_json` / `discovered_tools_json` / `session_history_checkpoints` / `session_compaction_notes`），随新实现更新版本（ADR-0017 语义随存储改判重述）。
 
-- `Evidence.verdict` 只取 `verified` / `mismatch` / `unverified`；**没有记录支持的结论一律 `unverified`**，
-  不臆断打分（诚实呈现铁律）；
-- 结论必带 `recorded_output_ref`，能指向具体 Item/Event/spill；
-- 证据只**追加**，绝不改写被核对的原文（append-only）；复跑核验不在本轮（overview §2），留待 M5；
-- v1.4：`evidence` 模块**只读消费 gesta** 落盘 tool_result 做核对（`collect_recorded(thread_id)` 为
-  唯一"录得源"入口，将来接复跑只替换其实现源、不改 export/验收态契约）；写入经
-  `orchestration.store.add_evidence` 唯一入口，依赖边 `orchestration → evidence` 有向无环。
+## 8. 与代码/前端的接缝
 
-## 4. 工作区修订号
-
-- 每次可能改变磁盘状态的动作（工具写/命令执行/接管操作）产生新修订，`revision` 单调递增；
-- `search` 分页、Review 的"某一轮 diff"、选中文字的源定位都**绑定修订号**；
-  不匹配一律拒绝并返回新修订号，不给过期结果；
-- 文件内容指纹 = 内容双哈希（opaque identity，非信任校验）；
-- 选中定位保存**原始字节 offset**（处理 BOM/混合换行）。
-
-## 5. 存储
-
-| 内容 | 位置 | 性质 |
-| --- | --- | --- |
-| 会话正文 | `~/.questor/sessions/<thread_id>.jsonl` | **append-only JSONL，唯一真相源** |
-| 搜索索引 | `~/.questor/index/`（SQLite） | **可丢弃可重建**，损坏即重建不修复 |
-| 编排实体 | `~/.questor/orchestration/tasks.jsonl` | **独立 append-only JSONL 唯一真相源**（Task/Plan/Goal/Evidence 记录）；索引可重建；不写进线程正文（ADR-0025） |
-| 工作文件（粘贴长文本/图片） | `~/.questor/files/` | 带过期，清理与历史快照分离 |
-| 工具结果落盘 | 会话目录内 `<tool_use_id>.txt` | O_EXCL 幂等写（B-24），预览 2KB 回链 |
-| 上下文工程记录 | 会话正文 JSONL 内的 `context.boundary` / `context.replacements` 记录 | **与正文同流、append-only**（ADR-0017）：压缩边界与替换决策均只追加不改写；它们是内核的上下文事实，**不是 ItemKind**，对外可见性走 `notice/compact` 事件族（protocol §4） |
-| 配置 | `~/.questor/config.toml` + 项目 `config.example.toml` | 分层 strip 用户专属安全字段（B-58） |
-
-- 索引分词预留 CJK bigram 兼容（B-48）；不引入消息队列、不依赖云；
-- 断线恢复靠 JSONL 的 `seq` 锚点 + 事件重放（**不重放工具执行**，断流中被中断的工具
-  绝不重放，结果可能未知）。
+- `schemas/model/` = 本文件实体的 JSON Schema 真相源 → 生成 TS（`packages/protocol`）；前端**不镜像会话/运行/权限真相**，只存 UI-local。
+- 跨边界数据一律 pydantic v2，禁裸 dict（AGENTS §四）。
