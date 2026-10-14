@@ -21,24 +21,9 @@ updates:
         update-types:
           - version-update:semver-major
 
-  - package-ecosystem: npm
-    directory: /ui
-    schedule:
-      interval: monthly
-    open-pull-requests-limit: 3
-    groups:
-      ui-minor:
-        patterns:
-          - "*"
-        update-types:
-          - minor
-          - patch
-    ignore:
-      # 已发生的实例：typescript 5.7→7、vite 6→8、json-schema-to-typescript 15→16
-      # 这类跨大版本需连生成物一起复验（B-68），不自动提 PR。
-      - dependency-name: "*"
-        update-types:
-          - version-update:semver-major
+  # npm /ui ecosystem 随 ui/ 废弃移除（ADR-0040/0044，Phase 0 归档）；
+  # Phase 2b 新渲染层住 desktop/src/renderer 时按新目录恢复，届时保留
+  # "跨大版本不自动提 PR、连生成物一起复验（B-68）"的既有约束。
 
   - package-ecosystem: github-actions
     directory: /

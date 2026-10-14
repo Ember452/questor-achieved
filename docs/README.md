@@ -10,8 +10,8 @@
 | 想知道当前阶段怎么做 | [`plans/phase-a-mvp.md`](plans/phase-a-mvp.md) | A 阶段纵向切片计划（Phase 1–4）；旧 M 系列 `development-plan.md` 已标历史，不得作实现依据 |
 | 想搞清一条链路实际怎么跑通 | [`notes/`](notes/README.md) | 机制解释笔记：预测→验证写法，每条带锚点；锚点过期会被 `check_notes` 判红 |
 | 想知道为什么这么定 | [`adr/`](adr/README.md) | 决策记录（编号索引与模板在此） |
-| 想知道工程纪律 | [`../AGENTS.md`](../AGENTS.md) | 复用三分法、语义唯一来源、注释与语言标准、护栏测试准入、质量门禁、Git 规矩 |
-| 开工边界层任务前 | `specs/`（M1 落盘） | 行为规格表、坑目录 `B-NN`、用例清单 |
+| 想知道工程纪律 | [`../AGENTS.md`](../AGENTS.md) | 复用优先的母本移植纪律、语义唯一来源表、注释与语言标准、护栏测试准入、质量门禁、Git 规矩 |
+| 开工边界层任务前 | [`specs/`](specs/README.md) | 行为规格表 `behavior-*.md`、坑目录 `B-NN`（`cases-*.md` 用例清单已按 ADR-0037 取消） |
 
 ## 写作规矩
 

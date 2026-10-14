@@ -1,7 +1,7 @@
 # 改了 main 上的 workflow，为什么已开出的 PR 还是红的
 
 日期: 2026-10-11
-复核于: 2026-10-12
+复核于: 2026-10-14
 锚点: .github/workflows/ci.yml, docs/adr/0011-branch-protection-mode.md, docs/adr/0009-gate-entry-just.md
 
 ## 我的预测

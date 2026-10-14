@@ -10,6 +10,11 @@
 ## [未发布]
 
 ### Added
+- **Phase 0 收口（知识抢救 + 契约重立基，计划 §12-B/§12-E）**：新渲染层设
+  计篇 `docs/architecture/modules/{review,habena}.md`；壳侧知识归档
+  `docs/research/archive-desktop-restart-policy.md`（原 notes 锚定的 `desktop/src/main/*` 已移出）；
+  `port-ledger.md` 写 ADR-0044 逐目录处置地图与 Phase 0 收口基线；
+  `behavior-review-fidelity-wuu.md` 补登“母本双源分工”并勘误 `@pierre/diffs` 选型声称。
 - **M3 工作台数据面**（overview §12 M3 行；详见 `docs/plans/development-plan.md` Phase M3）：
   - `src/questor/review/` — 工作区修订号单点、写工具算 diff、turn↔revision 聚合（ADR-0005、B-66/B-93）；
   - `src/questor/habena/` — 插话收件箱、接管栅栏（CAS + revision）、`habena.held_work` 记录 kind 落正文（B-63/64/65/67）；
@@ -75,6 +80,15 @@
 - `limen/gate.py` docstring：判定顺序补"参数提权"（B-55 门内侧）与"缺路径"（B-31）两层。
 
 ### Removed
+- **Phase 0：旧 `ui/` 与 `desktop/` 从工作树物理移出**（ADR-0040/0044、计划 §12-B；快照在
+  `reference-only-archive` 分支 d558494），新代码结构上 import 不到旧实现；连带把
+  justfile `gen`/`gen-check`/`types-check`/`desktop-test`/`desktop-build` 配方、pre-commit gen-check
+  钩子、contracts.yml `gen-check` job、security.yml npm audit leg、`desktop.yml` 整体、
+  dependabot `/ui` npm ecosystem 同批暂停（Phase 2b 新渲染层重建时逐项恢复）；
+  `tests/architecture/test_no_hardcoded_panel_case.py` 按 ADR-0044 ② 作废（绑旧 `ui/src/app-shell`；
+  替代契约用例 Phase 2b 重建）。旧内核簇（`serve`/`tools`/`limen` 等）按延迟清理策略
+  **过渡期保留**（仍为保留侧依赖闭包），新实现替换落地时同批移出——逐目录定性与时机见
+  `docs/research/port-ledger.md` 处置地图。
 - `ui/scripts/gen-types.mjs`（搬到 `scripts/gen/types.mjs`，避免两处定义，ADR-0019 归属兑现）；
   `ui/package.json` 里 `gen` / `gen:check` 脚本移除。
 

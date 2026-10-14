@@ -2,7 +2,9 @@
 
 来源：wuu `desktop/dev/review/renderer.tsx`（127 行 fixture）与 `dev/design-system`、`dev/elevation`、
 `dev/motion`、`dev/three-pane`；evopanel `src/zcode-ui/styles.css`（2053 行、Tailwind v4 `@theme`
-所在）。扫描日期 2026-10-13。Questor 模块归属：`ui/panels/review.tsx` 与 `ui/src/design/*`。
+所在）。扫描日期 2026-10-13。Questor 模块归属：新渲染层 `desktop/src/renderer` 的 Review 面板与
+`design/*`（ADR-0040 改判：旧 `ui/` 已废弃移出工作树，本篇 `ui/...` 路径均指旧壳位置、
+重建时对应到新渲染层；旧壳快照在 `reference-only-archive` 分支）。
 
 ---
 
@@ -11,9 +13,14 @@
 - **wuu 的 Review 面板是工作区级**：`WorkspaceReviewPanel gitStatus={GitStatusResult}` +
   `GitChangeFile[]` 列全 workspace 未提交改动，按路径排序、header 显示总 additions/deletions
   （wuu `dev/review/renderer.tsx:80-91`）。
-- **Questor 是 per-turn 级**：`review/turn_diff` 拿"该 turn 覆盖的写工具真 diff"（`FileDiff[]`），
-  语义根基是 overview §1 的"可审计"——审计对象是**一轮 Agent 循环的产出**，不是工作区快照。
-- **本规格只借用 wuu 的视觉与动效**，不借工作区语义。Questor 保留 per-turn 模型；
+- **母本双源分工（C0/ADR-0045 补登，scan-questor-docs 指出的登记缺口）**：wuu 有两个 diff 源——
+  ① 内核 `internal/tools/diff.go` 在写工具执行时刻算 tool-time diff、随工具结果持久化；
+  ② 壳侧 `desktop/src/main/gitService.ts` 直接跑 `git diff`（含 untracked）供工作区级面板。
+  Questor 照此双源：内核只带 tool-time diff，盘上真相由 Electron 主进程 GitService 只读采集，
+  **内核不新增 `review/turn_diff` 通知**（旧协议方法已废）。
+- **Questor 审计两层并存**：per-turn 层拿"该 turn 覆盖的写工具真 diff"（`FileDiff[]`，经协议可达），
+  工作区层拿壳侧 GitService 盘态真相；语义根基是 overview §1 的"可审计"。
+- **本规格只借用 wuu 的视觉与动效**，不照搬其工作区语义入口；
   `fingerprint` / `byte_size` / 写时刻 diff 语义不动（B-66/B-93）。
 
 ## 1. 文件卡片（可见柱）
@@ -36,8 +43,10 @@
 
 - **行为**：卡片体走 `@pierre/diffs`，add/del 色对来自 `--color-diff-add-*` / `--color-diff-del-*`
   token，禁 hex 字面量（护栏 `ui/tests/design.tokens.test.ts`）。
-- **参照**：evopanel 与 wuu 皆实测选型（`structure.md` §7"技术栈与现成件"）；封装文件是
-  `ui/src/panels/review.diff-view.tsx`。
+- **参照**：evopanel 实测选型；**勘误（scan-questor-docs R2 指出）**：wuu desktop 生产件并无可实证的
+  `@pierre/diffs` 依赖，其双栏 diff 组件选型要在 Phase 2b 开工前实测 wuu renderer 源码后再定（
+  `structure.md` §7 口径同步重验）。封装文件是唯一 diff 入口旧壳为 `ui/src/panels/review.diff-view.tsx`，
+  新壳对应 `desktop/src/renderer` 内单一封装点。
 - **边界行为**：unified 字符串含 hunk header `@@` 与至少一段 hunk；头行不被 wrap 截断（B-103）；
   长行 wrap 显式开启。
 - **坑**：B-103（头尾截断）、B-106（暗色色对反相）。

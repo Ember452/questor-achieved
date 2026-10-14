@@ -25,4 +25,35 @@
 | 未跟踪 ADR `0033~0036` | 保留文件：0033 仍有效(Phase 2)、0035 superseded by 0045、0036 withdrawn by 0037（README 已标） | 否 |
 | `docs/specs/cases-*.md` | 从未存在（C12）；AGENTS §二 已移除该引用；清理 `specs/README`/`overview §3` 的悬空引用 | 🟡 小 |
 
-**当前门禁基线**（Phase 0 中途）：`check_specs` OK、`check_notes` OK；`tests/architecture/test_serve_names_are_contracted` 2 红（TL-1 transition）。未 commit、未 push。
+### 处置地图（ADR-0044 ① 逐目录定性，Phase 0 step1 执行登账）
+
+> 快照分支：`reference-only-archive`（=转向基线 d558494，含旧 src/questor + ui + desktop 全量）。
+> 「物理移出」=已从 main 工作树删除；「过渡期保留」=仍在工作树、**替换落地同批移出**
+> （延迟清理策略：旧实现仍是后置/保留侧的生产依赖，现在硬拆必产生断 import 红潮，
+> 反而诱发"改代码迁就删除"的倒挂）；移出前旧代码只读参考，禁复制实现行。
+
+| 目录 | 定性（ADR-0044） | Phase 0 动作 | 物理移出时机 |
+| --- | --- | --- | --- |
+| `ui/` | 废弃重写（→`desktop/src/renderer`） | **已物理移出** + toolchain 同步裁剪 | 已完成 |
+| `desktop/`（旧 Electron 壳） | 废弃重写（知识存 `archive-desktop-restart-policy.md`） | **已物理移出** + desktop.yml 删 | 已完成 |
+| `serve` `tools` `limen` `sessiontrace` `review` `cli` `context` | 按 wuu 蓝本重写 | 过渡期保留（被保留侧依赖闭包） | Phase 2a 新内核替换同批 |
+| `engine`（除 `model.py`） `providers` | 按 wuu 蓝本重写（FinishReason 归一等语义重验） | 过渡期保留（testenv/providers 依赖） | Phase 2a/2b 替换同批 |
+| `state` | 按 wuu 蓝本重写（→ SQLite 权威 C3） | 过渡期保留（config/gesta/secrets/workspaces/worktree 依赖 atomic/paths/locks） | 新存储层落地同批（Phase 3/4） |
+| `orchestration` `vigilia` `evidence` | 后置 Phase 6 | 保留不动 | Phase 6 重建时 |
+| `gesta` `schemas` `config` `secrets` `version` `workspaces` `worktree` `capability` `prompts` `habena` `testenv` | 保留（知识/外围/接缝） | 保留 | — |
+
+| 尾注 | 登记 |
+| --- | --- |
+| gen 链（`scripts/gen/types.mjs`、justfile gen/gen-check/types-check/desktop-test、pre-commit 钩子、contracts.yml gen-check job、security npm audit、dependabot /ui ecosystem） | 随 `ui/` 退役整体暂停；真相源 `src/questor/schemas` 保留；Phase 2b 重建时逐项恢复（ADR-0011 required 名单同批） |
+| `tests/architecture/test_no_hardcoded_panel_case.py` | 按 ADR-0044 ② 作废：绑死旧 `ui/src/app-shell` 内部细节；替代契约用例（新渲染层外壳不得硬编码面板名）Phase 2b 随 registry 重建，B-93 条目保留 |
+| `desktop/README.md`（计划产出 8） | 随壳移出不再单独补写：壳侧知识已在 `archive-desktop-restart-policy.md` + `phase0-wuu-renderer-assembly.md`，新 README 由 Phase 2b 新壳自带 |
+| C11/C16（id 正则/大小写） | Phase 0 未实测（phase0 三表无 id 形状证据），**后置 Phase 1**：写 `schemas/app_server/` 时逐字段实测 wuu `protocol.go`/`stdio.go` 定夺，进 port-ledger；属"登记过的后置"非遗漏 |
+
+**当前门禁基线**（Phase 0 收口）：`just check` 全绿（556 passed / 3 xfailed；check_specs、check_notes、check_docs OK）；TL-1 两条 xfail 护栏仍按计划留到 Phase 1/2 转绿。已 commit、已 push。
+
+### 冲突消解收口（计划 §13 C0–C21，Phase 0 逐条落定）
+
+> 仓库侧证据（主计划在编辑器缓存区不可写，此处为可复核的落点记录）：
+
+- **已关（ADR 落定 + 契约文档同步）**：C0→ADR-0045・`behavior-review-fidelity-wuu`§0；C1→ADR-0037・AGENTS §二；C2→ADR-0040・structure・ui/ 已移出；C3→ADR-0041・data-model；C4→ADR-0042・protocol；C5/C6→data-model 重写（Run⊃Turn、状态集、UTF-16）；C7→ADR-0016（自建 wire、与 wuu 同形）；C8→ADR-0042/0030；C9→ADR-0043（后置 P6）；C10→ADR-0039；C12→ADR-0037・specs/README+docs/README 悬空引用已清；C13→structure 重写；C14→AGENTS §六；C15→dependabot 实查无 cargo、`/ui` npm ecosystem 已移；C17→AGENTS §四/ADR-0009；C18→ADR-0037/0038；C20→ADR-0011・justfile/workflow 同步；C21→ADR-0001。
+- **后置含登记（非遗漏）**：C11/C16（id 正则/大小写）、C19（approval/request 收紧 vs per-command）——均待 Phase 1 逐字段实测 wuu `protocol.go`/`stdio.go` 定夺（本台账上行 + overview §13 未决项 #5）。

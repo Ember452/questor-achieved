@@ -18,8 +18,11 @@
    | `test (ubuntu-latest)` | `ci.yml` job `test` | 是 |
    | `test (windows-latest)` | `ci.yml` job `test` | 是 |
    | `arch` | `contracts.yml` job `arch` | 否 |
-   | `gen-check` | `contracts.yml` job `gen-check` | 否 |
-   | `audit` | `security.yml` job `audit` | 否（该 workflow 也 `on: pull_request`，故能 report） |
+   | ~~`gen-check`~~ | ~~`contracts.yml` job `gen-check`~~ | **Phase 0 暂停**：gen 链随 `ui/` 退役移出 workflow（ADR-0040/0044），GitHub 保护规则同步移除该 required 名；Phase 2b 新渲染层落地时连同 job 一起恢复 |
+   | `audit` | `security.yml` job `audit` | 否（该 workflow 也 `on: pull_request`，故能 report）；npm audit leg 同批暂停，pip-audit 仍在 |
+
+   `desktop.yml` 已随旧 `desktop/` 壳废弃删除（Phase 0，快照在 `reference-only-archive` 分支），
+   其 checks 不入 required 名单；新壳 CI 在 Phase 2b 重建时按本表失效条件③同步更新。
 
 3. 填错名字的后果写在这里供复查：**一个永不 report 的 required 名字会让所有 PR 永久卡在
    "Expected — Waiting for status to be reported"**。本项目 2026-10-11 就因把非矩阵 job 写成
